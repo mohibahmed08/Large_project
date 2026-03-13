@@ -1,0 +1,80 @@
+/* ===================== DAY GRID WRAPPER ===================== */
+
+/* STANDARD DAY GRID WRAPPER NO MATTER ACTIVE */
+.day-grid-wrapper{
+  position: relative;          /* parent must be relative for absolute children */
+  background-color: #f5f5f5;      /* light neutral gray */
+  border: 1px solid #e0e0e0;      /* soft border */
+  border-radius: 6px;
+  text-align: left;   /* instead of center */
+  padding: 8px 0;
+  font-weight: normal;
+  color: #333;                     /* readable text */
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05); /* subtle depth */
+  transition: background 0.2s ease;
+}
+/* IF THIS DAY GRID IS THE CURRENT DAY */
+.day-grid-wrapper.active{
+  background-color: #a5d6ff;      /* soft pastel blue */
+  border: 1px solid #64b5f6;      /* slightly darker blue border */
+  border-radius: 6px;
+  font-weight: bold;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.08); /* subtle depth */
+  transition: background 0.2s ease;
+}
+
+/* ===================== DAY GRID FIELDS ===================== */
+
+/* TOP LEFT DAY NUMBER */
+.day-grid-day-number{
+  position: absolute;
+  top: 7%;       /* distance from top */
+  right: 10%;     /* distance from right */
+  font-size: 1.3em;
+  font-weight: bold;
+  color: #555;
+}
+/* TILED REMINDERS / SUGGESTIONS WRAPPER */
+.day-grid-tile-wrapper {
+  display: flex;
+  flex-direction: column; /* stack multiple events vertically */
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: inherit;
+  justify-content: flex-start; /* top */
+  align-items: flex-start;     /* left */
+}
+/* ============ SUGGESTION / REMINDER TILE FIELDS ============ */
+
+/* REMOVE DEFAULT STYLE */
+.day-grid-ul {
+  list-style: none; /* removes bullets from <ul> or <li> */
+  padding: 0;       /* remove default padding */
+  margin-top: 15%;        /* remove default margin */
+  margin-bottom: 15%;        /* remove default margin */
+}
+
+/* EACH ROW INDIVIDUALLY */
+.day-grid-tile-row {
+  display: flex;
+  gap: 10px;                  /* space between time and title */
+  justify-content: flex-start; /* left-align row content */
+  align-items: center;         /* vertically center time/title within row */
+  margin-bottom: 4px;          /* spacing between rows */
+}
+
+/* TILED REMINDER / SUGGESTION TIME */
+.day-grid-tile-time {
+  flex: 0 0 60px;            /* fixed width for time column */
+  text-align: right;         /* right-align the time */
+  font-weight: bold;
+  font-size: 0.9em;
+}
+
+/* TITLE OF THE REMINDER / SUGGESTION */
+.day-grid-tile-string-title {
+  flex: 1;                   /* take the remaining space for the title */
+  text-align: left;          /* left-align title */
+  font-size: 0.9em;
+}
+

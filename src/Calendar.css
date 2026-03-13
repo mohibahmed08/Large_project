@@ -1,0 +1,18 @@
+.calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr); /* 7 columns for days */
+  text-align: center;
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+.weekday {
+  padding: 5px 0;
+}
+.calendar-calendar-wrapper {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr); /* same 7 columns as header */
+  gap: 10px;
+}
+.calendar-calendar-wrapper > * {
+  aspect-ratio: 1 / .9;
+}
