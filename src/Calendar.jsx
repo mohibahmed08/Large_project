@@ -7,12 +7,18 @@ import DayGrid from './DayGrid.jsx';
 import { useState } from 'react';
 
 //MAIN CONSTRUCTOR FOR CALENDAR
-function Calendar(){
+function Calendar({monthsAwayFromNow}){
 
     //HOLDS DATE GENERAL OBJECT
     const date = new Date();
     //HOW MANY DAYS ARE WITHIN THIS MONTH
     const daysInMonth = (new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate());
+
+    //ARRAY OF WEEKDAY NAMES FOR TITLES
+    const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+    //GRID INDENT OF THE FIRST DAY FOR CALENDAR
+    const firstDay = new Date(date.getFullYear(), date.getMonth() + monthsAwayFromNow, 1).getDay();
 
     //ARRAY OF DAYS WITHIN THE MONTH
     const [daysArr] = useState( 
@@ -23,26 +29,22 @@ function Calendar(){
         )
     );
 
-    //ARRAY OF WEEKDAY NAMES FOR TITLES
-    const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    
     return (
         <>
             {/* WRAPPER FOR THE MAIN CALENDAR THAT HOLDS THE ARRAY OF DAYS */}
             <div className="calendar-wrapper">
-            {/* Weekday header */}
-            <div className="calendar-weekdays">
-                {weekdays.map((day) => (
-                <div key={day} className="weekday">
-                    {day}
+                {/* Weekday header */}
+                <div className="calendar-weekdays">
+                    {weekdays.map((day) => (
+                    <div key={day} className="weekday">
+                        {day}
+                    </div>
+                    ))}
                 </div>
-                ))}
-            </div>
-
-            {/* DayGrid cells */}
-            <div className="calendar-calendar-wrapper">
-                {daysArr}
-            </div>
+                {/* DAYGRID CELLS INDENTED BASED ON START DATE */}
+                <div className="calendar-calendar-wrapper" style = {{"--first-day" : firstDay + 1}}>  
+                    {daysArr}
+                </div>
             </div>
         </>
     );

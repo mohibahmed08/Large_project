@@ -10,7 +10,10 @@ function App(){
     //HTML DOM RETURN
     return(
         <>
-            <Calendar/>
+            {/* SHOW THE CALENDARS FOR FIRST 5 MONTHS */}
+            {Array.from({ length: 5 }, (_, i) => (
+                <Calendar key={i} monthsAwayFromNow={i} />
+            ))}
         </>
     );
 

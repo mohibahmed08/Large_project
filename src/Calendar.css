@@ -1,3 +1,4 @@
+/* CONSISTANT WEEKDAYS ON TOP */
 .calendar-weekdays {
   display: grid;
   grid-template-columns: repeat(7, 1fr); /* 7 columns for days */
@@ -5,14 +6,23 @@
   font-weight: bold;
   margin-bottom: 5px;
 }
+/* PADDING BETWEEN WEEKDAYS */
 .weekday {
   padding: 5px 0;
 }
+
+/* THE CALENDAR GRID ITSELF */
 .calendar-calendar-wrapper {
   display: grid;
   grid-template-columns: repeat(7, 1fr); /* same 7 columns as header */
   gap: 10px;
 }
+/* EACH CELL ASPECT RATIO (SQUARENESS) */
 .calendar-calendar-wrapper > * {
   aspect-ratio: 1 / .9;
+}
+
+/* INDENT FIRST CHILD BY START DAY SO CONSISTENT BY MONTH  */
+.calendar-calendar-wrapper > :first-child {
+  grid-column-start: var(--first-day);
 }
