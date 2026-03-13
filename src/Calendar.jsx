@@ -12,7 +12,7 @@ function Calendar({monthsAwayFromNow}){
     //HOLDS DATE GENERAL OBJECT
     const date = new Date();
     //HOW MANY DAYS ARE WITHIN THIS MONTH
-    const daysInMonth = (new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate());
+    const daysInMonth = (new Date(date.getFullYear(), date.getMonth() + monthsAwayFromNow + 1, 0).getDate());
 
     //ARRAY OF WEEKDAY NAMES FOR TITLES
     const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
