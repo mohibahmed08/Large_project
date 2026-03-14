@@ -1,0 +1,63 @@
+/* ================= MONTH WRAPPER ================= */
+
+.calendar-month-wrapper{
+  display: grid;
+  background: #1e1e2f;
+}
+
+/* ================= MONTH NAME ================= */
+.calendar-month-month-name {
+  position: sticky;
+  top: 0;
+  z-index: 9;
+
+  display: grid;
+  place-items: center;
+
+  padding: 10px 0;   /* full vertical padding */
+  margin: 0;         /* remove default margin */
+  font-weight: 600;
+  background-color: inherit;
+}
+
+
+/* ================= WEEKDAY HEADER ================= */
+.calendar-weekdays {
+  position: sticky;
+  top: 50px; /* match height of month header (content + padding) */
+  z-index: 10;
+
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+
+  text-align: center;
+  font-weight: 600;
+
+  padding: 8px 0;  /* internal spacing for the header cells */
+  margin: 0;        /* remove default margin */
+  background-color: inherit;
+}
+
+.weekday {
+  padding: 10px; /* remove extra padding from individual weekday cells */
+}
+/* ================= DAY GRID ================= */
+
+.calendar-month-day-grid-wrapper{
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 10px;
+  margin-top: 4px; /* small natural separation */
+}
+
+
+/* day cell shape */
+.calendar-month-day-grid-wrapper > *{
+  aspect-ratio: 1 / 0.9;
+}
+
+
+/* indent first day */
+.calendar-month-day-grid-wrapper > :first-child{
+  grid-column-start: var(--first-day);
+}

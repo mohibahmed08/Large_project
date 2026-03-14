@@ -8,14 +8,19 @@ import './DayGrid.css';
 //WITHIN THE CALENDAR U.I.
 
 //SHOULD BE USED AS AN ARRAY OF DAYS WITHIN THE CALENDAR U.I.
-function DayGrid( {dayOfMonth} ){
+function DayGrid( {dayOfMonth, year, month} ){
 
+    //DATE OBJECT FOR DETERMINING THINGS
+    const date = new Date();
     //CHECK IF THIS DAY GRID IS ACTIVE (TODAY == DAY OF MONTH)
-    const isToday = dayOfMonth == new Date().getDate();
+    const isToday = dayOfMonth == date.getDate() && year == date.getFullYear() && month == date.getMonth();
 
     //ARRAY OF DAY'S CONTENT (BOTH REMINDERS AND SUGGESTIONS)
     //CURRENT SUBFIELDS: { type, time, stringTitle, stringInfo }
     const [content, setContent] = useState([
+        { time: "9:30am", stringTitle: "Test" },
+        { time: "10:20am", stringTitle: "Work" },
+        { time: "11:15am", stringTitle: "Meeting" },
         { time: "9:30am", stringTitle: "Test" },
         { time: "10:20am", stringTitle: "Work" },
         { time: "11:15am", stringTitle: "Meeting" },

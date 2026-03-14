@@ -1,0 +1,65 @@
+import './CalendarMonth.css';
+
+//DAY GRID FOR THE CALENDAR
+import DayGrid from './DayGrid.jsx';
+
+//USE STATE AND EFFECT FOR AUTO UPDATES & DOM RELOAD SAVE
+import { useState } from 'react';
+
+//MAIN CONSTRUCTOR FOR CALENDAR MONTH
+function CalendarMonth({monthsAwayFromNow}){
+
+    //HOLDS DATE GENERAL OBJECT
+    const date = new Date();
+
+    //COMPUTE THE FIRST DAY OF THE TARGET MONTH
+    const targetDate = new Date(date.getFullYear(), date.getMonth() + monthsAwayFromNow, 1);
+    // HOW MANY DAYS ARE WITHIN THIS MONTH
+    const daysInMonth = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0).getDate();
+    // GRID INDENT OF THE FIRST DAY FOR CALENDAR
+    const firstDay = targetDate.getDay();
+    // THE CURRENT MONTH'S NAME
+    const monthName = targetDate.toLocaleString('default', { month: 'long' });
+    // CURRENT YEAR (YYYY FORMAT)
+    const year = targetDate.getFullYear();
+
+    //ARRAY OF WEEKDAY NAMES FOR TITLES
+    const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+    //ARRAY OF DAYS WITHIN THE MONTH
+    const [daysArr] = useState( 
+        //CREATE AN ARRAY OF DAYS IN MONTH LENGTH
+        Array.from( {length : daysInMonth}, (_, i) => 
+            //THEN TAGS TO DAY GRID SUBCLASS WITH ITERATIVE INFO
+            <DayGrid key = {i} dayOfMonth = {i + 1} year = {year} month = {date.getMonth() + monthsAwayFromNow}/>
+        )
+    );
+
+    return (
+        <>
+            {/* WRAPPER FOR THE MAIN CALENDAR THAT HOLDS THE ARRAY OF DAYS */}
+            <div className="calendar-month-wrapper">
+                {/* MONTH NAME CORESPONDING TO CURRENT MONTH */}
+                <h1 className = "calendar-month-month-name">{monthName + " " + year}</h1>
+                {/* WEEKDAY HEADER (MONDAY, TUESDAY, ...) */}
+                <div className="calendar-weekdays">
+                    {/* SHOW THE WEEKDAYS ON THE TOP */}
+                    {weekdays.map((day) => (
+                    <div key={day} className="weekday">
+                        {day}
+                    </div>
+                    ))}
+                </div>
+                {/* DAYGRID CELLS INDENTED BASED ON START DATE */}
+                <div className="calendar-month-day-grid-wrapper" style = {{"--first-day" : firstDay + 1}}>  
+                    {daysArr}
+                </div>
+            </div>
+        </>
+    );
+
+
+}
+
+//EXPORTABLE FOR APP (MAIN)
+export default CalendarMonth;

@@ -10,10 +10,14 @@ function App(){
     //HTML DOM RETURN
     return(
         <>
-            {/* SHOW THE CALENDARS FOR FIRST 5 MONTHS */}
-            {Array.from({ length: 5 }, (_, i) => (
-                <Calendar key={i} monthsAwayFromNow={i} />
-            ))}
+            {/* PROB GONNA CHANGE, I'M THINKING WE JUST HAVE ONE MONTH AND EDIT */}
+            {/* THE TITLE "[MONTH YEAR]" TO ANOTHER MONTH AND YEAR AND HAVE IT CHANGE */}
+            {/* OR WE CAN KEEP IT LIKE THIS AND I CAN FIND A WAY TO MAKE IT AUTO CREATE */}
+            {/* ONCE SCROLLING, BUT THEN IT MIGHT TAKE TO LONG TO REACH THE DESIRED MONTH & YEAR */}
+            {/* THAT THE USER MIGHT BE TRYING TO FIND, BUT FOR NOW I'M MADE THIS MODULAR SO IT */}
+            {/* CAN HOPEFULLY BE EMBEDDED IN SOMETHING ELSE OR ANOTHER WRAPPER WITH LITTLE TO NO */}
+            {/* PROBLEMS */}
+            <Calendar totalNumMonths={17} />
         </>
     );
 
