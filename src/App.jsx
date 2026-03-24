@@ -10,6 +10,7 @@ function App(){
     //HTML DOM RETURN
     return(
         <>
+            
             {/* PROB GONNA CHANGE, I'M THINKING WE JUST HAVE ONE MONTH AND EDIT */}
             {/* THE TITLE "[MONTH YEAR]" TO ANOTHER MONTH AND YEAR AND HAVE IT CHANGE */}
             {/* OR WE CAN KEEP IT LIKE THIS AND I CAN FIND A WAY TO MAKE IT AUTO CREATE */}
@@ -17,7 +18,8 @@ function App(){
             {/* THAT THE USER MIGHT BE TRYING TO FIND, BUT FOR NOW I'M MADE THIS MODULAR SO IT */}
             {/* CAN HOPEFULLY BE EMBEDDED IN SOMETHING ELSE OR ANOTHER WRAPPER WITH LITTLE TO NO */}
             {/* PROBLEMS */}
-            <Calendar totalNumMonths={17} />
+            <Calendar totalNumMonths={1} />
+            {/* IF TOTAL MONTHS = 1, THEN ARROWS ENABLED, OTHERWISE YOU HAVE TO SCROLL */}
         </>
     );
 

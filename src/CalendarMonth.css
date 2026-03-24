@@ -6,20 +6,35 @@
 }
 
 /* ================= MONTH NAME ================= */
-.calendar-month-month-name {
+.calendar-month-interactable-header {
   position: sticky;
   top: 0;
   z-index: 9;
 
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center; /* center them together */
+  gap: 1em; /* small spacing between items */
 
-  padding: 10px 0;   /* full vertical padding */
-  margin: 0;         /* remove default margin */
-  font-weight: 600;
+  user-select: none; /* prevent text highlighting */
+
+  padding: 10px 0;
   background-color: inherit;
 }
 
+.calendar-month-month-name {
+  cursor: pointer;
+  font-weight: 600;
+
+  width: 250px;       /* fixed width */
+  text-align: center; /* center the text inside */
+}
+.calendar-month-month-name,
+.calendar-month-arrow {
+  cursor: pointer;
+  margin: 0; /* remove default margin */
+  font-weight: 600;
+}
 
 /* ================= WEEKDAY HEADER ================= */
 .calendar-weekdays {
