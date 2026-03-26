@@ -158,9 +158,9 @@ exports.setApp = function(app, client)
             const verifyLink = `${process.env.SERVER_URL}/api/verifyemail?token=${verifyToken}`;
             await emailTransporter.sendMail(
             {
-                from:    `"Callendar" <${process.env.SMTP_USER}>`,
+                from:    `"${process.env.SMTP_FROM_NAME || 'Calendar'}" <${process.env.SMTP_FROM_EMAIL}>`,
                 to:      email,
-                subject: 'Verify your Callendar account',
+                subject: 'Verify your Calendar account',
                 html:    `<h2>Welcome!</h2>
                           <p>Click below to verify your email. Link expires in 24 hours.</p>
                           <a href="${verifyLink}">Verify Email</a>`,
