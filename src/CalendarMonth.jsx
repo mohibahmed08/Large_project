@@ -26,6 +26,8 @@ function CalendarMonth({monthsAwayFromNow, singleMonth}){
     // CURRENT YEAR (YYYY FORMAT)
     const year = targetDate.getFullYear();
 
+    const [monthDropdown, setMonthDropdown] = useState(false);
+
     //ARRAY OF WEEKDAY NAMES FOR TITLES
     const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -46,7 +48,7 @@ function CalendarMonth({monthsAwayFromNow, singleMonth}){
                     {/* LEFT ARROW TO DECREMENT BY A MONTH (ONLY FOR ONE MONTH) */}
                     {singleMonth && <h1 onClick = {()=>setMonthsFromNow(monthsFromNow - 1)} className = "calendar-month-arrow">{"←"}</h1>}
                     {/* MONTH NAME CORESPONDING TO CURRENT MONTH */}
-                    <h1 className = "calendar-month-month-name">{monthName + " " + year}</h1>
+                    <h1 className = "calendar-month-month-name" onClick = {()=>{singleMonth && setMonthDropdown(!monthDropdown)}}>{monthName + " " + year}</h1>
                     {/* LEFT ARROW TO INCREMENT BY A MONTH (ONLY FOR ONE MONTH) */}
                     {singleMonth && <h1 onClick = {()=>setMonthsFromNow(monthsFromNow + 1)} className = "calendar-month-arrow">{"→"}</h1>}
                 </div>
