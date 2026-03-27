@@ -13,7 +13,7 @@ function Calendar({totalNumMonths}){
             {/* WRAPPER FOR CALENDAR MONTHS TO BE STACKED PROPERLY */}
             {/* SHOW THE CALENDARS FOR FIRST 5 MONTHS */}
             {Array.from({ length: totalNumMonths }, (_, i) => (
-                <CalendarMonth key={i} monthsAwayFromNow={i} />
+                <CalendarMonth key={i} monthsAwayFromNow={i} singleMonth = {totalNumMonths === 1}/>
             ))}
         </div>
     );
