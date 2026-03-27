@@ -3,6 +3,7 @@ import './App.css';
 
 //IMPORT FOR CALENDAR UI
 import Calendar from './Calendar.jsx';
+import Login from './login.jsx'
 
 //MAIN EXPORTED FUNCTION
 function App(){
@@ -18,7 +19,8 @@ function App(){
             {/* THAT THE USER MIGHT BE TRYING TO FIND, BUT FOR NOW I'M MADE THIS MODULAR SO IT */}
             {/* CAN HOPEFULLY BE EMBEDDED IN SOMETHING ELSE OR ANOTHER WRAPPER WITH LITTLE TO NO */}
             {/* PROBLEMS */}
-            <Calendar totalNumMonths={1} />
+            {/* <Calendar totalNumMonths={1} /> */}
+            <Login/>
             {/* IF TOTAL MONTHS = 1, THEN ARROWS ENABLED, OTHERWISE YOU HAVE TO SCROLL */}
         </>
     );
