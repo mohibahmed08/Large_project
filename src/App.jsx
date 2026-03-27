@@ -29,7 +29,6 @@ function App(){
                 <Login setIsAuthenticated={setIsAuthenticated} />
             )}
             {/* <Calendar totalNumMonths={1} /> */}
-            <Login/>
             {/* IF TOTAL MONTHS = 1, THEN ARROWS ENABLED, OTHERWISE YOU HAVE TO SCROLL */}
         </>
     );
