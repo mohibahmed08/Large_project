@@ -1,21 +1,16 @@
 import React, { useState, useEffect } from 'react';
-
 import './login.css';
 
-const Login = () => {
-  // UI State
+const Login = ({ setIsAuthenticated }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
-  
-  // Form State
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  
-  // Validation
+
   const [passwordsMatch, setPasswordsMatch] = useState(true);
 
-  // Password matching logic
   useEffect(() => {
     if (!isLogin && confirmPassword.length > 0) {
       setPasswordsMatch(password === confirmPassword);
@@ -27,12 +22,14 @@ const Login = () => {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!isLogin && !passwordsMatch) return;
-    
+
     const payload = isLogin 
       ? { email, password } 
       : { email, password, confirmPassword };
-      
+
     console.log(`${isLogin ? 'Login' : 'Register'} Attempt:`, payload);
+
+    setIsAuthenticated(true);
   };
 
   return (
@@ -62,7 +59,6 @@ const Login = () => {
         </h2>
         
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Email Field */}
           <div>
             <label className="block text-xs font-uppercase tracking-wider text-gray-400 mb-1 font-bold">EMAIL ADDRESS</label>
             <input 
@@ -75,7 +71,6 @@ const Login = () => {
             />
           </div>
 
-          {/* Password Field with Show/Hide toggle */}
           <div className="relative">
             <label className="block text-xs font-uppercase tracking-wider text-gray-400 mb-1 font-bold">PASSWORD</label>
             <input 
@@ -95,7 +90,6 @@ const Login = () => {
             </button>
           </div>
 
-          {/* Confirm Password */}
           {!isLogin && (
             <div className="animate-in fade-in slide-in-from-top-2 duration-300">
               <label className="block text-xs font-uppercase tracking-wider text-gray-400 mb-1 font-bold">CONFIRM PASSWORD</label>
