@@ -1,5 +1,6 @@
 //IMPORT CORRESPONDING CSS SHEET
 import './App.css';
+import { useState } from 'react';
 
 //IMPORT FOR CALENDAR UI
 import Calendar from './Calendar.jsx';
@@ -7,6 +8,9 @@ import Login from './login.jsx'
 
 //MAIN EXPORTED FUNCTION
 function App(){
+
+    // SET AUTHENTICATED
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
 
     //HTML DOM RETURN
     return(
@@ -19,6 +23,11 @@ function App(){
             {/* THAT THE USER MIGHT BE TRYING TO FIND, BUT FOR NOW I'M MADE THIS MODULAR SO IT */}
             {/* CAN HOPEFULLY BE EMBEDDED IN SOMETHING ELSE OR ANOTHER WRAPPER WITH LITTLE TO NO */}
             {/* PROBLEMS */}
+            {isAuthenticated ? (
+                <Calendar totalNumMonths={1} />
+            ) : (
+                <Login setIsAuthenticated={setIsAuthenticated} />
+            )}
             {/* <Calendar totalNumMonths={1} /> */}
             <Login/>
             {/* IF TOTAL MONTHS = 1, THEN ARROWS ENABLED, OTHERWISE YOU HAVE TO SCROLL */}
