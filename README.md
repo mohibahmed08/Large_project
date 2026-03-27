@@ -7,7 +7,7 @@ Each user on the app can create an account, log in, and manage their own tasks. 
   - Registration (Sign up)
   - Login
   - Password Reset
- - Email Authentication
+  - Email Authentication
 * Task Management (per user)
   - Add tasks
   - Edit tasks
