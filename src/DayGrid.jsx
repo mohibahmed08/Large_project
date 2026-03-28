@@ -8,12 +8,29 @@ import './DayGrid.css';
 //WITHIN THE CALENDAR U.I.
 
 //SHOULD BE USED AS AN ARRAY OF DAYS WITHIN THE CALENDAR U.I.
-function DayGrid( {dayOfMonth, year, month} ){
+function DayGrid( {weather, maxFutureWeatherDays, maxPastWeatherDays, dayOfMonth, year, month} ){
 
     //DATE OBJECT FOR DETERMINING THINGS
     const date = new Date();
+
     //CHECK IF THIS DAY GRID IS ACTIVE (TODAY == DAY OF MONTH)
     const isToday = dayOfMonth == date.getDate() && year == date.getFullYear() && month == date.getMonth();
+
+    //TARGET DATE FOR DAY INDEX AND WITHIN WEEK
+    const targetDate = new Date(year, month, dayOfMonth);
+    //NORMALIZE THE HOURS
+    targetDate.setHours(0,0,0,0);
+    //COMPUTE THE DIFFERENCE IN TIME
+    const diffMs = targetDate - date; 
+    //CONVERT THAT TO DAYS AND DETERMINE DIFFERENCE IN DAYS
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    //TRUE IF TARGET DAY IS 7 DAYS AWAY FROM CURRENT
+    const isWithinWeather = diffDays >= -maxPastWeatherDays - 1 && diffDays <= maxFutureWeatherDays;
+    
+    //COMPUTES THE DAY INDEX
+    const dayIndex = Math.floor(diffDays + 1);
+    //COMPUTES THE START HOUR FOR EACH DAY
+    // const hourIndex = dayIndex * 24; // start of the day in hourly array
 
     //ARRAY OF DAY'S CONTENT (BOTH REMINDERS AND SUGGESTIONS)
     //CURRENT SUBFIELDS: { type, time, stringTitle, stringInfo }
@@ -33,6 +50,8 @@ function DayGrid( {dayOfMonth, year, month} ){
         <>
             {/* THE DATE BOX ITSELF CONTAINING SUBINFO AND IF ACTIVE (CURRRENT DAY) */}
             <div className = {`day-grid-wrapper ${isToday ? "active" : ""}`}>
+                {/* TOP LEFT WEATHER OF THE CURRENT DAY */}
+                {isWithinWeather && <text className = "day-grid-weather-header">{weather ? weatherCodeToText(getDailyGeneralWeather(weather.hourly.weathercode, dayIndex)) : ""}</text>}
                 {/* TOP RIGHT DAY NUMBER IN THE BOX */}
                 <text className = "day-grid-day-number">{dayOfMonth}</text>
                 {/* SECTION TO HOLD TILED REMINDERS / SUGGESTIONS */}
@@ -56,6 +75,47 @@ function DayGrid( {dayOfMonth, year, month} ){
         </>
     );
 
+}
+
+//TURNS THE WEATHER CODE TO MEANINGFUL TEXT 
+function weatherCodeToText(code) {
+    switch (code) {
+        case 0: return "Sunny";
+        case 1: return "Mostly Sunny";
+        case 2: return "Partly Cloudy";
+        case 3: return "Overcast";
+        case 45: case 48: return "Foggy";
+        case 51: case 53: case 55: return "Drizzle";
+        case 61: case 63: case 65: return "Rainy";
+        case 71: case 73: case 75: return "Snowy";
+        case 80: case 81: case 82: return "Rain showers";
+        case 95: return "Thunderstorm";
+        case 96: case 99: return "Thunderstorm with hail";
+        default: return "Unknown";
+    }
+}
+
+//GETS THE MOST GENERAL WEATHER FOR THE DAY BASED ON CHOOSING 
+//THE WEATHERCODE THAT IS MOST OCCURING
+function getDailyGeneralWeather(hourlyWeather, dayIndex) {
+    const start = dayIndex * 24;
+    const dayHours = hourlyWeather.slice(start, start + 24);
+
+    // Count frequency
+    const counts = {};
+    dayHours.forEach(code => counts[code] = (counts[code] || 0) + 1);
+
+    // Find most frequent
+    let maxCount = 0;
+    let generalCode = dayHours[0];
+    for (const code in counts) {
+        if (counts[code] > maxCount) {
+            maxCount = counts[code];
+            generalCode = parseInt(code);
+        }
+    }
+
+    return generalCode;
 }
 
 //OBTAINS SUGGESTIONS FROM BACKEND THROUGH API CALL
