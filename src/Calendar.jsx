@@ -9,6 +9,7 @@ function Calendar({totalNumMonths}){
 
     //HTML DOM RETURN
     return(
+        //BACKGROUND WITH THE CURRENT BACKGROUND IMAGE EMBEDDED IN STYLE
         <div className = "calendar-calendar-background">
             {/* WRAPPER FOR CALENDAR MONTHS TO BE STACKED PROPERLY */}
             {/* SHOW THE CALENDARS FOR FIRST 5 MONTHS */}

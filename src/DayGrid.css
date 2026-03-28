@@ -1,35 +1,41 @@
 /* ===================== DAY GRID WRAPPER ===================== */
 
 /* STANDARD DAY GRID WRAPPER */
-.day-grid-wrapper{
+.day-grid-wrapper {
   position: relative;
-  background: #12121f;               /* very dark navy/charcoal */
-  border: 1px solid #2c2c3e;         /* subtle border */
-  border-radius: 10px;        /* slightly more rounded */
+  background-color: rgba(26, 26, 46, 0.277); /* subtle transparent */
+  border: 1px solid rgba(44, 44, 62, 0.0);  /* subtle border */
+  border-radius: 10px;
   text-align: left;
   padding: 10px 0;
   font-weight: 400;
   color: #e0e0e0;
-  box-shadow: 0 3px 6px rgba(0,0,0,0.25); /* deeper subtle depth */
+  box-shadow: 0 3px 6px rgba(0,0,0,0.25);
   transition: all 0.2s ease;
   cursor: default;
+
+  /* Glass effect */
+  backdrop-filter: blur(8px);           /* frosted blur */
+  -webkit-backdrop-filter: blur(8px);   /* Safari support */
 }
 
 /* HOVER EFFECT */
 .day-grid-wrapper:hover {
-  background: #1a1a2e;               /* slightly lighter on hover */
+  background-color: rgba(26, 26, 46, 0.4); /* slightly darker overlay */
   box-shadow: 0 4px 8px rgba(0,0,0,0.25);
   transform: translateY(-1px);
 }
+
 .day-grid-wrapper.active:hover {
-  background: #1a1a2e;               /* slightly lighter on hover */
+  background-color: rgba(26, 26, 46, 0.7); /* subtle transparent */
   box-shadow: 0 4px 8px rgba(0,0,0,0.25);
   transform: translateY(-1px);
 }
 
 /* CURRENT DAY */
 .day-grid-wrapper.active{
-  border: 2px solid #64b5f6;           /* keeps subtle outline */
+  border: 5px solid #64b5f6;           /* keeps subtle outline */
+  background-color: rgba(26, 26, 46, 0.575); /* subtle transparent */
   font-weight: 500;
   color: #e0e0e0;                       /* keep text readable */
   box-shadow: 0 2px 6px rgba(100,181,246,0.2); /* subtle glow */
@@ -69,7 +75,6 @@
   padding: 4px 8px;
   padding-top: 15px;
   border-radius: 4px;
-  background: inherit;
   justify-content: flex-start; /* top */
   align-items: flex-start;     /* left */
 }

@@ -4,6 +4,17 @@ import './CalendarMonth.css';
 import DayGrid from './DayGrid.jsx';
 import Weather from './Weather.jsx'
 
+//PICTURE BACKGROUND IMPORTS
+import ClearSky from './weather_backgrounds/ClearSky.jpg';
+import Cloudy from './weather_backgrounds/Cloudy.jpg';
+import NightClear from './weather_backgrounds/NightClear.jpg';
+import NightCloudy from './weather_backgrounds/NightCloudy.jpg';
+import NightPartlyCloudy from './weather_backgrounds/NightPartlyCloudy.jpg';
+import PartlyCloudy from './weather_backgrounds/PartlyCloudy.jpg';
+import SunsetSunriseClearSky from './weather_backgrounds/SunsetSunriseClearSky.png';
+import SunsetSunriseCloudy from './weather_backgrounds/SunsetSunriseCloudy.jpg';
+import SunsetSunrisePartlyCloudy from './weather_backgrounds/SunsetSunrisePartlyCloudy.jpg';
+
 //USE STATE AND EFFECT FOR AUTO UPDATES & DOM RELOAD SAVE
 import { useState } from 'react';
 
@@ -40,12 +51,52 @@ function CalendarMonth({monthsAwayFromNow, singleMonth}){
     //TBD WHEN YOU CLICK THE MONTH/YEAR HEADER
     const [monthDropdown, setMonthDropdown] = useState(false);
 
+    //GETS THE CURRENT WEATHER IN REAL TIME
+    const [currentWeather, setCurrentWeather] = useState(-1);
+
+    //GETS THE CURRENT TIME OF DAY
+    function getTimeOfDay() {
+        const hour = new Date().getHours();
+        if (hour >= 6 && hour < 9) return "sunrise";
+        if (hour >= 9 && hour < 18) return "day";
+        if (hour >= 18 && hour < 21) return "sunset";
+        return "night";
+    }
+
+    //TURNS THE CURRENT WEATHER INTO A WEATHER IMAGE
+    function getWeatherImg(currentWeather){
+        
+        //OBTAIN THE CURRENT TIME OF THE DAY
+        const timeOfDay = getTimeOfDay();
+
+        //CHANGE BACKGROUND BASED ON WEATHER AND TIME OF DAY
+        switch(currentWeather){
+            //RETURNS THE WEATHER OF THE CURRENT DAY
+            case "Clear sky": 
+                //SHOW DIFFERENT IMAGES AT DIFFERENT TIMES OF DAY
+                if(timeOfDay === "sunrise" || timeOfDay === "sunset") return SunsetSunriseClearSky;
+                else if(timeOfDay === "day") return ClearSky;
+                else return NightClear;
+            case "Overcast": 
+                //SHOW DIFFERENT IMAGES AT DIFFERENT TIMES OF DAY
+                if(timeOfDay === "sunrise" || timeOfDay === "sunset") return SunsetSunriseCloudy;
+                else if(timeOfDay === "day") return Cloudy;
+                else return NightCloudy;
+            case "Partly cloudy": 
+                //SHOW DIFFERENT IMAGES AT DIFFERENT TIMES OF DAY
+                if(timeOfDay === "sunrise" || timeOfDay === "sunset") return SunsetSunrisePartlyCloudy;
+                else if(timeOfDay === "day") return PartlyCloudy;
+                else return NightPartlyCloudy;
+            default: return null;
+        }
+    }
+
     //ARRAY OF DAYS WITHIN THE MONTH (CONSTANT RERENDER ON DOM CHANGE)
     const daysArr =  
         //CREATE AN ARRAY OF DAYS IN MONTH LENGTH
         Array.from( {length : daysInMonth}, (_, i) => 
             //THEN TAGS TO DAY GRID SUBCLASS WITH ITERATIVE INFO
-            <DayGrid key = {i} weather = {weather} maxFutureWeatherDays = {maxFutureWeatherDays} maxPastWeatherDays = {maxPastWeatherDays} dayOfMonth = {i + 1} year = {year} month = {date.getMonth() + monthsFromNow}/>
+            <DayGrid key = {i} setCurrentWeather = {setCurrentWeather} weather = {weather} maxFutureWeatherDays = {maxFutureWeatherDays} maxPastWeatherDays = {maxPastWeatherDays} dayOfMonth = {i + 1} year = {year} month = {date.getMonth() + monthsFromNow}/>
         );
 
     return (
@@ -54,7 +105,7 @@ function CalendarMonth({monthsAwayFromNow, singleMonth}){
             <Weather setWeather = {setWeather} desiredDate = {targetDate} additionalDays = {maxFutureWeatherDays} priorDays = {maxPastWeatherDays} />
 
             {/* WRAPPER FOR THE MAIN CALENDAR THAT HOLDS THE ARRAY OF DAYS */}
-            <div className="calendar-month-wrapper">
+            <div className="calendar-month-wrapper" style={{ '--bg-img': `url(${getWeatherImg(currentWeather)})` }}>
                 {/* THE INTERACTABLE HEADER FOR CALENDAR */}
                 <div className="calendar-month-interactable-header">
                     {/* LEFT ARROW TO DECREMENT BY A MONTH (ONLY FOR ONE MONTH) */}
@@ -80,7 +131,6 @@ function CalendarMonth({monthsAwayFromNow, singleMonth}){
             </div>
         </>
     );
-
 
 }
 
