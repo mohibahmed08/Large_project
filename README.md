@@ -1,70 +1,40 @@
-# Getting Started with Create React App
+# Large Project - COP4331C, Processes for Object-Oriented Software Development (POOSD)
+In this project, we designed, developed, deployed, and present a Personal Calendar web application.
+Each user on the app can create an account, log in, and manage their own tasks. This app is enhanced with AI suggestions for users.
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+## Features of the app
+* User Authentication:
+  - Registration (Sign up)
+  - Login
+  - Password Reset
+  - Email Authentication
+* Task Management (per user)
+  - Add tasks
+  - Edit tasks
+  - Delete tasks
+  - Search tasks
+  - Receive AI suggestions
+  - Share tasks with other users (stretch goal)
 
-## Available Scripts
+## Technologies Used
+A MERN (MongoDB, Express.js, React.js, and Node.js) stack, provided through Digital Ocean, was used in a droplet. The domain
+name was obtained through GoDaddy.
 
-In the project directory, you can run:
+## How To Access Application (as of April 16, 2026)
+**http://calendarplusplus.xyz/**
 
-### `npm start`
+## AI Use
+We acknowledge the use of AI to help set up, debug, and configure this application, helping us learn along the way.
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+## Meet the Dev team
+* Ryan Murphy: Project Manager / Front-End
+* Mohib Ahmed: Back-End / Mobile
+* Jason Comras: Front-End
+* Austin Robinson: Database
+* Jonathan Slattery: API
+* Tyler Wheelhouse: Mobile
+* Anthony Mahon: Back-End / Front-End
+* Adam Lugo: Back-End
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
 
-### `npm test`
-
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
-
-### `npm run build`
-
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
-
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
-
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
-
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+University of Central Florida, Spring 2026.
