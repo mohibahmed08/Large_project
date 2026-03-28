@@ -1,0 +1,78 @@
+/* ================= MONTH WRAPPER ================= */
+
+.calendar-month-wrapper{
+  display: grid;
+  background: #1e1e2f;
+}
+
+/* ================= MONTH NAME ================= */
+.calendar-month-interactable-header {
+  position: sticky;
+  top: 0;
+  z-index: 9;
+
+  display: flex;
+  align-items: center;
+  justify-content: center; /* center them together */
+  gap: 1em; /* small spacing between items */
+
+  user-select: none; /* prevent text highlighting */
+
+  padding: 10px 0;
+  background-color: inherit;
+}
+
+.calendar-month-month-name {
+  cursor: pointer;
+  font-weight: 600;
+
+  width: 250px;       /* fixed width */
+  text-align: center; /* center the text inside */
+}
+.calendar-month-month-name,
+.calendar-month-arrow {
+  cursor: pointer;
+  margin: 0; /* remove default margin */
+  font-weight: 600;
+}
+
+/* ================= WEEKDAY HEADER ================= */
+.calendar-weekdays {
+  position: sticky;
+  top: 50px; /* match height of month header (content + padding) */
+  z-index: 10;
+
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+
+  text-align: center;
+  font-weight: 600;
+
+  padding: 8px 0;  /* internal spacing for the header cells */
+  margin: 0;        /* remove default margin */
+  background-color: inherit;
+}
+
+.weekday {
+  padding: 10px; /* remove extra padding from individual weekday cells */
+}
+/* ================= DAY GRID ================= */
+
+.calendar-month-day-grid-wrapper{
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 10px;
+  margin-top: 4px; /* small natural separation */
+}
+
+
+/* day cell shape */
+.calendar-month-day-grid-wrapper > *{
+  aspect-ratio: 1 / 0.9;
+}
+
+
+/* indent first day */
+.calendar-month-day-grid-wrapper > :first-child{
+  grid-column-start: var(--first-day);
+}
