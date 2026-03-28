@@ -44,6 +44,15 @@
 
 /* ===================== DAY GRID FIELDS ===================== */
 
+.day-grid-weather-header{
+  position: absolute;
+  top: 7.8%;       /* distance from top */
+  left: 10%;     /* distance from right */
+  font-size: 1.2em;
+  font-weight: bold;
+  color: #ffffffc1;                       /* keep text readable */
+}
+
 /* TOP LEFT DAY NUMBER */
 .day-grid-day-number{
   position: absolute;
@@ -58,6 +67,7 @@
   display: flex;
   flex-direction: column; /* stack multiple events vertically */
   padding: 4px 8px;
+  padding-top: 15px;
   border-radius: 4px;
   background: inherit;
   justify-content: flex-start; /* top */
