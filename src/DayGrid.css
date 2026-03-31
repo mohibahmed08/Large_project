@@ -4,7 +4,7 @@
 .day-grid-wrapper {
   position: relative;
   background-color: rgba(26, 26, 46, 0.277); /* subtle transparent */
-  border: 1px solid rgba(44, 44, 62, 0.0);  /* subtle border */
+  border: 1px solid rgba(94, 94, 110, 0.509);  /* subtle border */
   border-radius: 10px;
   text-align: left;
   padding: 10px 0;
@@ -17,6 +17,7 @@
   /* Glass effect */
   backdrop-filter: blur(8px);           /* frosted blur */
   -webkit-backdrop-filter: blur(8px);   /* Safari support */
+
 }
 
 /* HOVER EFFECT */
@@ -46,6 +47,34 @@
 .day-grid-wrapper,
 .day-grid-wrapper.active {
   transition: all 0.2s ease;
+}
+
+/* GRAY OUT A BIT IF PAST MONTH */
+/* OTHER MONTH DAYS */
+.day-grid-wrapper.other-month {
+  background-color: rgba(26, 26, 46, 0.6); /* slightly lighter than main month */
+  border: 1px solid rgba(94, 94, 110, 0.35);  /* softer than active/current */
+  border-left: 3px solid rgba(200, 200, 255, 0.25); /* subtle accent */
+  color: rgba(224, 224, 224, 0.5); /* faded text, readable but distinct */
+  transition: all 0.2s ease;
+}
+
+/* Hover effect for previous/next month days */
+.day-grid-wrapper.other-month:hover {
+  background-color: rgba(26, 26, 46, 0.68); /* slightly brighter on hover */
+  box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+  transform: none;
+  cursor: default;
+}
+
+/* ACTIVE DAY IN OTHER MONTH */
+.day-grid-wrapper.active.other-month {
+  border: 5px solid #64b4f66b;             /* same outline as current month active */
+  background-color: rgba(26, 26, 46, 0.78); /* standout, slightly transparent */
+  box-shadow: 0 2px 6px rgba(100, 181, 246, 0.35);
+  color: #e0e0e0;                         /* readable text */
+  transform: none;
+  z-index: 1;
 }
 
 /* ===================== DAY GRID FIELDS ===================== */

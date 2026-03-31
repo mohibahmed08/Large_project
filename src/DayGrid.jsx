@@ -8,7 +8,7 @@ import './DayGrid.css';
 //WITHIN THE CALENDAR U.I.
 
 //SHOULD BE USED AS AN ARRAY OF DAYS WITHIN THE CALENDAR U.I.
-function DayGrid( { weather, setCurrentWeather, maxFutureWeatherDays, maxPastWeatherDays, dayOfMonth, year, month} ){
+function DayGrid( { weather, setCurrentWeather, maxFutureWeatherDays, maxPastWeatherDays, dayOfMonth, year, month, isOtherMonth} ){
 
     //DATE OBJECT FOR DETERMINING THINGS
     const date = new Date();
@@ -47,15 +47,15 @@ function DayGrid( { weather, setCurrentWeather, maxFutureWeatherDays, maxPastWea
 
     //GENERAL WEATHER FOR THE CURRENT DAY
     const generalWeather = weather ? weatherCodeToText(getDailyGeneralWeather(weather.hourly.weathercode, dayIndex)) : "";
-
+    
     //PASS IN THE CURRENT WEATHER FOR TODAY
     if(isToday) setCurrentWeather(generalWeather);
 
     //RETURN DOM
     return (
         <>
-            {/* THE DATE BOX ITSELF CONTAINING SUBINFO AND IF ACTIVE (CURRRENT DAY) */}
-            <div className = {`day-grid-wrapper ${isToday ? "active" : ""}`}>
+            {/* THE DATE BOX ITSELF CONTAINING SUBINFO AND IF ACTIVE (CURRRENT DAY), OTHER MONTH IF SPACER FROM PRIOR/NEXT MONTH BLEEDING OVER TO THIS ONE */}
+            <div className = {`day-grid-wrapper ${isToday ? "active" : ""} ${isOtherMonth ? "other-month" : ""}`}>
                 {/* TOP LEFT WEATHER OF THE CURRENT DAY */}
                 {isWithinWeather && <text className = "day-grid-weather-header">{generalWeather}</text>}
                 {/* TOP RIGHT DAY NUMBER IN THE BOX */}
