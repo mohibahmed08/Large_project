@@ -5,11 +5,12 @@ import { useState } from 'react';
 //IMPORT FOR CALENDAR UI
 import Calendar from './Calendar.jsx';
 import Login from './login.jsx'
+import Weather from './Weather.jsx'
 
 //MAIN EXPORTED FUNCTION
 function App(){
-
-    // SET AUTHENTICATED
+    
+    //SET AUTHENTICATED
     const [isAuthenticated, setIsAuthenticated] = useState(false);
 
     //HTML DOM RETURN
@@ -23,11 +24,12 @@ function App(){
             {/* THAT THE USER MIGHT BE TRYING TO FIND, BUT FOR NOW I'M MADE THIS MODULAR SO IT */}
             {/* CAN HOPEFULLY BE EMBEDDED IN SOMETHING ELSE OR ANOTHER WRAPPER WITH LITTLE TO NO */}
             {/* PROBLEMS */}
-            {isAuthenticated ? (
+            {/* {isAuthenticated ? (
                 <Calendar totalNumMonths={1} />
             ) : (
                 <Login setIsAuthenticated={setIsAuthenticated} />
-            )}
+            )} */}
+            <Calendar totalNumMonths={1} />
             {/* <Calendar totalNumMonths={1} /> */}
             {/* IF TOTAL MONTHS = 1, THEN ARROWS ENABLED, OTHERWISE YOU HAVE TO SCROLL */}
         </>

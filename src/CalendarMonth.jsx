@@ -2,6 +2,7 @@ import './CalendarMonth.css';
 
 //DAY GRID FOR THE CALENDAR
 import DayGrid from './DayGrid.jsx';
+import Weather from './Weather.jsx'
 
 //USE STATE AND EFFECT FOR AUTO UPDATES & DOM RELOAD SAVE
 import { useState } from 'react';
@@ -9,6 +10,9 @@ import { useState } from 'react';
 //MAIN CONSTRUCTOR FOR CALENDAR MONTH
 function CalendarMonth({monthsAwayFromNow, singleMonth}){
 
+    //HOLDS THE CURRENT WEATHER STATE FOR EXTENDED TIME
+    const [weather, setWeather] = useState(null);
+    
     //HOLDS DATE GENERAL OBJECT
     const date = new Date();
 
@@ -26,21 +30,29 @@ function CalendarMonth({monthsAwayFromNow, singleMonth}){
     // CURRENT YEAR (YYYY FORMAT)
     const year = targetDate.getFullYear();
 
-    const [monthDropdown, setMonthDropdown] = useState(false);
+    //MAXIMUM WEATHER DAYS DISPLAYED
+    const maxFutureWeatherDays = 20;
+    const maxPastWeatherDays = 20;
 
     //ARRAY OF WEEKDAY NAMES FOR TITLES
     const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    
+    //TBD WHEN YOU CLICK THE MONTH/YEAR HEADER
+    const [monthDropdown, setMonthDropdown] = useState(false);
 
     //ARRAY OF DAYS WITHIN THE MONTH (CONSTANT RERENDER ON DOM CHANGE)
     const daysArr =  
         //CREATE AN ARRAY OF DAYS IN MONTH LENGTH
         Array.from( {length : daysInMonth}, (_, i) => 
             //THEN TAGS TO DAY GRID SUBCLASS WITH ITERATIVE INFO
-            <DayGrid key = {i} dayOfMonth = {i + 1} year = {year} month = {date.getMonth() + monthsFromNow}/>
+            <DayGrid key = {i} weather = {weather} maxFutureWeatherDays = {maxFutureWeatherDays} maxPastWeatherDays = {maxPastWeatherDays} dayOfMonth = {i + 1} year = {year} month = {date.getMonth() + monthsFromNow}/>
         );
 
     return (
         <>
+            {/* OBTAIN WEATHER FOR THE NEXT 7 DAYS */}
+            <Weather setWeather = {setWeather} desiredDate = {targetDate} additionalDays = {maxFutureWeatherDays} priorDays = {maxPastWeatherDays} />
+
             {/* WRAPPER FOR THE MAIN CALENDAR THAT HOLDS THE ARRAY OF DAYS */}
             <div className="calendar-month-wrapper">
                 {/* THE INTERACTABLE HEADER FOR CALENDAR */}
