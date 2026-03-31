@@ -37,6 +37,10 @@
   font-weight: 600;
 }
 
+.calendar-month-arrow{
+  filter: invert(1) brightness(2);
+}
+
 /* ================= WEEKDAY HEADER ================= */
 .calendar-weekdays {
   position: sticky;
@@ -74,7 +78,7 @@
   aspect-ratio: 1 / 0.9;
 }
 
-/* indent first day */
-/* .calendar-month-day-grid-wrapper > :first-child{
+/* INDENT FIRST DAY IF NOT SINGLE MONTH */
+.calendar-month-day-grid-wrapper > :first-child{
   grid-column-start: var(--first-day);
-} */
+}

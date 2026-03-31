@@ -2,6 +2,10 @@
   min-height: 100vh;   /* fills the viewport */
   width: 100%;
 
+  /* display: flex;
+  flex-direction: column;
+  height: 100vh; */
+
   color: #e0e0e0;      /* default text color for readability */
 
   background-image: var(--bg-img);
@@ -10,3 +14,8 @@
   background-attachment: fixed;          /* stays fixed relative to viewport */
   background-size: 100% 100%;            /* stretch to fill the element fully */
 }
+
+/* .calendar-scroll-container {
+  flex: 1;          
+  overflow-y: auto; 
+} */
