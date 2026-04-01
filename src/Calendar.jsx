@@ -175,7 +175,7 @@ function Calendar({singleMonth}){
                 </div>
             ) : (
                 //SCROLL CONTAINER FOR THE MONTHS TO COMPUTE CURRENT MONTH HEADER
-                <div ref={containerRef} style = {{ overflowY: "scroll", maxHeight: "900px" }}>
+                <div ref={containerRef} style = {{ overflowY: "scroll", maxHeight: "100vh" }}>
                     {/* WRAPPER FOR CALENDAR MONTHS TO BE STACKED PROPERLY */}
                     {/* SHOW THE CALENDARS FOR FIRST 5 MONTHS */}
                     {Array.from({ length: renderedMonths }, (_, i) => (
