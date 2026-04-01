@@ -16,7 +16,7 @@ function CalendarMonth({monthsFromNow, setBackgroundWeather, singleMonth}){
     //HOLDS DATE GENERAL OBJECT
     const date = new Date();
 
-    //COMPUTE THE FIRST DAY OF THE TARGET MONTH
+    // COMPUTE THE FIRST DAY OF THE TARGET MONTH
     const targetDate = new Date(date.getFullYear(), date.getMonth() + monthsFromNow, 1);
     // HOW MANY DAYS ARE WITHIN THIS MONTH
     const daysInMonth = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0).getDate();
@@ -25,15 +25,30 @@ function CalendarMonth({monthsFromNow, setBackgroundWeather, singleMonth}){
     // CURRENT YEAR (YYYY FORMAT)
     const year = targetDate.getFullYear();
 
-    //MAXIMUM WEATHER DAYS DISPLAYED
-    const maxFutureWeatherDays = 30;
-    const maxPastWeatherDays = 30;
+    // WEATHER API RANGE
+    const earliestAllowed = new Date(date.getFullYear(), date.getMonth() - 4, date.getDate()); // 4 months ago
     
+    const latestAllowed = new Date(date); // today
+    latestAllowed.setDate(latestAllowed.getDate() + 15); // 16 days in future
+
+    // CLAMP TARGET MONTH TO WEATHER-ALLOWED RANGE
+    const monthStart = targetDate < earliestAllowed ? earliestAllowed : targetDate;
+    const monthEndDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), daysInMonth);
+    const monthEnd = monthEndDate > latestAllowed ? latestAllowed : monthEndDate;
+
+    // WEATHER ENABLED?
+    const weatherEnabled = monthEnd >= monthStart;
+    // MAXIMUM WEATHER DAYS
+    const maxPastWeatherDays = weatherEnabled ? Math.max(0, Math.floor((date - monthStart) / (1000 * 60 * 60 * 24))) : 0;
+    const maxFutureWeatherDays = weatherEnabled ? Math.max(0, Math.floor((monthEnd - date) / (1000 * 60 * 60 * 24))) : 0;
+
     //GETS THE CURRENT WEATHER IN REAL TIME
     const [currentWeather, setCurrentWeather] = useState(-1);
 
     //WHEN CURRENT WEATHER CHANGES, PASS UP WEATHER FOR BACKGROUND
     useEffect(()=>{
+        //IF WEATHER ISN'T ENABLED OR WEATHER IS NULL, RETURN
+        if(!weatherEnabled || !currentWeather) return;
         //PASS BACKGROUND WEATHER UP ON CURRENT WEATHER CHANGE
         setBackgroundWeather(currentWeather);
     }, [currentWeather])
@@ -65,7 +80,7 @@ function CalendarMonth({monthsFromNow, setBackgroundWeather, singleMonth}){
     return (
         <>
             {/* OBTAIN WEATHER FOR THE NEXT 7 DAYS */}
-            <Weather setWeather = {setWeather} desiredDate = {targetDate} additionalDays = {maxFutureWeatherDays} priorDays = {maxPastWeatherDays} />
+            {weatherEnabled && <Weather setWeather = {setWeather} desiredDate = {monthStart} additionalDays = {maxFutureWeatherDays} priorDays = {maxPastWeatherDays}/>}
 
             {/* WRAPPER FOR THE MAIN CALENDAR THAT HOLDS THE ARRAY OF DAYS */}
             {/* style={{ '--bg-img': `url(${getWeatherImg(currentWeather)})` }} */}
@@ -77,7 +92,6 @@ function CalendarMonth({monthsFromNow, setBackgroundWeather, singleMonth}){
             </div>
         </>
     );
-
 }
 
 //EXPORTABLE FOR APP (MAIN)
