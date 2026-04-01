@@ -26,30 +26,46 @@ function Calendar({totalNumMonths}){
 
     //GENERAL DATE OBJECT
     const date = new Date();
-
+    const baseMonth = new Date().getMonth();
+    
     //BACKGROUND FOR THE GENERAL CALENDAR
     const [background, setBackground] = useState(null);
     const [backgroundWeather, setBackgroundWeather] = useState(-1);
 
     //HOLDS MONTHS AWAY FROM NOW (CURRENT MONTH)
-    const [monthsFromNow, setMonthsFromNow] = useState(0);
+    const [currentMonthIndex, setCurrentMonthIndex] = useState(0);
 
     //OBSERVER TO CHANGE MONTH HEADER BASED ON MAJORITY OF MONTH ON SCREEN
     //BASICALLY IF MORE THAN HALF OF APRIL IS ON THE SCREEN AND LESS THAN HALF OF
     //MAY IS ON SCREEN, APRIL WILL BE THE HEADER, ONCE MAY IS ON SCREEN MORE THAN HALF, THEN MAY
+    const containerRef = useRef(null);
 
-    //TO BE DONE, AT THE MOMENT MONTH HEADERS DO NOT UPDATE PROPERLY WHEN SCROLLING ON MULTIPLE
-    // const containerRef = useRef();
-
-    // const handleScroll = () => {
-    //     const scrollTop = containerRef.current.scrollTop; // vertical
-    //     const monthHeight = containerRef.current.firstChild.offsetHeight; // assumes all months same height
-    //     const monthIndex = Math.round(scrollTop / monthHeight);
-    //     setMonthsFromNow(monthIndex);
-    // };
+    //NOT MY CODE, BASICALLY JUST DETERMINES WHICH MONTH IS CURRENTLY
+    //ON SCREEN BASED ON IT BEING MORE THAN HALF VISIBLE, THEN SWITCHES
+    //TO THAT MONTH BY INCREMENTING THE CURRENT MONTH INDEX
+    useEffect(() => {
+        //DO NOT USE IF ON SINGLE MONTH USE
+        if(totalNumMonths === 1) return;
+        //OTHERWISE USE TO DETERMINE HEADER BASED ON SCROLL POSITION
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    const ratio = entry.intersectionRatio;
+                    if (ratio >= 0.5) { // more than half visible
+                        const index = Number(entry.target.dataset.index);
+                        setCurrentMonthIndex(index);
+                    }
+                });
+            },
+            { root: containerRef.current, threshold: Array.from({ length: 101 }, (_, i) => i / 100), }
+        );
+        const months = containerRef.current.querySelectorAll(".calendar-month");
+        months.forEach((month) => observer.observe(month));
+        return () => observer.disconnect();
+    }, []);
 
     //COMPUTE THE FIRST DAY OF THE TARGET MONTH
-    const targetDate = new Date(date.getFullYear(), date.getMonth() + monthsFromNow, 1);
+    const targetDate = new Date(date.getFullYear(), baseMonth + currentMonthIndex, 1);
     // THE CURRENT MONTH'S NAME
     const monthName = targetDate.toLocaleString('default', { month: 'long' });
     // CURRENT YEAR (YYYY FORMAT)
@@ -113,11 +129,11 @@ function Calendar({totalNumMonths}){
             {/* THE INTERACTABLE HEADER FOR CALENDAR */}
             <div className="calendar-month-interactable-header">
                 {/* LEFT ARROW TO DECREMENT BY A MONTH (ONLY FOR ONE MONTH) */}
-                {totalNumMonths === 1 && <img onClick = {()=>setMonthsFromNow(monthsFromNow - 1)} className = "calendar-month-arrow" src = {UpArrow}/>}
+                {totalNumMonths === 1 && <img onClick = {()=>setCurrentMonthIndex(currentMonthIndex - 1)} className = "calendar-month-arrow" src = {UpArrow}/>}
                 {/* MONTH NAME CORESPONDING TO CURRENT MONTH */}
                 <h1 className = "calendar-month-month-name" onClick = {()=>{totalNumMonths === 1 && setMonthDropdown(!monthDropdown)}}>{monthName + " " + year}</h1>
                 {/* LEFT ARROW TO INCREMENT BY A MONTH (ONLY FOR ONE MONTH) */}
-                {totalNumMonths === 1 && <img onClick = {()=>setMonthsFromNow(monthsFromNow + 1)} className = "calendar-month-arrow" src = {DownArrow}/>}
+                {totalNumMonths === 1 && <img onClick = {()=>setCurrentMonthIndex(currentMonthIndex + 1)} className = "calendar-month-arrow" src = {DownArrow}/>}
             </div>
 
             {/* WEEKDAY HEADER (MONDAY, TUESDAY, ...) */}
@@ -130,30 +146,24 @@ function Calendar({totalNumMonths}){
                 ))}
             </div>
 
-            {/* WRAPPER FOR CALENDAR MONTHS TO BE STACKED PROPERLY */}
-            {/* SHOW THE CALENDARS FOR FIRST 5 MONTHS */}
-            {Array.from({ length: totalNumMonths }, (_, i) => (
-                <div key={i} data-index={i} className="calendar-month">
-                    <CalendarMonth key={i} monthsFromNow = {monthsFromNow + (i)} setBackgroundWeather = {setBackgroundWeather} singleMonth = {totalNumMonths === 1}/>
+            {/* CHECK THE TOTAL NUM MONTHS */}
+            {totalNumMonths == 1 ? (
+                //SINGLE MONTH DOESN'T NEED SCROLLING THEREFORE DON'T USE IT
+                <div className="calendar-month" >
+                    <CalendarMonth monthsFromNow = {currentMonthIndex} setBackgroundWeather = {setBackgroundWeather} singleMonth = {totalNumMonths === 1}/>
                 </div>
-            ))}
-
-            {/* <div
-                className="calendar-scroll-container"
-                ref={containerRef}
-                onScroll={handleScroll} 
-            >
-                {Array.from({ length: totalNumMonths }, (_, i) => (
-                <div key={i} className="calendar-month">
-                    <CalendarMonth
-                    monthsFromNow={i}
-                    setBackgroundWeather={setBackgroundWeather}
-                    singleMonth={totalNumMonths === 1}
-                    />
+            ) : (
+                //SCROLL CONTAINER FOR THE MONTHS TO COMPUTE CURRENT MONTH HEADER
+                <div ref={containerRef} style = {{ overflowY: "scroll", maxHeight: "900px" }}>
+                    {/* WRAPPER FOR CALENDAR MONTHS TO BE STACKED PROPERLY */}
+                    {/* SHOW THE CALENDARS FOR FIRST 5 MONTHS */}
+                    {Array.from({ length: totalNumMonths }, (_, i) => (
+                        <div key={i} data-index={i} className="calendar-month" >
+                            <CalendarMonth monthsFromNow = {i} setBackgroundWeather = {setBackgroundWeather} singleMonth = {totalNumMonths === 1}/>
+                        </div>
+                    ))}
                 </div>
-                ))}
-            </div> */}
-
+            )}
         </div>
     );
 
