@@ -22,7 +22,7 @@ import UpArrow from './icons/arrow-big-up.svg';
 import DownArrow from './icons/arrow-big-down.svg';
 
 //MAIN EXPORTED FUNCTION
-function Calendar({singleMonth}){
+function Calendar({singleMonth, setBackground}){
 
     //GENERAL DATE OBJECT
     const date = new Date();
@@ -30,15 +30,7 @@ function Calendar({singleMonth}){
 
     //RENDER MULTIPLE MONTHS WHEN NOT SINGLE MONTH
     const [renderedMonths, setRenderedMonths] = useState(1);
-
-    //BACKGROUND FOR THE GENERAL CALENDAR
-    const [background, setBackground] = useState(null);
     const [backgroundWeather, setBackgroundWeather] = useState(-1);
-
-    //Apply the weather background to the entire app body!
-    useEffect(() => {
-        document.body.style.setProperty('--bg-img', `url(${backgroundWeather})`);
-    }, [backgroundWeather]);
 
     //HOLDS MONTHS AWAY FROM NOW (CURRENT MONTH)
     const [currentMonthIndex, setCurrentMonthIndex] = useState(0);
@@ -103,7 +95,7 @@ function Calendar({singleMonth}){
     //TBD WHEN YOU CLICK THE MONTH/YEAR HEADER
     const [monthDropdown, setMonthDropdown] = useState(false);
 
-     //GETS THE CURRENT TIME OF DAY
+    //GETS THE CURRENT TIME OF DAY
     function getTimeOfDay() {
         const hour = new Date().getHours();
         if (hour >= 6 && hour < 9) return "sunrise";
@@ -122,11 +114,13 @@ function Calendar({singleMonth}){
         switch(currentWeather){
             //RETURNS THE WEATHER OF THE CURRENT DAY
             case "Clear sky": 
+            case "Mostly clear":
                 //SHOW DIFFERENT IMAGES AT DIFFERENT TIMES OF DAY
                 if(timeOfDay === "sunrise" || timeOfDay === "sunset") return SunsetSunriseClearSky;
                 else if(timeOfDay === "day") return ClearSky;
                 else return NightClear;
             case "Overcast": 
+            case "Light drizzle":
                 //SHOW DIFFERENT IMAGES AT DIFFERENT TIMES OF DAY
                 if(timeOfDay === "sunrise" || timeOfDay === "sunset") return SunsetSunriseCloudy;
                 else if(timeOfDay === "day") return Cloudy;
@@ -150,7 +144,7 @@ function Calendar({singleMonth}){
     //HTML DOM RETURN
     return(
         //BACKGROUND WITH THE CURRENT BACKGROUND IMAGE EMBEDDED IN STYLE
-        <div className = "calendar-calendar-background" style={{ '--bg-img': `url(${background}`}}>
+        <div className = "calendar-calendar-background">
 
             {/* THE INTERACTABLE HEADER FOR CALENDAR */}
             <div className="calendar-month-interactable-header">

@@ -1,15 +1,4 @@
 /* --- GLOBAL RESETS --- */
-body {
-  background-color: #1e1e2f;
-  background-image: var(--bg-img);       /* Grabs the weather image from Calendar.jsx */
-  background-repeat: no-repeat;
-  background-position: center center;
-  background-attachment: fixed;
-  background-size: cover;                /* Ensures it covers the whole screen */
-  margin: 0;
-  overflow: hidden;                      /* Stops the whole page from scrolling */
-}
-
 * {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -21,11 +10,15 @@ body {
 /* --- SIDEBAR LAYOUT --- */
 .main-layout {
   display: flex;
-  height: 100vh;
-  width: 100vw;
-  background: transparent; /* Lets the body background show through */
+  height: 100%;
+  width: 100%;
+  background-color: #1e1e2f;          /* fallback */
+  background-image: var(--bg-img);    /* dynamic background from style prop */
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: cover;
+  background-attachment: scroll;      /* better cross-browser behavior */
 }
-
 .sidebar {
   background-color: rgba(30, 30, 47, 0.55); /* Semi-transparent dark color */
   backdrop-filter: blur(12px);              /* Glass blur effect */

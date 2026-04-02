@@ -28,6 +28,9 @@ function App(){
     const verticalDateString = currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const fullDateString = currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
+    //BACKGROUND FOR THE GENERAL APPLICATION
+    const [background, setBackground] = useState(null);
+
     //HTML DOM RETURN
     return(
         <>
@@ -40,7 +43,9 @@ function App(){
             {/* CAN HOPEFULLY BE EMBEDDED IN SOMETHING ELSE OR ANOTHER WRAPPER WITH LITTLE TO NO */}
             {/* PROBLEMS */}
             {isAuthenticated ? (
-                <div className="main-layout">
+
+                //PASS THE BACKGROUND IMAGE TO THE APPLICATION WRAPPER
+                <div className="main-layout" style={{ '--bg-img': `url(${background}`}}>
                     
                     {/* LEFT SIDEBAR (Nav + Date) */}
                     <div className={`sidebar left-sidebar ${leftOpen ? 'open' : 'closed'}`}>
@@ -82,7 +87,7 @@ function App(){
                     {/* CENTER CONTENT */}
                     <div className="center-content">
                         <div className="calendar-wrapper">
-                            <Calendar totalNumMonths={1} />
+                            <Calendar singleMonth = {true} setBackground = {setBackground}/>
                         </div>
                     </div>
 
