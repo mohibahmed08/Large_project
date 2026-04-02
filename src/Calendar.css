@@ -1,5 +1,5 @@
 .calendar-calendar-background {
-  min-height: 100vh;   /* fills the viewport */
+  height: 100%;   /* fills the viewport */
   width: 100%;
 
   /* display: flex;

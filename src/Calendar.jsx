@@ -35,6 +35,11 @@ function Calendar({singleMonth}){
     const [background, setBackground] = useState(null);
     const [backgroundWeather, setBackgroundWeather] = useState(-1);
 
+    //Apply the weather background to the entire app body!
+    useEffect(() => {
+        document.body.style.setProperty('--bg-img', `url(${backgroundWeather})`);
+    }, [backgroundWeather]);
+
     //HOLDS MONTHS AWAY FROM NOW (CURRENT MONTH)
     const [currentMonthIndex, setCurrentMonthIndex] = useState(0);
 
@@ -175,7 +180,7 @@ function Calendar({singleMonth}){
                 </div>
             ) : (
                 //SCROLL CONTAINER FOR THE MONTHS TO COMPUTE CURRENT MONTH HEADER
-                <div ref={containerRef} style = {{ overflowY: "scroll", maxHeight: "100vh" }}>
+                <div ref={containerRef} style = {{ overflowY: "scroll", maxHeight: "100%" }}>
                     {/* WRAPPER FOR CALENDAR MONTHS TO BE STACKED PROPERLY */}
                     {/* SHOW THE CALENDARS FOR FIRST 5 MONTHS */}
                     {Array.from({ length: renderedMonths }, (_, i) => (
