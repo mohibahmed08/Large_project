@@ -2,7 +2,6 @@
 
 .calendar-month-wrapper{
   display: grid;
-  background: #1e1e2f;
 }
 
 /* ================= MONTH NAME ================= */
@@ -19,7 +18,9 @@
   user-select: none; /* prevent text highlighting */
 
   padding: 10px 0;
-  background-color: inherit;
+  background-color: rgba(26, 26, 46, 0.5); /* lighter than full black */
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);     /* Safari */
 }
 
 .calendar-month-month-name {
@@ -36,10 +37,14 @@
   font-weight: 600;
 }
 
+.calendar-month-arrow{
+  filter: invert(1) brightness(2);
+}
+
 /* ================= WEEKDAY HEADER ================= */
 .calendar-weekdays {
   position: sticky;
-  top: 50px; /* match height of month header (content + padding) */
+  top: 57px; /* match height of month header (content + padding) */
   z-index: 10;
 
   display: grid;
@@ -50,7 +55,9 @@
 
   padding: 8px 0;  /* internal spacing for the header cells */
   margin: 0;        /* remove default margin */
-  background-color: inherit;
+  background-color: rgba(26, 26, 46, 0.5); /* lighter than full black */
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);     /* Safari */
 }
 
 .weekday {
@@ -71,8 +78,7 @@
   aspect-ratio: 1 / 0.9;
 }
 
-
-/* indent first day */
+/* INDENT FIRST DAY IF NOT SINGLE MONTH */
 .calendar-month-day-grid-wrapper > :first-child{
   grid-column-start: var(--first-day);
 }
