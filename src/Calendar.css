@@ -1,13 +1,21 @@
 .calendar-calendar-background {
-  background: linear-gradient(
-    180deg,
-    #1e1e2f 0%,   /* deep midnight blue */
-    #2c2c3c 50%,  /* slightly lighter in middle */
-    #383847 100%  /* soft charcoal at bottom */
-  );
-
   min-height: 100vh;   /* fills the viewport */
   width: 100%;
 
+  /* display: flex;
+  flex-direction: column;
+  height: 100vh; */
+
   color: #e0e0e0;      /* default text color for readability */
+
+  background-image: var(--bg-img);
+  background-repeat: no-repeat;          /* don’t tile */
+  background-position: center center;    /* center it */
+  background-attachment: fixed;          /* stays fixed relative to viewport */
+  background-size: 100% 100%;            /* stretch to fill the element fully */
 }
+
+/* .calendar-scroll-container {
+  flex: 1;          
+  overflow-y: auto; 
+} */

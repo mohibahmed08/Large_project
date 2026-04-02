@@ -5,7 +5,6 @@ import { useState } from 'react';
 //IMPORT FOR CALENDAR UI
 import Calendar from './Calendar.jsx';
 import Login from './login.jsx'
-import Weather from './Weather.jsx'
 
 //MAIN EXPORTED FUNCTION
 function App(){
@@ -29,7 +28,7 @@ function App(){
             ) : (
                 <Login setIsAuthenticated={setIsAuthenticated} />
             )} */}
-            <Calendar totalNumMonths={1} />
+            <Calendar singleMonth = {false} />
             {/* <Calendar totalNumMonths={1} /> */}
             {/* IF TOTAL MONTHS = 1, THEN ARROWS ENABLED, OTHERWISE YOU HAVE TO SCROLL */}
         </>

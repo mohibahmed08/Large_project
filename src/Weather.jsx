@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 
 //RETURNS THE WEATHER FOR A SPECIFIC DATE
-function Weather({ setWeather, desiredDate, additionalDays = 0, priorDays = 0 }) {
+function Weather({ setWeather, desiredDate, additionalDays, priorDays }) {
 
     //HOLDS CURRENT LONGITUDE AND LATITUDE THAT THE USER IS AT (ONCE ENABLED)
     const [longitude, setLongitude] = useState(null);
