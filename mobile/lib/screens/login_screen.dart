@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 // Note: You will eventually import your auth_service.dart here
 // import '../services/auth_service.dart';
 import 'calendar_screen.dart';
+import 'register_screen.dart';
 
 
 // 1. We use a StatefulWidget because the screen needs to update
@@ -105,7 +106,22 @@ class _LoginScreenState extends State<LoginScreen> {
                 minimumSize: Size(double.infinity, 50), // Makes the button stretch across the screen
               ),
             ),
+
+            SizedBox(height: 16), // A little spacing
+            
+            // --- GO TO REGISTER BUTTON ---
+            TextButton(
+              onPressed: () {
+                // This slides the new screen over the current one
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => RegisterScreen()),
+                );
+              },
+              child: Text("Don't have an account? Sign up here."),
+            ),
           ],
+          
         ),
       ),
     );
