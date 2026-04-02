@@ -28,3 +28,6 @@ yarn-error.log*
 # Node Modules
 node_modules
 backend/node_modules
+
+# Linux metadata files
+*:Zone.Identifier
