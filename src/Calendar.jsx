@@ -30,6 +30,8 @@ function Calendar({singleMonth, setBackground}){
 
     //RENDER MULTIPLE MONTHS WHEN NOT SINGLE MONTH
     const [renderedMonths, setRenderedMonths] = useState(1);
+
+    //BACKGROUND FOR THE GENERAL CALENDAR
     const [backgroundWeather, setBackgroundWeather] = useState(-1);
 
     //HOLDS MONTHS AWAY FROM NOW (CURRENT MONTH)
@@ -95,7 +97,7 @@ function Calendar({singleMonth, setBackground}){
     //TBD WHEN YOU CLICK THE MONTH/YEAR HEADER
     const [monthDropdown, setMonthDropdown] = useState(false);
 
-    //GETS THE CURRENT TIME OF DAY
+     //GETS THE CURRENT TIME OF DAY
     function getTimeOfDay() {
         const hour = new Date().getHours();
         if (hour >= 6 && hour < 9) return "sunrise";
@@ -120,7 +122,6 @@ function Calendar({singleMonth, setBackground}){
                 else if(timeOfDay === "day") return ClearSky;
                 else return NightClear;
             case "Overcast": 
-            case "Light drizzle":
                 //SHOW DIFFERENT IMAGES AT DIFFERENT TIMES OF DAY
                 if(timeOfDay === "sunrise" || timeOfDay === "sunset") return SunsetSunriseCloudy;
                 else if(timeOfDay === "day") return Cloudy;
@@ -174,7 +175,7 @@ function Calendar({singleMonth, setBackground}){
                 </div>
             ) : (
                 //SCROLL CONTAINER FOR THE MONTHS TO COMPUTE CURRENT MONTH HEADER
-                <div ref={containerRef} style = {{ overflowY: "scroll", maxHeight: "100%" }}>
+                <div ref={containerRef} style = {{ overflowY: "scroll", maxHeight: "100vh" }}>
                     {/* WRAPPER FOR CALENDAR MONTHS TO BE STACKED PROPERLY */}
                     {/* SHOW THE CALENDARS FOR FIRST 5 MONTHS */}
                     {Array.from({ length: renderedMonths }, (_, i) => (
