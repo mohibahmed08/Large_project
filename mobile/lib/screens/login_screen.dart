@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 // Note: You will eventually import your auth_service.dart here
 // import '../services/auth_service.dart';
+import 'calendar_screen.dart';
+
 
 // 1. We use a StatefulWidget because the screen needs to update
 // (e.g., showing a loading spinner when the button is clicked)
@@ -35,6 +37,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // If login works, push the user to the Calendar Screen
       // Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => CalendarScreen()));
+      Navigator.pushReplacement(
+        context,
+          MaterialPageRoute(builder: (context) => CalendarScreen()),
+      );
 
     } catch (e) {
       // If login fails (e.g., wrong password), show a little pop-up banner at the bottom
