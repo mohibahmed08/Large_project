@@ -1,6 +1,100 @@
 const nodemailer = require('nodemailer');
 const crypto     = require('crypto');
+const https      = require('https');
 const { ObjectId } = require('mongodb');
+
+// Make an HTTPS request and resolve
+function httpsRequest(options, body)
+{
+    return new Promise((resolve, reject) =>
+    {
+        const req = https.request(options, (res) =>
+        {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end',  ()      =>
+            {
+                try   { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
+                catch { resolve({ status: res.statusCode, body: data }); }
+            });
+        });
+        req.on('error', reject);
+        if(body) req.write(body);
+        req.end();
+    });
+}
+
+function httpsTextRequest(url)
+{
+    return new Promise((resolve, reject) =>
+    {
+        https.get(url, (res) =>
+        {
+            let data = '';
+
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () =>
+            {
+                if(res.statusCode !== 200)
+                {
+                    reject(new Error(`Unable to fetch ICS URL (status ${res.statusCode})`));
+                    return;
+                }
+
+                resolve(data);
+            });
+        }).on('error', reject);
+    });
+}
+
+// Fetch current weather from Open-Meteo (for ChatGPT stuff)
+async function fetchWeather(latitude, longitude)
+{
+    const path = `/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
+                 `&current=temperature_2m,weather_code,wind_speed_10m` +
+                 `&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=1`;
+
+    const result = await httpsRequest({ hostname: 'api.open-meteo.com', path, method: 'GET' });
+    if(result.status !== 200) return null;
+
+    const c = result.body.current;
+    const WMO_DESCRIPTIONS = {
+        0:'Clear sky', 1:'Mainly clear', 2:'Partly cloudy', 3:'Overcast',
+        45:'Foggy', 48:'Icy fog', 51:'Light drizzle', 53:'Drizzle', 55:'Heavy drizzle',
+        61:'Slight rain', 63:'Rain', 65:'Heavy rain', 71:'Slight snow', 73:'Snow',
+        75:'Heavy snow', 80:'Slight showers', 81:'Showers', 82:'Heavy showers',
+        95:'Thunderstorm', 96:'Thunderstorm with hail', 99:'Thunderstorm with heavy hail',
+    };
+    return {
+        temperatureF:  c.temperature_2m,
+        windSpeedMph:  c.wind_speed_10m,
+        description:   WMO_DESCRIPTIONS[c.weather_code] ?? `Code ${c.weather_code}`,
+    };
+}
+
+// OpenAI Chat Completions Call
+async function callOpenAI(apiKey, messages, model = 'gpt-4o-mini')
+{
+    const bodyStr = JSON.stringify({ model, messages, temperature: 0.7 });
+    const result  = await httpsRequest(
+    {
+        hostname: 'api.openai.com',
+        path:     '/v1/chat/completions',
+        method:   'POST',
+        headers:
+        {
+            'Content-Type':   'application/json',
+            'Authorization':  `Bearer ${apiKey}`,
+            'Content-Length': Buffer.byteLength(bodyStr),
+        },
+    }, bodyStr);
+
+    if(result.status !== 200)
+    {
+        throw new Error(`OpenAI error ${result.status}: ${JSON.stringify(result.body)}`);
+    }
+    return result.body.choices[0].message.content;
+}
 
 function createTransporter()
 {
@@ -346,7 +440,7 @@ exports.setApp = function(app, client)
 
     app.post('/api/readcalendar', async (req, res) =>
     {
-        const { userId, jwtToken, icsContent } = req.body;
+        const { userId, jwtToken, icsContent, icsUrl } = req.body;
 
         if(!validateJwtOrRespond(token, res, jwtToken))
         {
@@ -357,8 +451,42 @@ exports.setApp = function(app, client)
         {
             const ical = require('node-ical');
             const db = getDatabase(client);
+            let calendarContent = String(icsContent || '').trim();
 
-            const parsed   = ical.sync.parseICS(icsContent);
+            if(!calendarContent && icsUrl)
+            {
+                let parsedUrl;
+
+                try
+                {
+                    parsedUrl = new URL(icsUrl);
+                }
+                catch
+                {
+                    res.status(400).json({ count: 0, error: 'icsUrl must be a valid URL', jwtToken: '' });
+                    return;
+                }
+
+                if(parsedUrl.protocol !== 'https:')
+                {
+                    res.status(400).json({ count: 0, error: 'icsUrl must use HTTPS', jwtToken: '' });
+                    return;
+                }
+
+                calendarContent = await httpsTextRequest(parsedUrl);
+            }
+
+            if(!calendarContent)
+            {
+                res.status(400).json({
+                    count: 0,
+                    error: 'Either icsContent or icsUrl is required',
+                    jwtToken: '',
+                });
+                return;
+            }
+
+            const parsed   = ical.sync.parseICS(calendarContent);
             const toInsert = [];
 
             for(const key of Object.keys(parsed))
@@ -372,8 +500,11 @@ exports.setApp = function(app, client)
                     user_id:     new ObjectId(userId),
                     title:       entry.summary     || '(No title)',
                     description: entry.description || '',
+                    location:    entry.location    || '',
                     dueDate:     new Date(entry.start),
+                    endDate:     entry.end ? new Date(entry.end) : null,
                     isCompleted: false,
+                    source:      'ical',
                 });
             }
 
@@ -393,6 +524,230 @@ exports.setApp = function(app, client)
         catch(error)
         {
             res.status(500).json({ count: 0, error: error.toString(), jwtToken: '' });
+        }
+    });
+
+
+    // Suggest events with ChatGPT Chat Completions API
+    app.post('/api/suggestevents', async (req, res) =>
+    {
+        const { userId, jwtToken, date, latitude, longitude, preferences } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        const apiKey = process.env.OPENAI_API_KEY;
+        if(!apiKey)
+        {
+            res.status(500).json({ suggestions: [], error: 'OPENAI API key is not configured', jwtToken: '' });
+            return;
+        }
+
+        try
+        {
+            const db          = getDatabase(client);
+            const targetDate  = date ? new Date(date) : new Date();
+            const dayStart    = new Date(targetDate); dayStart.setHours(0, 0, 0, 0);
+            const dayEnd      = new Date(targetDate); dayEnd.setHours(23, 59, 59, 999);
+
+            // Fetch the current tasks for the target day
+            const tasks = await db.collection('tasks').find(
+            {
+                user_id: new ObjectId(userId),
+                dueDate: { $gte: dayStart, $lte: dayEnd },
+            })
+            .sort({ dueDate: 1 })
+            .toArray();
+
+            const taskSummary = tasks.length
+                ? tasks.map(t => `- ${t.title}${t.dueDate ? ' at ' + t.dueDate.toLocaleTimeString() : ''}${t.location ? ' (' + t.location + ')' : ''}`)
+                      .join('\n')
+                : 'No tasks scheduled for this day.';
+
+            // Get user preferences by getting recent task history
+            const recent = await db.collection('tasks').find(
+            {
+                user_id:     new ObjectId(userId),
+                isCompleted: true,
+            })
+            .sort({ dueDate: -1 })
+            .limit(30)
+            .toArray();
+
+            const recentSummary = recent.length
+                ? [...new Set(recent.map(t => t.title))].slice(0, 15).join(', ')
+                : 'No recent task history available.';
+
+            // Optionally fetch weather
+            let weatherSummary = 'Weather data not available (no coordinates provided).';
+            if(latitude != null && longitude != null)
+            {
+                const w = await fetchWeather(latitude, longitude);
+                if(w) weatherSummary = `${w.description}, ${w.temperatureF}°F, wind ${w.windSpeedMph} mph`;
+            }
+
+            // Build system prompt and completion prompt
+            const systemPrompt =
+                `You are a helpful personal assistant that suggests calendar events for a user's day.
+                 Respond ONLY with a valid JSON array of objects.
+                 Each object must have: "title" (string), "description" (string), "suggestedTime" (HH:MM 24-hour).
+                 Suggest 3-5 events. Do not include any explanation or text outside the JSON array.`;
+
+            const userPrompt =
+                `Today is ${targetDate.toDateString()}.
+
+Current weather: ${weatherSummary}
+
+Existing tasks for today:
+${taskSummary}
+
+Recent activity (interests): ${recentSummary}
+
+${preferences ? `Additional caller preferences: ${preferences}` : ''}
+
+Suggest practical, realistic calendar events that complement the existing tasks and fit the weather and preferences.`;
+
+            // Call OpenAI chat completion
+            const rawResponse = await callOpenAI(apiKey,
+            [
+                { role: 'system', content: systemPrompt },
+                { role: 'user',   content: userPrompt   },
+            ]);
+
+            let suggestions;
+            try   { suggestions = JSON.parse(rawResponse); }
+            catch { suggestions = [{ title: 'Parse error', description: rawResponse, suggestedTime: '' }]; }
+
+            res.status(200).json({
+                suggestions,
+                error:    '',
+                jwtToken: refreshJwtToken(token, jwtToken),
+            });
+        }
+        catch(error)
+        {
+            res.status(500).json({ suggestions: [], error: error.toString(), jwtToken: '' });
+        }
+    });
+
+
+    // Chat with ChatGPT Chat Completions
+    app.post('/api/chat', async (req, res) =>
+    {
+        const { userId, jwtToken, messages, latitude, longitude } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken)) return;
+
+        const apiKey = process.env.OPENAI_API_KEY;
+        if(!apiKey)
+        {
+            res.status(500).json({ reply: '', error: 'OPENAI API key is not configured', jwtToken: '' });
+            return;
+        }
+
+        if(!Array.isArray(messages) || messages.length === 0)
+        {
+            res.status(400).json({ reply: '', error: 'messages array is required', jwtToken: '' });
+            return;
+        }
+
+        try
+        {
+            const db   = getDatabase(client);
+            const now  = new Date();
+            const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
+            const dayEnd   = new Date(now); dayEnd.setHours(23, 59, 59, 999);
+
+            // Current tasks for today
+            const todayTasks = await db.collection('tasks').find(
+            {
+                user_id: new ObjectId(userId),
+                dueDate: { $gte: dayStart, $lte: dayEnd },
+            })
+            .sort({ dueDate: 1 })
+            .toArray();
+
+            const todaySummary = todayTasks.length
+                ? todayTasks.map(t => `- ${t.title}${t.dueDate ? ' at ' + t.dueDate.toLocaleTimeString() : ''}`)
+                            .join('\n')
+                : 'No tasks today.';
+
+            // Current tasks for this week (where isCompleted: false)
+            const weekEnd = new Date(now);
+            weekEnd.setDate(weekEnd.getDate() + 7);
+            weekEnd.setHours(23, 59, 59, 999);
+
+            const weekTasks = await db.collection('tasks').find({
+                user_id: new ObjectId(userId),
+                isCompleted: false,
+                dueDate: { $gt: dayEnd, $lte: weekEnd },
+            })
+            .sort({ dueDate: 1 })
+            .toArray();
+
+            const comingWeek = weekTasks.length
+                ? weekTasks.map(t => `- ${t.title}${t.dueDate ? ' on ' + new Date(t.dueDate).toLocaleString() : ''}`).join('\n')
+                : 'No upcoming tasks this week.';
+
+            // Get user preferences by getting recent task history
+            const recent = await db.collection('tasks').find(
+            {
+                user_id:     new ObjectId(userId),
+                isCompleted: true,
+            })
+            .sort({ dueDate: -1 })
+            .limit(30)
+            .toArray();
+
+            const recentTitles = recent.length
+                ? [...new Set(recent.map(t => t.title))].slice(0, 15).join(', ')
+                : 'None';
+
+            // Get the weather
+            let weatherLine = 'Weather: not available.';
+            if(latitude != null && longitude != null)
+            {
+                const w = await fetchWeather(latitude, longitude);
+                if(w) weatherLine = `Current weather: ${w.description}, ${w.temperatureF}°F, wind ${w.windSpeedMph} mph.`;
+            }
+
+            // Build system prompt and user prompt
+            const systemPrompt =
+                `You are a knowledgeable personal calendar assistant.
+                 You have access to the user's current schedule and preferences.
+
+Today is ${now.toDateString()}.
+${weatherLine}
+
+Today's schedule:
+${todaySummary}
+
+Coming week schedule:
+${comingWeek}
+
+Recently completed tasks (interests): ${recentTitles}
+
+Help the user manage their schedule, suggest events, answer questions about their day, and offer practical advice. Be concise but conversational and relatable.`;
+
+            // Call OpenAI chat completions
+            const openAIMessages = [
+                { role: 'system', content: systemPrompt },
+                ...messages,
+            ];
+
+            const reply = await callOpenAI(apiKey, openAIMessages);
+
+            res.status(200).json({
+                reply,
+                error:    '',
+                jwtToken: refreshJwtToken(token, jwtToken),
+            });
+        }
+        catch(error)
+        {
+            res.status(500).json({ reply: '', error: error.toString(), jwtToken: '' });
         }
     });
 
