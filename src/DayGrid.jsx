@@ -8,7 +8,7 @@ import './DayGrid.css';
 //WITHIN THE CALENDAR U.I.
 
 //SHOULD BE USED AS AN ARRAY OF DAYS WITHIN THE CALENDAR U.I.
-function DayGrid( {weather, maxFutureWeatherDays, maxPastWeatherDays, dayOfMonth, year, month} ){
+function DayGrid( { weather, setCurrentWeather, maxFutureWeatherDays, maxPastWeatherDays, dayOfMonth, year, month, isOtherMonth} ){
 
     //DATE OBJECT FOR DETERMINING THINGS
     const date = new Date();
@@ -35,23 +35,29 @@ function DayGrid( {weather, maxFutureWeatherDays, maxPastWeatherDays, dayOfMonth
     //ARRAY OF DAY'S CONTENT (BOTH REMINDERS AND SUGGESTIONS)
     //CURRENT SUBFIELDS: { type, time, stringTitle, stringInfo }
     const [content, setContent] = useState([
-        { time: "9:30am", stringTitle: "Test" },
-        { time: "10:20am", stringTitle: "Work" },
-        { time: "11:15am", stringTitle: "Meeting" },
-        { time: "9:30am", stringTitle: "Test" },
-        { time: "10:20am", stringTitle: "Work" },
-        { time: "11:15am", stringTitle: "Meeting" },
+        // { time: "9:30am", stringTitle: "Test" },
+        // { time: "10:20am", stringTitle: "Work" },
+        // { time: "11:15am", stringTitle: "Meeting" },
+        // { time: "9:30am", stringTitle: "Test" },
+        // { time: "10:20am", stringTitle: "Work" },
+        // { time: "11:15am", stringTitle: "Meeting" },
     ]);    
     //SET THE CONTENT OF THE ARRAY THROUGH FETCH
     // getContent(setContent, dayOfMonth);
 
+    //GENERAL WEATHER FOR THE CURRENT DAY
+    const generalWeather = weather ? weatherCodeToText(getDailyGeneralWeather(weather.hourly.weathercode, dayIndex)) : "";
+    
+    //PASS IN THE CURRENT WEATHER FOR TODAY
+    if(isToday) setCurrentWeather(generalWeather);
+
     //RETURN DOM
     return (
         <>
-            {/* THE DATE BOX ITSELF CONTAINING SUBINFO AND IF ACTIVE (CURRRENT DAY) */}
-            <div className = {`day-grid-wrapper ${isToday ? "active" : ""}`}>
+            {/* THE DATE BOX ITSELF CONTAINING SUBINFO AND IF ACTIVE (CURRRENT DAY), OTHER MONTH IF SPACER FROM PRIOR/NEXT MONTH BLEEDING OVER TO THIS ONE */}
+            <div className = {`day-grid-wrapper ${isToday ? "active" : ""} ${isOtherMonth ? "other-month" : ""}`}>
                 {/* TOP LEFT WEATHER OF THE CURRENT DAY */}
-                {isWithinWeather && <text className = "day-grid-weather-header">{weather ? weatherCodeToText(getDailyGeneralWeather(weather.hourly.weathercode, dayIndex)) : ""}</text>}
+                {isWithinWeather && <text className = "day-grid-weather-header">{generalWeather}</text>}
                 {/* TOP RIGHT DAY NUMBER IN THE BOX */}
                 <text className = "day-grid-day-number">{dayOfMonth}</text>
                 {/* SECTION TO HOLD TILED REMINDERS / SUGGESTIONS */}
@@ -80,15 +86,19 @@ function DayGrid( {weather, maxFutureWeatherDays, maxPastWeatherDays, dayOfMonth
 //TURNS THE WEATHER CODE TO MEANINGFUL TEXT 
 function weatherCodeToText(code) {
     switch (code) {
-        case 0: return "Sunny";
-        case 1: return "Mostly Sunny";
-        case 2: return "Partly Cloudy";
+        case 0: return "Clear sky";               
+        case 1: return "Mostly clear";                 
+        case 2: return "Partly cloudy";
         case 3: return "Overcast";
         case 45: case 48: return "Foggy";
-        case 51: case 53: case 55: return "Drizzle";
+        case 51: case 53: case 55: return "Light drizzle";
+        case 56: case 57: return "Freezing drizzle";
         case 61: case 63: case 65: return "Rainy";
+        case 66: case 67: return "Freezing rain";
         case 71: case 73: case 75: return "Snowy";
+        case 77: return "Snow grains";
         case 80: case 81: case 82: return "Rain showers";
+        case 85: case 86: return "Snow showers";
         case 95: return "Thunderstorm";
         case 96: case 99: return "Thunderstorm with hail";
         default: return "Unknown";
