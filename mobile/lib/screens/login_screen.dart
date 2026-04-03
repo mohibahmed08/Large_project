@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'calendar_screen.dart';
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -292,7 +293,22 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ],
             ),
-          ),
+
+            SizedBox(height: 16), // A little spacing
+            
+            // --- GO TO REGISTER BUTTON ---
+            TextButton(
+              onPressed: () {
+                // This slides the new screen over the current one
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => RegisterScreen()),
+                );
+              },
+              child: Text("Don't have an account? Sign up here."),
+            ),
+          ],
+          
         ),
       ),
     );
