@@ -1,0 +1,15 @@
+.calendar-calendar-background {
+  min-height: 100%;   /* fills the viewport */
+  width: 100%;
+
+  /* display: flex;
+  flex-direction: column;
+  height: 100vh; */
+
+  color: #e0e0e0;      /* default text color for readability */
+}
+
+/* .calendar-scroll-container {
+  flex: 1;          
+  overflow-y: auto; 
+} */

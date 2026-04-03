@@ -1,0 +1,143 @@
+/* ===================== DAY GRID WRAPPER ===================== */
+
+/* STANDARD DAY GRID WRAPPER */
+.day-grid-wrapper {
+  position: relative;
+  background-color: rgba(26, 26, 46, 0.277); /* subtle transparent */
+  border: 1px solid rgba(94, 94, 110, 0.509);  /* subtle border */
+  border-radius: 10px;
+  text-align: left;
+  padding: 10px 0;
+  font-weight: 400;
+  color: #e0e0e0;
+  box-shadow: 0 3px 6px rgba(0,0,0,0.25);
+  transition: all 0.2s ease;
+  cursor: default;
+
+  /* Glass effect */
+  backdrop-filter: blur(8px);           /* frosted blur */
+  -webkit-backdrop-filter: blur(8px);   /* Safari support */
+
+}
+
+/* HOVER EFFECT */
+.day-grid-wrapper:hover {
+  background-color: rgba(26, 26, 46, 0.4); /* slightly darker overlay */
+  box-shadow: 0 4px 8px rgba(0,0,0,0.25);
+  transform: translateY(-1px);
+}
+
+.day-grid-wrapper.active:hover {
+  background-color: rgba(26, 26, 46, 0.7); /* subtle transparent */
+  box-shadow: 0 4px 8px rgba(0,0,0,0.25);
+  transform: translateY(-1px);
+}
+
+/* CURRENT DAY */
+.day-grid-wrapper.active{
+  border: 5px solid #64b5f6;           /* keeps subtle outline */
+  background-color: rgba(26, 26, 46, 0.575); /* subtle transparent */
+  font-weight: 500;
+  color: #e0e0e0;                       /* keep text readable */
+  box-shadow: 0 2px 6px rgba(100,181,246,0.2); /* subtle glow */
+  transform: none;                       /* no lift */
+}
+
+/* OPTIONAL: smooth transition for active + hover */
+.day-grid-wrapper,
+.day-grid-wrapper.active {
+  transition: all 0.2s ease;
+}
+
+/* GRAY OUT A BIT IF PAST MONTH */
+/* OTHER MONTH DAYS */
+.day-grid-wrapper.other-month {
+  background-color: rgba(26, 26, 46, 0.6); /* slightly lighter than main month */
+  border: 1px solid rgba(94, 94, 110, 0.35);  /* softer than active/current */
+  border-left: 3px solid rgba(200, 200, 255, 0.25); /* subtle accent */
+  color: rgba(224, 224, 224, 0.5); /* faded text, readable but distinct */
+  transition: all 0.2s ease;
+}
+
+/* Hover effect for previous/next month days */
+.day-grid-wrapper.other-month:hover {
+  background-color: rgba(26, 26, 46, 0.68); /* slightly brighter on hover */
+  box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+  transform: none;
+  cursor: default;
+}
+
+/* ACTIVE DAY IN OTHER MONTH */
+.day-grid-wrapper.active.other-month {
+  border: 5px solid #64b4f66b;             /* same outline as current month active */
+  background-color: rgba(26, 26, 46, 0.78); /* standout, slightly transparent */
+  box-shadow: 0 2px 6px rgba(100, 181, 246, 0.35);
+  color: #e0e0e0;                         /* readable text */
+  transform: none;
+  z-index: 1;
+}
+
+/* ===================== DAY GRID FIELDS ===================== */
+
+.day-grid-weather-header{
+  position: absolute;
+  top: 7.8%;       /* distance from top */
+  left: 10%;     /* distance from right */
+  font-size: 1.2em;
+  font-weight: bold;
+  color: #ffffffc1;                       /* keep text readable */
+}
+
+/* TOP LEFT DAY NUMBER */
+.day-grid-day-number{
+  position: absolute;
+  top: 7%;       /* distance from top */
+  right: 10%;     /* distance from right */
+  font-size: 1.3em;
+  font-weight: bold;
+  color: #e0e0e0c1;                       /* keep text readable */
+}
+/* TILED REMINDERS / SUGGESTIONS WRAPPER */
+.day-grid-tile-wrapper {
+  display: flex;
+  flex-direction: column; /* stack multiple events vertically */
+  padding: 4px 8px;
+  padding-top: 15px;
+  border-radius: 4px;
+  justify-content: flex-start; /* top */
+  align-items: flex-start;     /* left */
+}
+/* ============ SUGGESTION / REMINDER TILE FIELDS ============ */
+
+/* REMOVE DEFAULT STYLE */
+.day-grid-ul {
+  list-style: none; /* removes bullets from <ul> or <li> */
+  padding: 0;       /* remove default padding */
+  margin-top: 15%;        /* remove default margin */
+  margin-bottom: 15%;        /* remove default margin */
+}
+
+/* EACH ROW INDIVIDUALLY */
+.day-grid-tile-row {
+  display: flex;
+  gap: 10px;                  /* space between time and title */
+  justify-content: flex-start; /* left-align row content */
+  align-items: center;         /* vertically center time/title within row */
+  margin-bottom: 4px;          /* spacing between rows */
+}
+
+/* TILED REMINDER / SUGGESTION TIME */
+.day-grid-tile-time {
+  flex: 0 0 60px;            /* fixed width for time column */
+  text-align: right;         /* right-align the time */
+  font-weight: bold;
+  font-size: 0.9em;
+}
+
+/* TITLE OF THE REMINDER / SUGGESTION */
+.day-grid-tile-string-title {
+  flex: 1;                   /* take the remaining space for the title */
+  text-align: left;          /* left-align title */
+  font-size: 0.9em;
+}
+
