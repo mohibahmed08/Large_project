@@ -100,13 +100,11 @@ function createTransporter()
 {
     return nodemailer.createTransport(
     {
-        host:   process.env.SMTP_HOST,
-        port:   Number(process.env.SMTP_PORT) || 587,
-        secure: process.env.SMTP_SECURE === 'true',
+        service: 'gmail',
         auth:
         {
-            user: process.env.SMTP_USER,
-            pass: process.env.SMTP_PASS,
+            user: 'calendarplusplusapp@gmail.com',
+            pass: process.env.Gmail_APP_PASS || process.env.GMAIL_APP_PASS,
         },
     });
 }
@@ -252,7 +250,7 @@ exports.setApp = function(app, client)
             const verifyLink = `${process.env.SERVER_URL}/api/verifyemail?token=${verifyToken}`;
             await emailTransporter.sendMail(
             {
-                from:    `"${process.env.SMTP_FROM_NAME || 'Calendar'}" <${process.env.SMTP_FROM_EMAIL}>`,
+                from:    `"${process.env.SMTP_FROM_NAME || 'Calendar'}" <calendarplusplusapp@gmail.com>`,
                 to:      email,
                 subject: 'Verify your Calendar account',
                 html:    `<h2>Welcome!</h2>
