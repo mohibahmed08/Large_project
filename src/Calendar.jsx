@@ -22,7 +22,7 @@ import UpArrow from './icons/arrow-big-up.svg';
 import DownArrow from './icons/arrow-big-down.svg';
 
 //MAIN EXPORTED FUNCTION
-function Calendar({singleMonth}){
+function Calendar({singleMonth, setBackground}){
 
     //GENERAL DATE OBJECT
     const date = new Date();
@@ -32,7 +32,6 @@ function Calendar({singleMonth}){
     const [renderedMonths, setRenderedMonths] = useState(1);
 
     //BACKGROUND FOR THE GENERAL CALENDAR
-    const [background, setBackground] = useState(null);
     const [backgroundWeather, setBackgroundWeather] = useState(-1);
 
     //HOLDS MONTHS AWAY FROM NOW (CURRENT MONTH)
@@ -117,6 +116,7 @@ function Calendar({singleMonth}){
         switch(currentWeather){
             //RETURNS THE WEATHER OF THE CURRENT DAY
             case "Clear sky": 
+            case "Mostly clear":
                 //SHOW DIFFERENT IMAGES AT DIFFERENT TIMES OF DAY
                 if(timeOfDay === "sunrise" || timeOfDay === "sunset") return SunsetSunriseClearSky;
                 else if(timeOfDay === "day") return ClearSky;
@@ -145,7 +145,7 @@ function Calendar({singleMonth}){
     //HTML DOM RETURN
     return(
         //BACKGROUND WITH THE CURRENT BACKGROUND IMAGE EMBEDDED IN STYLE
-        <div className = "calendar-calendar-background" style={{ '--bg-img': `url(${background}`}}>
+        <div className = "calendar-calendar-background">
 
             {/* THE INTERACTABLE HEADER FOR CALENDAR */}
             <div className="calendar-month-interactable-header">

@@ -1,5 +1,5 @@
 .calendar-calendar-background {
-  min-height: 100vh;   /* fills the viewport */
+  min-height: 100%;   /* fills the viewport */
   width: 100%;
 
   /* display: flex;
@@ -7,12 +7,6 @@
   height: 100vh; */
 
   color: #e0e0e0;      /* default text color for readability */
-
-  background-image: var(--bg-img);
-  background-repeat: no-repeat;          /* don’t tile */
-  background-position: center center;    /* center it */
-  background-attachment: fixed;          /* stays fixed relative to viewport */
-  background-size: 100% 100%;            /* stretch to fill the element fully */
 }
 
 /* .calendar-scroll-container {
