@@ -751,8 +751,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                       if (task.endDate != null)
                                         'Ends ${task.endDate!.hour.toString().padLeft(2, '0')}:${task.endDate!.minute.toString().padLeft(2, '0')}',
                                       if (task.location.isNotEmpty) task.location,
-                                      if (task.source.isNotEmpty)
-                                        'Source: ${task.source}',
                                     ].join('\n'),
                                     style: const TextStyle(
                                       color: AppTheme.textMuted,
