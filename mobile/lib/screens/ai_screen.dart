@@ -161,65 +161,67 @@ class _AIScreenState extends State<AIScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('AI Assistant')),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Schedule ideas with context',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Use the same assistant style as the web sidebar to ask questions or generate suggestions for the selected day.',
-                      style: TextStyle(color: AppTheme.textMuted, height: 1.4),
-                    ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: _preferencesController,
-                      decoration: const InputDecoration(
-                        labelText: 'Suggestion preferences',
-                        hintText:
-                            'Quiet evening, outdoor ideas, study-focused, etc.',
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Schedule ideas with context',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Use the same assistant style as the web sidebar to ask questions or generate suggestions for the selected day.',
+                            style: TextStyle(
+                              color: AppTheme.textMuted,
+                              height: 1.4,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          TextField(
+                            controller: _preferencesController,
+                            decoration: const InputDecoration(
+                              labelText: 'Suggestion preferences',
+                              hintText:
+                                  'Quiet evening, outdoor ideas, study-focused, etc.',
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed:
+                                  _isLoadingSuggestions ? null : _loadSuggestions,
+                              icon: _isLoadingSuggestions
+                                  ? const SizedBox(
+                                      height: 16,
+                                      width: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.auto_awesome),
+                              label: Text(
+                                'Suggest events for ${widget.selectedDate.month}/${widget.selectedDate.day}/${widget.selectedDate.year}',
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                  ),
+                  if (_suggestions.isNotEmpty) ...[
                     const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed:
-                            _isLoadingSuggestions ? null : _loadSuggestions,
-                        icon: _isLoadingSuggestions
-                            ? const SizedBox(
-                                height: 16,
-                                width: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.auto_awesome),
-                        label: Text(
-                          'Suggest events for ${widget.selectedDate.month}/${widget.selectedDate.day}/${widget.selectedDate.year}',
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          if (_suggestions.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                children: _suggestions
-                    .map(
+                    ..._suggestions.map(
                       (suggestion) => Card(
                         color: AppTheme.surfaceAlt.withValues(alpha: 0.7),
                         child: ListTile(
@@ -239,49 +241,40 @@ class _AIScreenState extends State<AIScreen> {
                           ),
                         ),
                       ),
-                    )
-                    .toList(),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  ..._messages.map((message) {
+                    final isUser = message.role == 'user';
+                    return Align(
+                      alignment:
+                          isUser ? Alignment.centerRight : Alignment.centerLeft,
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        constraints: const BoxConstraints(maxWidth: 320),
+                        decoration: BoxDecoration(
+                          color: isUser
+                              ? AppTheme.accent.withValues(alpha: 0.18)
+                              : AppTheme.surfaceAlt.withValues(alpha: 0.8),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: AppTheme.border),
+                        ),
+                        child: Text(
+                          message.text,
+                          style: const TextStyle(
+                            color: AppTheme.textPrimary,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
               ),
             ),
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final message = _messages[index];
-                final isUser = message.role == 'user';
-                return Align(
-                  alignment:
-                      isUser ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.all(12),
-                    constraints: const BoxConstraints(maxWidth: 320),
-                    decoration: BoxDecoration(
-                      color: isUser
-                          ? AppTheme.accent.withValues(alpha: 0.18)
-                          : AppTheme.surfaceAlt.withValues(alpha: 0.8),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppTheme.border),
-                    ),
-                    child: Text(
-                      message.text,
-                      style: TextStyle(
-                        color: isUser
-                            ? AppTheme.textPrimary
-                            : AppTheme.textPrimary,
-                        height: 1.35,
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
               child: Row(
                 children: [
                   Expanded(
@@ -309,8 +302,8 @@ class _AIScreenState extends State<AIScreen> {
                 ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
