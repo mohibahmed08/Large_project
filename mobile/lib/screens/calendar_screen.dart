@@ -163,7 +163,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final baseDate = task?.dueDate ?? _selectedDate;
 
     final result = await Navigator.push<TaskEditorResult>(
-      context: context,
+      context,
       MaterialPageRoute(
         builder: (_) => TaskEditorScreen(
           initialTitle: task?.title ?? '',
