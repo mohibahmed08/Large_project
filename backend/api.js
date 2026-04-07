@@ -1,4 +1,3 @@
-const nodemailer = require('nodemailer');
 const crypto     = require('crypto');
 const https      = require('https');
 const { ObjectId } = require('mongodb');
@@ -302,36 +301,52 @@ async function streamOpenAI(apiKey, input, options = {}, handlers = {})
     });
 }
 
-function createTransporter()
+async function sendWithResend(to, subject, html)
 {
-    return nodemailer.createTransport(
+    const resendApiKey = process.env.RESEND_API_KEY;
+    if(!resendApiKey)
     {
-        host: 'smtp.gmail.com',
-        port: 465,
-        secure: true,
-        family: 4,
-        auth:
-        {
-            user: 'calendarplusplusapp@gmail.com',
-            pass: process.env.Gmail_APP_PASS || process.env.GMAIL_APP_PASS,
-        },
-    });
-}
+        throw new Error('RESEND_API_KEY is not configured');
+    }
 
-const emailTransporter = createTransporter();
+    const fromEmail = process.env.SMTP_FROM_EMAIL || 'onboarding@resend.dev';
+    const fromName = process.env.SMTP_FROM_NAME || 'Calendar';
+    const bodyStr = JSON.stringify({
+        from: `"${fromName}" <${fromEmail}>`,
+        to: [to],
+        subject,
+        html,
+    });
+
+    const result = await httpsRequest(
+    {
+        hostname: 'api.resend.com',
+        path: '/emails',
+        method: 'POST',
+        headers:
+        {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${resendApiKey}`,
+            'Content-Length': Buffer.byteLength(bodyStr),
+        },
+    }, bodyStr);
+
+    if(result.status < 200 || result.status >= 300)
+    {
+        throw new Error(`Resend error ${result.status}: ${JSON.stringify(result.body)}`);
+    }
+
+}
 
 function verifyEmailTransporter()
 {
-    emailTransporter.verify((error) =>
+    if(process.env.RESEND_API_KEY)
     {
-        if(error)
-        {
-            console.error('SMTP verification failed:', error.message);
-            return;
-        }
+        console.log('Resend API key detected; email delivery will use Resend');
+        return;
+    }
 
-        console.log('SMTP server is ready to take messages');
-    });
+    console.error('Email delivery is disabled: RESEND_API_KEY is missing');
 }
 
 function getDatabase(client)
@@ -1063,15 +1078,13 @@ exports.setApp = function(app, client)
             await db.collection('users').insertOne(newUser);
 
             const verifyLink = `${process.env.SERVER_URL}/api/verifyemail?token=${verifyToken}`;
-            await emailTransporter.sendMail(
-            {
-                from:    `"${process.env.SMTP_FROM_NAME || 'Calendar'}" <calendarplusplusapp@gmail.com>`,
-                to:      email,
-                subject: 'Verify your Calendar account',
-                html:    `<h2>Welcome!</h2>
-                          <p>Click below to verify your email. Link expires in 24 hours.</p>
-                          <a href="${verifyLink}">Verify Email</a>`,
-            });
+            await sendWithResend(
+                email,
+                'Verify your Calendar account',
+                `<h2>Welcome!</h2>
+                 <p>Click below to verify your email. Link expires in 24 hours.</p>
+                 <a href="${verifyLink}">Verify Email</a>`
+            );
 
             res.status(201).json({ error: '' });
         }
