@@ -103,13 +103,11 @@ async function callOpenAI(apiKey, input, options = {})
         model = 'gpt-5',
         instructions = '',
         useWebSearch = false,
-        temperature = 0.7,
     } = options;
 
     const requestBody = {
         model,
         input,
-        temperature,
     };
 
     if(instructions)
