@@ -96,13 +96,13 @@ function extractResponseText(responseBody)
     return textParts.join('\n').trim();
 }
 
-// OpenAI Responses API call with optional web search.
-async function callOpenAI(apiKey, input, options = {})
+async function createOpenAIResponse(apiKey, input, options = {})
 {
     const {
         model = 'gpt-5',
         instructions = '',
         useWebSearch = false,
+        tools = [],
     } = options;
 
     const requestBody = {
@@ -117,7 +117,12 @@ async function callOpenAI(apiKey, input, options = {})
 
     if(useWebSearch)
     {
-        requestBody.tools = [{ type: 'web_search' }];
+        requestBody.tools = [...tools, { type: 'web_search' }];
+        requestBody.tool_choice = 'auto';
+    }
+    else if(tools.length > 0)
+    {
+        requestBody.tools = tools;
         requestBody.tool_choice = 'auto';
     }
 
@@ -140,13 +145,21 @@ async function callOpenAI(apiKey, input, options = {})
         throw new Error(`OpenAI error ${result.status}: ${JSON.stringify(result.body)}`);
     }
 
-    const outputText = extractResponseText(result.body);
+    return result.body;
+}
+
+// OpenAI Responses API call with optional web search.
+async function callOpenAI(apiKey, input, options = {})
+{
+    const responseBody = await createOpenAIResponse(apiKey, input, options);
+
+    const outputText = extractResponseText(responseBody);
     if(outputText)
     {
         return outputText;
     }
 
-    throw new Error(`OpenAI response did not include output text: ${JSON.stringify(result.body)}`);
+    throw new Error(`OpenAI response did not include output text: ${JSON.stringify(responseBody)}`);
 }
 
 async function streamOpenAI(apiKey, input, options = {}, handlers = {})
@@ -575,6 +588,271 @@ function buildDueDateRangeFilter(startDate, endDate)
 function getTaskStartDate(task)
 {
     return task.dueDate || task.startDate || null;
+}
+
+function safeObjectId(value, fieldName = 'id')
+{
+    try
+    {
+        return new ObjectId(String(value));
+    }
+    catch
+    {
+        throw new Error(`${fieldName} must be a valid ObjectId`);
+    }
+}
+
+function normalizeTaskForTool(task)
+{
+    if(!task) return null;
+
+    return {
+        id: String(task._id),
+        title: task.title || '',
+        description: task.description || '',
+        location: task.location || '',
+        dueDate: getTaskStartDate(task)?.toISOString() || null,
+        endDate: task.endDate ? new Date(task.endDate).toISOString() : null,
+        isCompleted: task.isCompleted === true,
+        source: task.source || 'manual',
+    };
+}
+
+function buildCalendarAssistantTools()
+{
+    return [
+        {
+            type: 'function',
+            name: 'search_calendar_tasks',
+            description: 'Find calendar tasks for the current user before editing or referencing them.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: { type: 'string', description: 'Title, description, or location text to search for.' },
+                    startDate: { type: 'string', description: 'Optional ISO datetime lower bound.' },
+                    endDate: { type: 'string', description: 'Optional ISO datetime upper bound.' },
+                    limit: { type: 'number', description: 'Maximum number of tasks to return.' },
+                },
+                required: [],
+                additionalProperties: false,
+            },
+        },
+        {
+            type: 'function',
+            name: 'create_calendar_task',
+            description: 'Create a new calendar task or event for the current user.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    title: { type: 'string' },
+                    description: { type: 'string' },
+                    location: { type: 'string' },
+                    dueDate: { type: 'string', description: 'ISO datetime for the event start.' },
+                    endDate: { type: 'string', description: 'Optional ISO datetime for the event end.' },
+                },
+                required: ['title', 'dueDate'],
+                additionalProperties: false,
+            },
+        },
+        {
+            type: 'function',
+            name: 'update_calendar_task',
+            description: 'Update an existing calendar task or event for the current user.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    taskId: { type: 'string', description: 'The task id to update.' },
+                    title: { type: 'string' },
+                    description: { type: 'string' },
+                    location: { type: 'string' },
+                    dueDate: { type: 'string', description: 'Optional ISO datetime for the new start.' },
+                    endDate: { type: 'string', description: 'Optional ISO datetime for the new end.' },
+                    isCompleted: { type: 'boolean' },
+                },
+                required: ['taskId'],
+                additionalProperties: false,
+            },
+        },
+    ];
+}
+
+async function executeCalendarAssistantTool(db, userId, toolCall)
+{
+    const toolName = toolCall.name;
+    const args = JSON.parse(toolCall.arguments || '{}');
+
+    if(toolName === 'search_calendar_tasks')
+    {
+        const query = { user_id: new ObjectId(userId) };
+        const trimmedQuery = String(args.query || '').trim();
+
+        if(trimmedQuery)
+        {
+            query.$or = [
+                { title: { $regex: trimmedQuery, $options: 'i' } },
+                { description: { $regex: trimmedQuery, $options: 'i' } },
+                { location: { $regex: trimmedQuery, $options: 'i' } },
+            ];
+        }
+
+        if(args.startDate || args.endDate)
+        {
+            query.dueDate = {};
+            if(args.startDate) query.dueDate.$gte = new Date(args.startDate);
+            if(args.endDate) query.dueDate.$lte = new Date(args.endDate);
+        }
+
+        const limit = Math.max(1, Math.min(Number(args.limit) || 5, 10));
+        const tasks = await db.collection('tasks')
+            .find(query)
+            .sort({ dueDate: 1 })
+            .limit(limit)
+            .toArray();
+
+        return {
+            found: tasks.length,
+            tasks: tasks.map(normalizeTaskForTool),
+        };
+    }
+
+    if(toolName === 'create_calendar_task')
+    {
+        const dueDate = args.dueDate ? new Date(args.dueDate) : null;
+        if(!dueDate || Number.isNaN(dueDate.getTime()))
+        {
+            throw new Error('create_calendar_task requires a valid dueDate');
+        }
+
+        const endDate = args.endDate ? new Date(args.endDate) : dueDate;
+        const document = {
+            user_id: new ObjectId(userId),
+            title: String(args.title || '').trim(),
+            description: String(args.description || '').trim(),
+            location: String(args.location || '').trim(),
+            dueDate,
+            endDate: Number.isNaN(endDate.getTime()) ? dueDate : endDate,
+            isCompleted: false,
+            source: 'manual',
+        };
+
+        if(!document.title)
+        {
+            throw new Error('create_calendar_task requires a title');
+        }
+
+        const result = await db.collection('tasks').insertOne(document);
+        return {
+            created: true,
+            task: normalizeTaskForTool({ ...document, _id: result.insertedId }),
+        };
+    }
+
+    if(toolName === 'update_calendar_task')
+    {
+        const taskId = safeObjectId(args.taskId, 'taskId');
+        const existing = await db.collection('tasks').findOne({
+            _id: taskId,
+            user_id: new ObjectId(userId),
+        });
+
+        if(!existing)
+        {
+            throw new Error('Task not found');
+        }
+
+        const updates = {};
+        if(args.title !== undefined) updates.title = String(args.title || '').trim();
+        if(args.description !== undefined) updates.description = String(args.description || '').trim();
+        if(args.location !== undefined) updates.location = String(args.location || '').trim();
+        if(args.dueDate !== undefined)
+        {
+            const dueDate = new Date(args.dueDate);
+            if(Number.isNaN(dueDate.getTime())) throw new Error('dueDate must be a valid ISO datetime');
+            updates.dueDate = dueDate;
+        }
+        if(args.endDate !== undefined)
+        {
+            const endDate = new Date(args.endDate);
+            if(Number.isNaN(endDate.getTime())) throw new Error('endDate must be a valid ISO datetime');
+            updates.endDate = endDate;
+        }
+        if(args.isCompleted !== undefined) updates.isCompleted = args.isCompleted === true;
+
+        if(Object.keys(updates).length === 0)
+        {
+            return {
+                updated: false,
+                task: normalizeTaskForTool(existing),
+            };
+        }
+
+        await db.collection('tasks').updateOne(
+            { _id: taskId, user_id: new ObjectId(userId) },
+            { $set: updates }
+        );
+
+        const updatedTask = await db.collection('tasks').findOne({
+            _id: taskId,
+            user_id: new ObjectId(userId),
+        });
+
+        return {
+            updated: true,
+            task: normalizeTaskForTool(updatedTask),
+        };
+    }
+
+    throw new Error(`Unsupported tool: ${toolName}`);
+}
+
+async function runCalendarAssistant(apiKey, db, userId, messages, context)
+{
+    const tools = buildCalendarAssistantTools();
+    let input = [...context.prefixMessages, ...messages];
+    let calendarChanged = false;
+
+    for(let iteration = 0; iteration < 6; iteration += 1)
+    {
+        const response = await createOpenAIResponse(
+            apiKey,
+            input,
+            {
+                instructions: context.systemPrompt,
+                useWebSearch: true,
+                tools,
+            }
+        );
+
+        const functionCalls = Array.isArray(response.output)
+            ? response.output.filter(item => item?.type === 'function_call')
+            : [];
+
+        if(functionCalls.length === 0)
+        {
+            return {
+                reply: extractResponseText(response),
+                calendarChanged,
+            };
+        }
+
+        input = [...input, ...response.output];
+
+        for(const toolCall of functionCalls)
+        {
+            const output = await executeCalendarAssistantTool(db, userId, toolCall);
+            if(toolCall.name === 'create_calendar_task' || toolCall.name === 'update_calendar_task')
+            {
+                calendarChanged = true;
+            }
+            input.push({
+                type: 'function_call_output',
+                call_id: toolCall.call_id,
+                output: JSON.stringify(output),
+            });
+        }
+    }
+
+    throw new Error('AI tool-calling exceeded the allowed number of steps.');
 }
 
 exports.setApp = function(app, client)
@@ -1134,6 +1412,7 @@ Suggest practical, realistic calendar events that complement the existing tasks 
                  You have access to the user's current schedule and preferences.
                  You may use live web search when the user asks about current, nearby, or time-sensitive things.
                  Do not claim you lack real-time access if web search would help; use it instead.
+                 When the user asks to create, edit, move, reschedule, or complete calendar tasks, use the available calendar tools.
 
 Today is ${now.toDateString()}.
 ${localTimeLine}
@@ -1153,22 +1432,20 @@ Help the user manage their schedule, suggest events, answer questions about thei
                 ? `Approximate user coordinates: latitude ${latitude}, longitude ${longitude}.`
                 : 'No exact coordinates were provided.';
 
-            const responseInput = [
-                { role: 'user', content: locationContext },
-                ...messages,
-            ];
-
-            const reply = await callOpenAI(
+            const assistantResult = await runCalendarAssistant(
                 apiKey,
-                responseInput,
+                db,
+                userId,
+                messages,
                 {
-                    instructions: systemPrompt,
-                    useWebSearch: true,
+                    systemPrompt,
+                    prefixMessages: [{ role: 'user', content: locationContext }],
                 }
             );
 
             res.status(200).json({
-                reply,
+                reply: assistantResult.reply,
+                calendarChanged: assistantResult.calendarChanged,
                 error:    '',
                 jwtToken: refreshJwtToken(token, jwtToken),
             });
@@ -1265,6 +1542,7 @@ Help the user manage their schedule, suggest events, answer questions about thei
                  You have access to the user's current schedule and preferences.
                  You may use live web search when the user asks about current, nearby, or time-sensitive things.
                  Do not claim you lack real-time access if web search would help; use it instead.
+                 When the user asks to create, edit, move, reschedule, or complete calendar tasks, use the available calendar tools.
 
 Today is ${now.toDateString()}.
 ${localTimeLine}
@@ -1284,11 +1562,6 @@ Help the user manage their schedule, suggest events, answer questions about thei
                 ? `Approximate user coordinates: latitude ${latitude}, longitude ${longitude}.`
                 : 'No exact coordinates were provided.';
 
-            const responseInput = [
-                { role: 'user', content: locationContext },
-                ...messages,
-            ];
-
             res.status(200);
             res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
             res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -1300,28 +1573,28 @@ Help the user manage their schedule, suggest events, answer questions about thei
                 res.write(`${JSON.stringify(payload)}\n`);
             };
 
-            await streamOpenAI(
+            const assistantResult = await runCalendarAssistant(
                 apiKey,
-                responseInput,
+                db,
+                userId,
+                messages,
                 {
-                    instructions: systemPrompt,
-                    useWebSearch: true,
-                },
-                {
-                    onDelta: (delta) =>
-                    {
-                        writeEvent({ type: 'delta', delta });
-                    },
-                    onError: (payload) =>
-                    {
-                        writeEvent({ type: 'error', error: payload?.error?.message || 'Streaming failed.' });
-                    },
-                    onDone: () =>
-                    {
-                        writeEvent({ type: 'done', jwtToken: refreshJwtToken(token, jwtToken) });
-                    },
+                    systemPrompt,
+                    prefixMessages: [{ role: 'user', content: locationContext }],
                 }
             );
+
+            const chunks = assistantResult.reply.match(/.{1,28}(\s|$)|.{1,28}/g) || [assistantResult.reply];
+            for(const chunk of chunks)
+            {
+                writeEvent({ type: 'delta', delta: chunk });
+            }
+
+            writeEvent({
+                type: 'done',
+                jwtToken: refreshJwtToken(token, jwtToken),
+                calendarChanged: assistantResult.calendarChanged,
+            });
 
             res.end();
         }

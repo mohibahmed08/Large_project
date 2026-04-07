@@ -14,6 +14,7 @@ class AIScreen extends StatefulWidget {
     required this.selectedDate,
     required this.onSessionUpdated,
     required this.onCreateTaskFromSuggestion,
+    required this.onCalendarChanged,
   });
 
   final UserSession initialSession;
@@ -21,6 +22,7 @@ class AIScreen extends StatefulWidget {
   final ValueChanged<UserSession> onSessionUpdated;
   final Future<void> Function(String title, String description, String suggestedTime)
       onCreateTaskFromSuggestion;
+  final Future<void> Function() onCalendarChanged;
 
   @override
   State<AIScreen> createState() => _AIScreenState();
@@ -100,6 +102,9 @@ class _AIScreenState extends State<AIScreen> {
             event.session != null) {
           _session = event.session!;
           widget.onSessionUpdated(_session);
+          if (event.calendarChanged) {
+            await widget.onCalendarChanged();
+          }
         } else if (event.type == AiChatStreamEventType.error) {
           throw Exception(event.error ?? 'Streaming failed.');
         }

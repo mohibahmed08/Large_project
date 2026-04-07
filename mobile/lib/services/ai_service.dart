@@ -11,19 +11,22 @@ class AiChatResult {
   AiChatResult({
     required this.reply,
     required this.session,
+    required this.calendarChanged,
   });
 
   final String reply;
   final UserSession session;
+  final bool calendarChanged;
 }
 
 class AiChatStreamEvent {
   AiChatStreamEvent.delta(this.delta)
       : type = AiChatStreamEventType.delta,
         session = null,
-        error = null;
+        error = null,
+        calendarChanged = false;
 
-  AiChatStreamEvent.done(this.session)
+  AiChatStreamEvent.done(this.session, {required this.calendarChanged})
       : type = AiChatStreamEventType.done,
         delta = '',
         error = null;
@@ -31,12 +34,14 @@ class AiChatStreamEvent {
   AiChatStreamEvent.error(this.error)
       : type = AiChatStreamEventType.error,
         delta = '',
-        session = null;
+        session = null,
+        calendarChanged = false;
 
   final AiChatStreamEventType type;
   final String delta;
   final UserSession? session;
   final String? error;
+  final bool calendarChanged;
 }
 
 enum AiChatStreamEventType {
@@ -83,6 +88,7 @@ class AiService {
     return AiChatResult(
       reply: json['reply']?.toString() ?? '',
       session: _updatedSession(session, json),
+      calendarChanged: json['calendarChanged'] == true,
     );
   }
 
@@ -136,7 +142,10 @@ class AiService {
             yield AiChatStreamEvent.delta(delta);
           }
         } else if (type == 'done') {
-          yield AiChatStreamEvent.done(_updatedSession(session, payload));
+          yield AiChatStreamEvent.done(
+            _updatedSession(session, payload),
+            calendarChanged: payload['calendarChanged'] == true,
+          );
         } else if (type == 'error') {
           yield AiChatStreamEvent.error(
             payload['error']?.toString() ?? 'Streaming failed.',

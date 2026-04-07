@@ -164,6 +164,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Future<void> _openTaskDialog({CalendarTask? task}) async {
     final baseDate = task?.startDate ?? _selectedDate;
+    final initialEndDate = task?.endDate ??
+        (task?.startDate ?? _selectedDate).add(const Duration(hours: 1));
 
     final result = await Navigator.push<TaskEditorResult>(
       context,
@@ -171,7 +173,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
         builder: (_) => TaskEditorScreen(
           initialTitle: task?.title ?? '',
           initialDescription: task?.description ?? '',
-          baseDate: baseDate,
+          initialLocation: task?.location ?? '',
+          initialStartDate: baseDate,
+          initialEndDate: initialEndDate,
           isEditing: task != null,
         ),
       ),
@@ -181,23 +185,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return;
     }
 
-    final startDate = DateTime(
-      baseDate.year,
-      baseDate.month,
-      baseDate.day,
-      task?.startDate?.hour ?? 12,
-      task?.startDate?.minute ?? 0,
-    );
-
     try {
       _session = await _calendarService.saveTask(
         session: _session,
         taskId: task?.id,
         title: result.title,
         description: result.description,
-        startDate: startDate,
-        endDate: task?.endDate,
-        location: task?.location ?? '',
+        startDate: result.startDate,
+        endDate: result.endDate,
+        location: result.location,
         source: task?.source ?? 'manual',
         isCompleted: task?.isCompleted ?? false,
       );
@@ -422,8 +418,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
     });
   }
 
-  void _openAiScreen() {
-    Navigator.push(
+  Future<void> _openAiScreen() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => AIScreen(
@@ -432,6 +428,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           onSessionUpdated: (session) {
             _session = session;
           },
+          onCalendarChanged: () => _loadMonth(),
           onCreateTaskFromSuggestion: (title, description, suggestedTime) async {
             final startDate = _dateWithTime(_selectedDate, suggestedTime);
             _session = await _calendarService.saveTask(
@@ -445,6 +442,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ),
       ),
     );
+
+    if (!mounted) {
+      return;
+    }
+    await _loadMonth();
   }
 
   void _logout() {
@@ -746,6 +748,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                         task.description,
                                       if (task.startDate != null)
                                         'Starts ${task.startDate!.hour.toString().padLeft(2, '0')}:${task.startDate!.minute.toString().padLeft(2, '0')}',
+                                      if (task.endDate != null)
+                                        'Ends ${task.endDate!.hour.toString().padLeft(2, '0')}:${task.endDate!.minute.toString().padLeft(2, '0')}',
                                       if (task.location.isNotEmpty) task.location,
                                       if (task.source.isNotEmpty)
                                         'Source: ${task.source}',
