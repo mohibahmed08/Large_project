@@ -442,18 +442,31 @@ function buildExternalEventId(subscriptionId, entry)
     return `${String(subscriptionId)}:${baseId}:${recurrenceId}`;
 }
 
+function buildIcsTaskSignature(entry)
+{
+    const dueDate = entry?.start ? new Date(entry.start) : null;
+    const endDate = entry?.end ? new Date(entry.end) : dueDate;
+
+    return {
+        title: entry?.summary || '(No title)',
+        description: entry?.description || '',
+        location: entry?.location || '',
+        dueDate,
+        endDate,
+    };
+}
+
 function buildTaskFromIcsEntry(userId, subscriptionId, entry)
 {
-    const dueDate = new Date(entry.start);
-    const endDate = entry.end ? new Date(entry.end) : new Date(entry.start);
+    const signature = buildIcsTaskSignature(entry);
 
     return {
         user_id:        new ObjectId(userId),
-        title:          entry.summary     || '(No title)',
-        description:    entry.description || '',
-        location:       entry.location    || '',
-        dueDate:        dueDate,
-        endDate:        endDate,
+        title:          signature.title,
+        description:    signature.description,
+        location:       signature.location,
+        dueDate:        signature.dueDate,
+        endDate:        signature.endDate,
         isCompleted:    false,
         source:         'ical',
         subscriptionId: new ObjectId(subscriptionId),
@@ -522,18 +535,12 @@ async function syncCalendarSubscription(db, userId, subscription, options = {})
     const deleteResult = await db.collection('tasks').deleteMany(deleteFilter);
     const calendarName = getCalendarDisplayName(parsedCalendar);
 
-    await db.collection('calendar_subscriptions').updateOne(
-        { _id: new ObjectId(subscription._id) },
-        {
-            $set:
-            {
-                url: parsedUrl.toString(),
-                name: calendarName || subscription.name || '',
-                lastSyncedAt: now,
-                lastSyncError: '',
-            },
-        }
-    );
+    await updateUserCalendarSubscription(db, userId, subscription._id, {
+        url: parsedUrl.toString(),
+        name: calendarName || subscription.name || '',
+        lastSyncedAt: now,
+        lastSyncError: '',
+    });
 
     return {
         insertedCount,
@@ -545,9 +552,7 @@ async function syncCalendarSubscription(db, userId, subscription, options = {})
 
 async function syncStoredCalendarSubscriptions(db, userId)
 {
-    const subscriptions = await db.collection('calendar_subscriptions')
-        .find({ user_id: new ObjectId(userId) })
-        .toArray();
+    const subscriptions = await getUserCalendarSubscriptions(db, userId);
 
     for(const subscription of subscriptions)
     {
@@ -557,16 +562,10 @@ async function syncStoredCalendarSubscriptions(db, userId)
         }
         catch(error)
         {
-            await db.collection('calendar_subscriptions').updateOne(
-                { _id: new ObjectId(subscription._id) },
-                {
-                    $set:
-                    {
-                        lastSyncError: error.message,
-                        lastSyncedAt: new Date(),
-                    },
-                }
-            );
+            await updateUserCalendarSubscription(db, userId, subscription._id, {
+                lastSyncError: error.message,
+                lastSyncedAt: new Date(),
+            });
         }
     }
 }
@@ -600,6 +599,93 @@ function safeObjectId(value, fieldName = 'id')
     {
         throw new Error(`${fieldName} must be a valid ObjectId`);
     }
+}
+
+async function getUserCalendarSubscriptions(db, userId)
+{
+    const user = await db.collection('users').findOne(
+        { _id: new ObjectId(userId) },
+        { projection: { calendarSubscriptions: 1 } }
+    );
+
+    if(Array.isArray(user?.calendarSubscriptions))
+    {
+        return user.calendarSubscriptions.map((subscription) => ({
+            _id: subscription._id instanceof ObjectId
+                ? subscription._id
+                : new ObjectId(String(subscription._id)),
+            url: String(subscription.url || '').trim(),
+            name: String(subscription.name || '').trim(),
+            lastSyncedAt: subscription.lastSyncedAt ? new Date(subscription.lastSyncedAt) : null,
+            lastSyncError: String(subscription.lastSyncError || ''),
+        }));
+    }
+
+    return [];
+}
+
+async function upsertUserCalendarSubscription(db, userId, subscription)
+{
+    const subscriptions = await getUserCalendarSubscriptions(db, userId);
+    const normalizedUrl = String(subscription.url || '').trim();
+    const existing = subscriptions.find(item => item.url === normalizedUrl);
+
+    if(existing)
+    {
+        const updates = {};
+        if(subscription.name !== undefined) updates.name = String(subscription.name || '').trim();
+        if(subscription.lastSyncedAt !== undefined) updates.lastSyncedAt = subscription.lastSyncedAt;
+        if(subscription.lastSyncError !== undefined) updates.lastSyncError = String(subscription.lastSyncError || '');
+
+        if(Object.keys(updates).length > 0)
+        {
+            await updateUserCalendarSubscription(db, userId, existing._id, updates);
+            return { ...existing, ...updates };
+        }
+
+        return existing;
+    }
+
+    const created = {
+        _id: new ObjectId(),
+        url: normalizedUrl,
+        name: String(subscription.name || '').trim(),
+        lastSyncedAt: subscription.lastSyncedAt ?? null,
+        lastSyncError: String(subscription.lastSyncError || ''),
+    };
+
+    await db.collection('users').updateOne(
+        { _id: new ObjectId(userId) },
+        { $push: { calendarSubscriptions: created } }
+    );
+
+    return created;
+}
+
+async function updateUserCalendarSubscription(db, userId, subscriptionId, updates)
+{
+    const normalizedId = subscriptionId instanceof ObjectId
+        ? subscriptionId
+        : new ObjectId(String(subscriptionId));
+    const setUpdates = {};
+
+    for(const [key, value] of Object.entries(updates))
+    {
+        setUpdates[`calendarSubscriptions.$.${key}`] = value;
+    }
+
+    if(Object.keys(setUpdates).length === 0)
+    {
+        return;
+    }
+
+    await db.collection('users').updateOne(
+        {
+            _id: new ObjectId(userId),
+            'calendarSubscriptions._id': normalizedId,
+        },
+        { $set: setUpdates }
+    );
 }
 
 function normalizeTaskForTool(task)
@@ -1138,10 +1224,11 @@ exports.setApp = function(app, client)
             const db = getDatabase(client);
             let calendarContent = String(icsContent || '').trim();
             const trimmedUrl = String(icsUrl || '').trim();
+            let parsedUrl = null;
 
             if(!calendarContent && trimmedUrl)
             {
-                const parsedUrl = normalizeHttpsUrl(trimmedUrl);
+                parsedUrl = normalizeHttpsUrl(trimmedUrl);
                 calendarContent = await httpsTextRequest(parsedUrl);
             }
 
@@ -1156,6 +1243,61 @@ exports.setApp = function(app, client)
             }
 
             const parsed   = ical.sync.parseICS(calendarContent);
+
+            if(parsedUrl)
+            {
+                const normalizedUrl = parsedUrl.toString();
+                const calendarName = getCalendarDisplayName(parsed);
+                const subscription = await upsertUserCalendarSubscription(db, userId, {
+                    url: normalizedUrl,
+                    name: calendarName || '',
+                    lastSyncedAt: null,
+                    lastSyncError: '',
+                });
+
+                await syncCalendarSubscription(db, userId, subscription, { force: true });
+
+                const duplicateFilters = [];
+                for(const key of Object.keys(parsed))
+                {
+                    const entry = parsed[key];
+                    if(entry.type !== 'VEVENT') continue;
+                    if(!entry.summary || !entry.start) continue;
+
+                    const signature = buildIcsTaskSignature(entry);
+                    duplicateFilters.push({
+                        user_id: new ObjectId(userId),
+                        source: 'ical',
+                        subscriptionId: { $exists: false },
+                        title: signature.title,
+                        description: signature.description,
+                        location: signature.location,
+                        dueDate: signature.dueDate,
+                        endDate: signature.endDate,
+                    });
+                }
+
+                if(duplicateFilters.length > 0)
+                {
+                    await db.collection('tasks').deleteMany({
+                        $or: duplicateFilters,
+                    });
+                }
+
+                const count = await db.collection('tasks').countDocuments({
+                    user_id: new ObjectId(userId),
+                    subscriptionId: new ObjectId(subscription._id),
+                    source: 'ical',
+                });
+
+                res.status(200).json({
+                    count,
+                    error: '',
+                    jwtToken: refreshJwtToken(token, jwtToken),
+                });
+                return;
+            }
+
             const toInsert = [];
 
             for(const key of Object.keys(parsed))
@@ -1164,14 +1306,15 @@ exports.setApp = function(app, client)
                 if(entry.type !== 'VEVENT') continue;
                 if(!entry.summary || !entry.start) continue;
 
+                const signature = buildIcsTaskSignature(entry);
                 toInsert.push(
                 {
                     user_id:     new ObjectId(userId),
-                    title:       entry.summary     || '(No title)',
-                    description: entry.description || '',
-                    location:    entry.location    || '',
-                    dueDate:     new Date(entry.start),
-                    endDate:     entry.end ? new Date(entry.end) : new Date(entry.start),
+                    title:       signature.title,
+                    description: signature.description,
+                    location:    signature.location,
+                    dueDate:     signature.dueDate,
+                    endDate:     signature.endDate,
                     isCompleted: false,
                     source:      'ical',
                 });
