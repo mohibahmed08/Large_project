@@ -182,6 +182,205 @@ function refreshJwtToken(tokenUtils, accessToken)
     return refreshedToken.error ? '' : refreshedToken.accessToken;
 }
 
+const CALENDAR_SYNC_INTERVAL_MS = 15 * 60 * 1000;
+
+function normalizeHttpsUrl(urlText)
+{
+    const trimmedUrl = String(urlText || '').trim();
+    if(!trimmedUrl)
+    {
+        return null;
+    }
+
+    let parsedUrl;
+    try
+    {
+        parsedUrl = new URL(trimmedUrl);
+    }
+    catch
+    {
+        throw new Error('icsUrl must be a valid URL');
+    }
+
+    if(parsedUrl.protocol !== 'https:')
+    {
+        throw new Error('icsUrl must use HTTPS');
+    }
+
+    return parsedUrl;
+}
+
+function getCalendarDisplayName(parsedCalendar)
+{
+    for(const entry of Object.values(parsedCalendar || {}))
+    {
+        if(entry?.type === 'VCALENDAR' && entry['x-wr-calname'])
+        {
+            return String(entry['x-wr-calname']).trim();
+        }
+    }
+
+    return '';
+}
+
+function buildExternalEventId(subscriptionId, entry)
+{
+    const baseId = entry.uid
+        ? String(entry.uid).trim()
+        : `${entry.summary || ''}|${entry.start ? new Date(entry.start).toISOString() : ''}`;
+
+    const recurrenceId = entry.recurrenceid
+        ? new Date(entry.recurrenceid).toISOString()
+        : '';
+
+    return `${String(subscriptionId)}:${baseId}:${recurrenceId}`;
+}
+
+function buildTaskFromIcsEntry(userId, subscriptionId, entry)
+{
+    return {
+        user_id:        new ObjectId(userId),
+        title:          entry.summary     || '(No title)',
+        description:    entry.description || '',
+        location:       entry.location    || '',
+        startDate:      new Date(entry.start),
+        endDate:        entry.end ? new Date(entry.end) : null,
+        isCompleted:    false,
+        source:         'ical',
+        subscriptionId: new ObjectId(subscriptionId),
+        externalEventId: buildExternalEventId(subscriptionId, entry),
+        externalUid:    entry.uid ? String(entry.uid) : '',
+        lastSyncedAt:   new Date(),
+    };
+}
+
+async function syncCalendarSubscription(db, userId, subscription, options = {})
+{
+    const parsedUrl = normalizeHttpsUrl(subscription.url);
+    const shouldForce = options.force === true;
+    const now = new Date();
+
+    if(!shouldForce && subscription.lastSyncedAt)
+    {
+        const lastSyncedAt = new Date(subscription.lastSyncedAt);
+        if(Number.isFinite(lastSyncedAt.getTime()) &&
+           now.getTime() - lastSyncedAt.getTime() < CALENDAR_SYNC_INTERVAL_MS)
+        {
+            return { insertedCount: 0, updatedCount: 0, deletedCount: 0, skipped: true };
+        }
+    }
+
+    const ical = require('node-ical');
+    const calendarContent = await httpsTextRequest(parsedUrl);
+    const parsedCalendar = ical.sync.parseICS(calendarContent);
+    const activeExternalIds = [];
+    let insertedCount = 0;
+    let updatedCount = 0;
+
+    for(const entry of Object.values(parsedCalendar))
+    {
+        if(entry?.type !== 'VEVENT') continue;
+        if(!entry.summary || !entry.start) continue;
+
+        const task = buildTaskFromIcsEntry(userId, subscription._id, entry);
+        activeExternalIds.push(task.externalEventId);
+
+        const updateResult = await db.collection('tasks').updateOne(
+            {
+                user_id: new ObjectId(userId),
+                subscriptionId: new ObjectId(subscription._id),
+                externalEventId: task.externalEventId,
+            },
+            { $set: task },
+            { upsert: true }
+        );
+
+        if(updateResult.upsertedCount > 0) insertedCount += 1;
+        else if(updateResult.modifiedCount > 0) updatedCount += 1;
+    }
+
+    const deleteFilter = {
+        user_id: new ObjectId(userId),
+        subscriptionId: new ObjectId(subscription._id),
+        source: 'ical',
+    };
+
+    if(activeExternalIds.length > 0)
+    {
+        deleteFilter.externalEventId = { $nin: activeExternalIds };
+    }
+
+    const deleteResult = await db.collection('tasks').deleteMany(deleteFilter);
+    const calendarName = getCalendarDisplayName(parsedCalendar);
+
+    await db.collection('calendar_subscriptions').updateOne(
+        { _id: new ObjectId(subscription._id) },
+        {
+            $set:
+            {
+                url: parsedUrl.toString(),
+                name: calendarName || subscription.name || '',
+                lastSyncedAt: now,
+                lastSyncError: '',
+            },
+        }
+    );
+
+    return {
+        insertedCount,
+        updatedCount,
+        deletedCount: deleteResult.deletedCount || 0,
+        skipped: false,
+    };
+}
+
+async function syncStoredCalendarSubscriptions(db, userId)
+{
+    const subscriptions = await db.collection('calendar_subscriptions')
+        .find({ user_id: new ObjectId(userId) })
+        .toArray();
+
+    for(const subscription of subscriptions)
+    {
+        try
+        {
+            await syncCalendarSubscription(db, userId, subscription);
+        }
+        catch(error)
+        {
+            await db.collection('calendar_subscriptions').updateOne(
+                { _id: new ObjectId(subscription._id) },
+                {
+                    $set:
+                    {
+                        lastSyncError: error.message,
+                        lastSyncedAt: new Date(),
+                    },
+                }
+            );
+        }
+    }
+}
+
+function buildStartDateRangeFilter(startDate, endDate)
+{
+    if(!startDate && !endDate)
+    {
+        return null;
+    }
+
+    const range = {};
+    if(startDate) range.$gte = new Date(startDate);
+    if(endDate)   range.$lte = new Date(endDate);
+
+    return { startDate: range };
+}
+
+function getTaskStartDate(task)
+{
+    return task.startDate || null;
+}
+
 exports.setApp = function(app, client)
 {
     const token = require('./createJWT.js');
@@ -321,18 +520,18 @@ exports.setApp = function(app, client)
         try
         {
             const db = getDatabase(client);
+            await syncStoredCalendarSubscriptions(db, userId);
             const query = { user_id: new ObjectId(userId) };
+            const dateRangeFilter = buildStartDateRangeFilter(startDate, endDate);
 
-            if(startDate || endDate)
+            if(dateRangeFilter)
             {
-                query.dueDate = {};
-                if(startDate) query.dueDate.$gte = new Date(startDate);
-                if(endDate)   query.dueDate.$lte = new Date(endDate);
+                query.startDate = dateRangeFilter.startDate;
             }
 
             const results = await db.collection('tasks')
                 .find(query)
-                .sort({ dueDate: 1 })
+                .sort({ startDate: 1 })
                 .toArray();
 
             res.status(200).json({
@@ -372,7 +571,7 @@ exports.setApp = function(app, client)
                     { location:    { $regex: trimmedSearch + '.*', $options: 'i' } },
                 ]
             })
-            .sort({ dueDate: 1 })
+            .sort({ startDate: 1 })
             .toArray();
 
             res.status(200).json({
@@ -390,7 +589,7 @@ exports.setApp = function(app, client)
 
     app.post('/api/savecalendar', async (req, res) =>
     {
-        const { userId, jwtToken, taskId, title, description, dueDate, isCompleted } = req.body;
+        const { userId, jwtToken, taskId, title, description, startDate, isCompleted } = req.body;
 
         if(!validateJwtOrRespond(token, res, jwtToken))
         {
@@ -406,7 +605,10 @@ exports.setApp = function(app, client)
                 const updates = {};
                 if(title       !== undefined) updates.title       = title;
                 if(description !== undefined) updates.description = description;
-                if(dueDate     !== undefined) updates.dueDate     = new Date(dueDate);
+                if(startDate !== undefined)
+                {
+                    updates.startDate = startDate ? new Date(startDate) : null;
+                }
                 if(isCompleted !== undefined) updates.isCompleted = isCompleted;
 
                 await db.collection('tasks').updateOne(
@@ -420,7 +622,7 @@ exports.setApp = function(app, client)
                     user_id:     new ObjectId(userId),
                     title:       title || '',
                     description: description || '',
-                    dueDate:     dueDate ? new Date(dueDate) : null,
+                    startDate:   startDate ? new Date(startDate) : null,
                     isCompleted: isCompleted || false,
                 };
 
@@ -450,27 +652,11 @@ exports.setApp = function(app, client)
             const ical = require('node-ical');
             const db = getDatabase(client);
             let calendarContent = String(icsContent || '').trim();
+            const trimmedUrl = String(icsUrl || '').trim();
 
-            if(!calendarContent && icsUrl)
+            if(!calendarContent && trimmedUrl)
             {
-                let parsedUrl;
-
-                try
-                {
-                    parsedUrl = new URL(icsUrl);
-                }
-                catch
-                {
-                    res.status(400).json({ count: 0, error: 'icsUrl must be a valid URL', jwtToken: '' });
-                    return;
-                }
-
-                if(parsedUrl.protocol !== 'https:')
-                {
-                    res.status(400).json({ count: 0, error: 'icsUrl must use HTTPS', jwtToken: '' });
-                    return;
-                }
-
+                const parsedUrl = normalizeHttpsUrl(trimmedUrl);
                 calendarContent = await httpsTextRequest(parsedUrl);
             }
 
@@ -480,6 +666,47 @@ exports.setApp = function(app, client)
                     count: 0,
                     error: 'Either icsContent or icsUrl is required',
                     jwtToken: '',
+                });
+                return;
+            }
+
+            if(trimmedUrl)
+            {
+                const normalizedUrl = normalizeHttpsUrl(trimmedUrl).toString();
+                const existingSubscription = await db.collection('calendar_subscriptions').findOne(
+                {
+                    user_id: new ObjectId(userId),
+                    url: normalizedUrl,
+                });
+
+                let subscription = existingSubscription;
+
+                if(!subscription)
+                {
+                    const insertResult = await db.collection('calendar_subscriptions').insertOne(
+                    {
+                        user_id: new ObjectId(userId),
+                        url: normalizedUrl,
+                        name: '',
+                        lastSyncedAt: null,
+                        lastSyncError: '',
+                        createdAt: new Date(),
+                    });
+
+                    subscription = {
+                        _id: insertResult.insertedId,
+                        user_id: new ObjectId(userId),
+                        url: normalizedUrl,
+                        name: '',
+                        lastSyncedAt: null,
+                    };
+                }
+
+                const syncResult = await syncCalendarSubscription(db, userId, subscription, { force: true });
+                res.status(200).json({
+                    count: syncResult.insertedCount + syncResult.updatedCount,
+                    error: '',
+                    jwtToken: refreshJwtToken(token, jwtToken),
                 });
                 return;
             }
@@ -499,7 +726,7 @@ exports.setApp = function(app, client)
                     title:       entry.summary     || '(No title)',
                     description: entry.description || '',
                     location:    entry.location    || '',
-                    dueDate:     new Date(entry.start),
+                    startDate:   new Date(entry.start),
                     endDate:     entry.end ? new Date(entry.end) : null,
                     isCompleted: false,
                     source:      'ical',
@@ -554,13 +781,13 @@ exports.setApp = function(app, client)
             const tasks = await db.collection('tasks').find(
             {
                 user_id: new ObjectId(userId),
-                dueDate: { $gte: dayStart, $lte: dayEnd },
+                startDate: { $gte: dayStart, $lte: dayEnd },
             })
-            .sort({ dueDate: 1 })
+            .sort({ startDate: 1 })
             .toArray();
 
             const taskSummary = tasks.length
-                ? tasks.map(t => `- ${t.title}${t.dueDate ? ' at ' + t.dueDate.toLocaleTimeString() : ''}${t.location ? ' (' + t.location + ')' : ''}`)
+                ? tasks.map(t => `- ${t.title}${getTaskStartDate(t) ? ' at ' + getTaskStartDate(t).toLocaleTimeString() : ''}${t.location ? ' (' + t.location + ')' : ''}`)
                       .join('\n')
                 : 'No tasks scheduled for this day.';
 
@@ -570,7 +797,7 @@ exports.setApp = function(app, client)
                 user_id:     new ObjectId(userId),
                 isCompleted: true,
             })
-            .sort({ dueDate: -1 })
+            .sort({ startDate: -1 })
             .limit(30)
             .toArray();
 
@@ -662,13 +889,13 @@ Suggest practical, realistic calendar events that complement the existing tasks 
             const todayTasks = await db.collection('tasks').find(
             {
                 user_id: new ObjectId(userId),
-                dueDate: { $gte: dayStart, $lte: dayEnd },
+                startDate: { $gte: dayStart, $lte: dayEnd },
             })
-            .sort({ dueDate: 1 })
+            .sort({ startDate: 1 })
             .toArray();
 
             const todaySummary = todayTasks.length
-                ? todayTasks.map(t => `- ${t.title}${t.dueDate ? ' at ' + t.dueDate.toLocaleTimeString() : ''}`)
+                ? todayTasks.map(t => `- ${t.title}${getTaskStartDate(t) ? ' at ' + getTaskStartDate(t).toLocaleTimeString() : ''}`)
                             .join('\n')
                 : 'No tasks today.';
 
@@ -680,13 +907,13 @@ Suggest practical, realistic calendar events that complement the existing tasks 
             const weekTasks = await db.collection('tasks').find({
                 user_id: new ObjectId(userId),
                 isCompleted: false,
-                dueDate: { $gt: dayEnd, $lte: weekEnd },
+                startDate: { $gt: dayEnd, $lte: weekEnd },
             })
-            .sort({ dueDate: 1 })
+            .sort({ startDate: 1 })
             .toArray();
 
             const comingWeek = weekTasks.length
-                ? weekTasks.map(t => `- ${t.title}${t.dueDate ? ' on ' + new Date(t.dueDate).toLocaleString() : ''}`).join('\n')
+                ? weekTasks.map(t => `- ${t.title}${getTaskStartDate(t) ? ' on ' + new Date(getTaskStartDate(t)).toLocaleString() : ''}`).join('\n')
                 : 'No upcoming tasks this week.';
 
             // Get user preferences by getting recent task history
@@ -695,7 +922,7 @@ Suggest practical, realistic calendar events that complement the existing tasks 
                 user_id:     new ObjectId(userId),
                 isCompleted: true,
             })
-            .sort({ dueDate: -1 })
+            .sort({ startDate: -1 })
             .limit(30)
             .toArray();
 
