@@ -31,3 +31,38 @@ backend/node_modules
 
 # Linux metadata files
 *:Zone.Identifier
+
+# Found below gitignore template on Google
+# Flutter / Dart
+.dart_tool/
+.packages
+.pub/
+build/
+
+# Flutter generated
+.flutter-plugins
+.flutter-plugins-dependencies
+.generated/
+.metadata
+
+# IDE
+.idea/
+.vscode/
+
+# macOS / Windows noise
+.DS_Store
+Thumbs.db
+
+# Android
+android/.gradle/
+android/local.properties
+
+# iOS / macOS generated
+ios/Flutter/ephemeral/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+macos/Flutter/ephemeral/
+
+# Linux / Windows generated
+linux/flutter/ephemeral/
+windows/flutter/ephemeral/
