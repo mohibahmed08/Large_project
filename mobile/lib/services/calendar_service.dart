@@ -30,8 +30,8 @@ class CalendarService {
       'loadcalendar',
       session,
       {
-        if (startDate != null) 'startDate': startDate.toIso8601String(),
-        if (endDate != null) 'endDate': endDate.toIso8601String(),
+        if (startDate != null) 'startDate': startDate.toUtc().toIso8601String(),
+        if (endDate != null) 'endDate': endDate.toUtc().toIso8601String(),
       },
     );
 
@@ -85,8 +85,8 @@ class CalendarService {
         if (taskId != null && taskId.isNotEmpty) 'taskId': taskId,
         'title': title,
         'description': description,
-        if (startDate != null) 'dueDate': startDate.toIso8601String(),
-        if (endDate != null) 'endDate': endDate.toIso8601String(),
+        if (startDate != null) 'dueDate': startDate.toUtc().toIso8601String(),
+        if (endDate != null) 'endDate': endDate.toUtc().toIso8601String(),
         'location': location,
         'source': source,
         'isCompleted': isCompleted,
