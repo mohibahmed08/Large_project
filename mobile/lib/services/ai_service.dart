@@ -1,0 +1,119 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
+import '../models/ai_models.dart';
+import '../models/user_model.dart';
+import 'api_config.dart';
+
+class AiChatResult {
+  AiChatResult({
+    required this.reply,
+    required this.session,
+  });
+
+  final String reply;
+  final UserSession session;
+}
+
+class AiSuggestionResult {
+  AiSuggestionResult({
+    required this.suggestions,
+    required this.session,
+  });
+
+  final List<SuggestionItem> suggestions;
+  final UserSession session;
+}
+
+class AiService {
+  AiService({String? baseUrl}) : baseUrl = baseUrl ?? ApiConfig.baseUrl;
+
+  final String baseUrl;
+
+  Future<AiChatResult> chat({
+    required UserSession session,
+    required List<Map<String, String>> messages,
+  }) async {
+    final json = await _post(
+      'chat',
+      session,
+      {'messages': messages},
+    );
+
+    return AiChatResult(
+      reply: json['reply']?.toString() ?? '',
+      session: _updatedSession(session, json),
+    );
+  }
+
+  Future<AiSuggestionResult> suggestEvents({
+    required UserSession session,
+    required DateTime date,
+    String? preferences,
+  }) async {
+    final json = await _post(
+      'suggestevents',
+      session,
+      {
+        'date': date.toIso8601String(),
+        if (preferences != null && preferences.trim().isNotEmpty)
+          'preferences': preferences.trim(),
+      },
+    );
+
+    final suggestions = ((json['suggestions'] as List?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(SuggestionItem.fromJson)
+        .toList();
+
+    return AiSuggestionResult(
+      suggestions: suggestions,
+      session: _updatedSession(session, json),
+    );
+  }
+
+  Future<Map<String, dynamic>> _post(
+    String path,
+    UserSession session,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/$path'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'userId': session.userId,
+        'jwtToken': session.accessToken,
+        ...body,
+      }),
+    );
+
+    final json = _decodeBody(response.body);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return json;
+    }
+
+    throw Exception(json['error']?.toString() ?? 'Request failed.');
+  }
+
+  Map<String, dynamic> _decodeBody(String body) {
+    if (body.isEmpty) {
+      return {};
+    }
+
+    final decoded = jsonDecode(body);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+
+    return {};
+  }
+
+  UserSession _updatedSession(UserSession session, Map<String, dynamic> json) {
+    final refreshed = json['jwtToken']?.toString() ?? '';
+    if (refreshed.isEmpty) {
+      return session;
+    }
+    return session.copyWith(accessToken: refreshed);
+  }
+}
