@@ -149,6 +149,146 @@ async function callOpenAI(apiKey, input, options = {})
     throw new Error(`OpenAI response did not include output text: ${JSON.stringify(result.body)}`);
 }
 
+async function streamOpenAI(apiKey, input, options = {}, handlers = {})
+{
+    const {
+        model = 'gpt-5',
+        instructions = '',
+        useWebSearch = false,
+    } = options;
+
+    const requestBody = {
+        model,
+        input,
+        stream: true,
+    };
+
+    if(instructions)
+    {
+        requestBody.instructions = instructions;
+    }
+
+    if(useWebSearch)
+    {
+        requestBody.tools = [{ type: 'web_search' }];
+        requestBody.tool_choice = 'auto';
+    }
+
+    const bodyStr = JSON.stringify(requestBody);
+
+    await new Promise((resolve, reject) =>
+    {
+        const req = https.request(
+        {
+            hostname: 'api.openai.com',
+            path:     '/v1/responses',
+            method:   'POST',
+            headers:
+            {
+                'Content-Type':   'application/json',
+                'Authorization':  `Bearer ${apiKey}`,
+                'Content-Length': Buffer.byteLength(bodyStr),
+            },
+        }, (res) =>
+        {
+            if(res.statusCode !== 200)
+            {
+                let errorBody = '';
+                res.on('data', (chunk) => { errorBody += chunk; });
+                res.on('end', () =>
+                {
+                    reject(new Error(`OpenAI error ${res.statusCode}: ${errorBody}`));
+                });
+                return;
+            }
+
+            let buffer = '';
+            let currentEvent = '';
+
+            const processBlock = (block) =>
+            {
+                const lines = block.split('\n');
+                let data = '';
+
+                for(const rawLine of lines)
+                {
+                    const line = rawLine.trimEnd();
+                    if(!line) continue;
+
+                    if(line.startsWith('event:'))
+                    {
+                        currentEvent = line.slice(6).trim();
+                    }
+                    else if(line.startsWith('data:'))
+                    {
+                        data += line.slice(5).trim();
+                    }
+                }
+
+                if(!data || data === '[DONE]')
+                {
+                    return;
+                }
+
+                let payload;
+                try
+                {
+                    payload = JSON.parse(data);
+                }
+                catch
+                {
+                    return;
+                }
+
+                const eventType = currentEvent || payload.type || '';
+                if(eventType === 'response.output_text.delta' && typeof payload.delta === 'string')
+                {
+                    handlers.onDelta?.(payload.delta);
+                }
+                else if(eventType === 'response.completed')
+                {
+                    handlers.onDone?.(payload);
+                }
+                else if(eventType === 'response.error')
+                {
+                    handlers.onError?.(payload);
+                }
+            };
+
+            res.setEncoding('utf8');
+            res.on('data', (chunk) =>
+            {
+                buffer += chunk;
+
+                let separatorIndex = buffer.indexOf('\n\n');
+                while(separatorIndex >= 0)
+                {
+                    const block = buffer.slice(0, separatorIndex);
+                    buffer = buffer.slice(separatorIndex + 2);
+                    processBlock(block);
+                    currentEvent = '';
+                    separatorIndex = buffer.indexOf('\n\n');
+                }
+            });
+
+            res.on('end', () =>
+            {
+                if(buffer.trim().length > 0)
+                {
+                    processBlock(buffer);
+                }
+                resolve();
+            });
+
+            res.on('error', reject);
+        });
+
+        req.on('error', reject);
+        req.write(bodyStr);
+        req.end();
+    });
+}
+
 function createTransporter()
 {
     return nodemailer.createTransport(
@@ -1036,6 +1176,165 @@ Help the user manage their schedule, suggest events, answer questions about thei
         catch(error)
         {
             res.status(500).json({ reply: '', error: error.toString(), jwtToken: '' });
+        }
+    });
+
+
+    app.post('/api/chatstream', async (req, res) =>
+    {
+        const { userId, jwtToken, messages, latitude, longitude, localNow, timeZone, utcOffsetMinutes } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken)) return;
+
+        const apiKey = process.env.OPENAI_API_KEY;
+        if(!apiKey)
+        {
+            res.status(500).json({ error: 'OPENAI API key is not configured', jwtToken: '' });
+            return;
+        }
+
+        if(!Array.isArray(messages) || messages.length === 0)
+        {
+            res.status(400).json({ error: 'messages array is required', jwtToken: '' });
+            return;
+        }
+
+        try
+        {
+            const db   = getDatabase(client);
+            const now  = localNow ? new Date(localNow) : new Date();
+            const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
+            const dayEnd   = new Date(now); dayEnd.setHours(23, 59, 59, 999);
+
+            const todayTasks = await db.collection('tasks').find(
+            {
+                user_id: new ObjectId(userId),
+                dueDate: { $gte: dayStart, $lte: dayEnd },
+            })
+            .sort({ dueDate: 1 })
+            .toArray();
+
+            const todaySummary = todayTasks.length
+                ? todayTasks.map(t => `- ${t.title}${getTaskStartDate(t) ? ' at ' + getTaskStartDate(t).toLocaleTimeString() : ''}`).join('\n')
+                : 'No tasks today.';
+
+            const weekEnd = new Date(now);
+            weekEnd.setDate(weekEnd.getDate() + 7);
+            weekEnd.setHours(23, 59, 59, 999);
+
+            const weekTasks = await db.collection('tasks').find({
+                user_id: new ObjectId(userId),
+                isCompleted: false,
+                dueDate: { $gt: dayEnd, $lte: weekEnd },
+            })
+            .sort({ dueDate: 1 })
+            .toArray();
+
+            const comingWeek = weekTasks.length
+                ? weekTasks.map(t => `- ${t.title}${getTaskStartDate(t) ? ' on ' + new Date(getTaskStartDate(t)).toLocaleString() : ''}`).join('\n')
+                : 'No upcoming tasks this week.';
+
+            const recent = await db.collection('tasks').find(
+            {
+                user_id:     new ObjectId(userId),
+                isCompleted: true,
+            })
+            .sort({ dueDate: -1 })
+            .limit(30)
+            .toArray();
+
+            const recentTitles = recent.length
+                ? [...new Set(recent.map(t => t.title))].slice(0, 15).join(', ')
+                : 'None';
+
+            let weatherLine = 'Weather: not available.';
+            if(latitude != null && longitude != null)
+            {
+                const w = await fetchWeather(latitude, longitude);
+                if(w) weatherLine = `Current weather: ${w.description}, ${w.temperatureF}Â°F, wind ${w.windSpeedMph} mph.`;
+            }
+
+            const localTimeLine = [
+                `Local time: ${now.toString()}.`,
+                timeZone ? `Timezone: ${timeZone}.` : '',
+                utcOffsetMinutes !== undefined ? `UTC offset minutes: ${utcOffsetMinutes}.` : '',
+            ].filter(Boolean).join(' ');
+
+            const systemPrompt =
+                `You are a knowledgeable personal calendar assistant.
+                 You have access to the user's current schedule and preferences.
+                 You may use live web search when the user asks about current, nearby, or time-sensitive things.
+                 Do not claim you lack real-time access if web search would help; use it instead.
+
+Today is ${now.toDateString()}.
+${localTimeLine}
+${weatherLine}
+
+Today's schedule:
+${todaySummary}
+
+Coming week schedule:
+${comingWeek}
+
+Recently completed tasks (interests): ${recentTitles}
+
+Help the user manage their schedule, suggest events, answer questions about their day, and offer practical advice. Be concise but conversational and relatable.`;
+
+            const locationContext = latitude != null && longitude != null
+                ? `Approximate user coordinates: latitude ${latitude}, longitude ${longitude}.`
+                : 'No exact coordinates were provided.';
+
+            const responseInput = [
+                { role: 'user', content: locationContext },
+                ...messages,
+            ];
+
+            res.status(200);
+            res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-cache, no-transform');
+            res.setHeader('Connection', 'keep-alive');
+            res.flushHeaders?.();
+
+            const writeEvent = (payload) =>
+            {
+                res.write(`${JSON.stringify(payload)}\n`);
+            };
+
+            await streamOpenAI(
+                apiKey,
+                responseInput,
+                {
+                    instructions: systemPrompt,
+                    useWebSearch: true,
+                },
+                {
+                    onDelta: (delta) =>
+                    {
+                        writeEvent({ type: 'delta', delta });
+                    },
+                    onError: (payload) =>
+                    {
+                        writeEvent({ type: 'error', error: payload?.error?.message || 'Streaming failed.' });
+                    },
+                    onDone: () =>
+                    {
+                        writeEvent({ type: 'done', jwtToken: refreshJwtToken(token, jwtToken) });
+                    },
+                }
+            );
+
+            res.end();
+        }
+        catch(error)
+        {
+            if(!res.headersSent)
+            {
+                res.status(500).json({ error: error.toString(), jwtToken: '' });
+                return;
+            }
+
+            res.write(`${JSON.stringify({ type: 'error', error: error.toString() })}\n`);
+            res.end();
         }
     });
 
