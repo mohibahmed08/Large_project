@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../models/user_model.dart';
@@ -42,9 +41,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     setState(() {
-      isLoading = true;
-      errorMsg = '';
-      successMsg = '';
+      _isLoading = true;
     });
 
     try {
