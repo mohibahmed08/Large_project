@@ -35,10 +35,16 @@ class AiService {
     required UserSession session,
     required List<Map<String, String>> messages,
   }) async {
+    final localNow = DateTime.now();
     final json = await _post(
       'chat',
       session,
-      {'messages': messages},
+      {
+        'messages': messages,
+        'localNow': localNow.toIso8601String(),
+        'timeZone': localNow.timeZoneName,
+        'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
+      },
     );
 
     return AiChatResult(
@@ -52,11 +58,15 @@ class AiService {
     required DateTime date,
     String? preferences,
   }) async {
+    final localNow = DateTime.now();
     final json = await _post(
       'suggestevents',
       session,
       {
         'date': date.toIso8601String(),
+        'localNow': localNow.toIso8601String(),
+        'timeZone': localNow.timeZoneName,
+        'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
         if (preferences != null && preferences.trim().isNotEmpty)
           'preferences': preferences.trim(),
       },
