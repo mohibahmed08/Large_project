@@ -756,7 +756,7 @@ exports.setApp = function(app, client)
     // Suggest events with ChatGPT Chat Completions API
     app.post('/api/suggestevents', async (req, res) =>
     {
-        const { userId, jwtToken, date, latitude, longitude, preferences } = req.body;
+        const { userId, jwtToken, date, latitude, longitude, preferences, localNow, timeZone, utcOffsetMinutes } = req.body;
 
         if(!validateJwtOrRespond(token, res, jwtToken))
         {
@@ -774,6 +774,7 @@ exports.setApp = function(app, client)
         {
             const db          = getDatabase(client);
             const targetDate  = date ? new Date(date) : new Date();
+            const localNowDate = localNow ? new Date(localNow) : new Date();
             const dayStart    = new Date(targetDate); dayStart.setHours(0, 0, 0, 0);
             const dayEnd      = new Date(targetDate); dayEnd.setHours(23, 59, 59, 999);
 
@@ -813,6 +814,12 @@ exports.setApp = function(app, client)
                 if(w) weatherSummary = `${w.description}, ${w.temperatureF}°F, wind ${w.windSpeedMph} mph`;
             }
 
+            const localTimeSummary = [
+                `Local time: ${localNowDate.toString()}.`,
+                timeZone ? `Timezone: ${timeZone}.` : '',
+                utcOffsetMinutes !== undefined ? `UTC offset minutes: ${utcOffsetMinutes}.` : '',
+            ].filter(Boolean).join(' ');
+
             // Build system prompt and completion prompt
             const systemPrompt =
                 `You are a helpful personal assistant that suggests calendar events for a user's day.
@@ -822,6 +829,8 @@ exports.setApp = function(app, client)
 
             const userPrompt =
                 `Today is ${targetDate.toDateString()}.
+
+${localTimeSummary}
 
 Current weather: ${weatherSummary}
 
@@ -861,7 +870,7 @@ Suggest practical, realistic calendar events that complement the existing tasks 
     // Chat with ChatGPT Chat Completions
     app.post('/api/chat', async (req, res) =>
     {
-        const { userId, jwtToken, messages, latitude, longitude } = req.body;
+        const { userId, jwtToken, messages, latitude, longitude, localNow, timeZone, utcOffsetMinutes } = req.body;
 
         if(!validateJwtOrRespond(token, res, jwtToken)) return;
 
@@ -881,7 +890,7 @@ Suggest practical, realistic calendar events that complement the existing tasks 
         try
         {
             const db   = getDatabase(client);
-            const now  = new Date();
+            const now  = localNow ? new Date(localNow) : new Date();
             const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
             const dayEnd   = new Date(now); dayEnd.setHours(23, 59, 59, 999);
 
@@ -938,12 +947,19 @@ Suggest practical, realistic calendar events that complement the existing tasks 
                 if(w) weatherLine = `Current weather: ${w.description}, ${w.temperatureF}°F, wind ${w.windSpeedMph} mph.`;
             }
 
+            const localTimeLine = [
+                `Local time: ${now.toString()}.`,
+                timeZone ? `Timezone: ${timeZone}.` : '',
+                utcOffsetMinutes !== undefined ? `UTC offset minutes: ${utcOffsetMinutes}.` : '',
+            ].filter(Boolean).join(' ');
+
             // Build system prompt and user prompt
             const systemPrompt =
                 `You are a knowledgeable personal calendar assistant.
                  You have access to the user's current schedule and preferences.
 
 Today is ${now.toDateString()}.
+${localTimeLine}
 ${weatherLine}
 
 Today's schedule:
