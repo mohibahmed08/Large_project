@@ -34,6 +34,8 @@ class AiService {
   Future<AiChatResult> chat({
     required UserSession session,
     required List<Map<String, String>> messages,
+    double? latitude,
+    double? longitude,
   }) async {
     final localNow = DateTime.now();
     final json = await _post(
@@ -44,6 +46,8 @@ class AiService {
         'localNow': localNow.toIso8601String(),
         'timeZone': localNow.timeZoneName,
         'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
       },
     );
 
@@ -57,6 +61,8 @@ class AiService {
     required UserSession session,
     required DateTime date,
     String? preferences,
+    double? latitude,
+    double? longitude,
   }) async {
     final localNow = DateTime.now();
     final json = await _post(
@@ -67,6 +73,8 @@ class AiService {
         'localNow': localNow.toIso8601String(),
         'timeZone': localNow.timeZoneName,
         'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
         if (preferences != null && preferences.trim().isNotEmpty)
           'preferences': preferences.trim(),
       },

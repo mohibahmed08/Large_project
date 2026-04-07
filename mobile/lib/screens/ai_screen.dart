@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../models/ai_models.dart';
 import '../models/user_model.dart';
@@ -31,6 +33,10 @@ class _AIScreenState extends State<AIScreen> {
   late UserSession _session;
   bool _isSending = false;
   bool _isLoadingSuggestions = false;
+  bool _isFetchingLocation = false;
+  double? _latitude;
+  double? _longitude;
+  String? _locationNotice;
   final List<_ChatBubbleData> _messages = [
     const _ChatBubbleData(
       role: 'assistant',
@@ -43,6 +49,7 @@ class _AIScreenState extends State<AIScreen> {
   void initState() {
     super.initState();
     _session = widget.initialSession;
+    _refreshLocation();
   }
 
   @override
@@ -70,6 +77,8 @@ class _AIScreenState extends State<AIScreen> {
         messages: _messages
             .map((message) => {'role': message.role, 'content': message.text})
             .toList(),
+        latitude: _latitude,
+        longitude: _longitude,
       );
 
       if (!mounted) {
@@ -106,6 +115,8 @@ class _AIScreenState extends State<AIScreen> {
         session: _session,
         date: widget.selectedDate,
         preferences: _preferencesController.text,
+        latitude: _latitude,
+        longitude: _longitude,
       );
 
       if (!mounted) {
@@ -151,6 +162,78 @@ class _AIScreenState extends State<AIScreen> {
     }
   }
 
+  Future<void> _refreshLocation() async {
+    if (_isFetchingLocation) {
+      return;
+    }
+
+    setState(() {
+      _isFetchingLocation = true;
+    });
+
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _locationNotice = 'Location services are off, so nearby search may be less accurate.';
+        });
+        return;
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _locationNotice =
+              'Location permission is off, so the AI is using time and calendar context only.';
+        });
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.low,
+        ),
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _latitude = position.latitude;
+        _longitude = position.longitude;
+        _locationNotice =
+            'Nearby suggestions are using your current location.';
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _locationNotice =
+            'Could not read device location, so nearby suggestions may be generic.';
+      });
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isFetchingLocation = false;
+      });
+    }
+  }
+
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
@@ -187,6 +270,35 @@ class _AIScreenState extends State<AIScreen> {
                             ),
                           ),
                           const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _locationNotice ??
+                                      'Checking location for nearby suggestions...',
+                                  style: const TextStyle(
+                                    color: AppTheme.textMuted,
+                                    height: 1.35,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                onPressed:
+                                    _isFetchingLocation ? null : _refreshLocation,
+                                icon: _isFetchingLocation
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.my_location),
+                                tooltip: 'Refresh location',
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
                           TextField(
                             controller: _preferencesController,
                             decoration: const InputDecoration(
@@ -260,11 +372,34 @@ class _AIScreenState extends State<AIScreen> {
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: AppTheme.border),
                         ),
-                        child: Text(
-                          message.text,
-                          style: const TextStyle(
-                            color: AppTheme.textPrimary,
-                            height: 1.35,
+                        child: MarkdownBody(
+                          data: message.text,
+                          selectable: true,
+                          styleSheet: MarkdownStyleSheet(
+                            p: const TextStyle(
+                              color: AppTheme.textPrimary,
+                              height: 1.4,
+                            ),
+                            a: const TextStyle(
+                              color: AppTheme.accent,
+                              decoration: TextDecoration.underline,
+                            ),
+                            strong: const TextStyle(
+                              color: AppTheme.textPrimary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            listBullet: const TextStyle(
+                              color: AppTheme.textPrimary,
+                            ),
+                            blockquote: const TextStyle(
+                              color: AppTheme.textMuted,
+                              height: 1.4,
+                            ),
+                            code: TextStyle(
+                              color: isUser
+                                  ? AppTheme.textPrimary
+                                  : AppTheme.accentSoft,
+                            ),
                           ),
                         ),
                       ),
