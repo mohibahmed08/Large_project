@@ -99,7 +99,7 @@ function extractResponseText(responseBody)
 async function createOpenAIResponse(apiKey, input, options = {})
 {
     const {
-        model = 'gpt-5',
+        model = 'gpt-4o',
         instructions = '',
         useWebSearch = false,
         tools = [],
@@ -165,7 +165,7 @@ async function callOpenAI(apiKey, input, options = {})
 async function streamOpenAI(apiKey, input, options = {}, handlers = {})
 {
     const {
-        model = 'gpt-5',
+        model = 'gpt-4o',
         instructions = '',
         useWebSearch = false,
     } = options;
@@ -896,8 +896,9 @@ async function runCalendarAssistant(apiKey, db, userId, messages, context)
     const tools = buildCalendarAssistantTools();
     let input = [...context.prefixMessages, ...messages];
     let calendarChanged = false;
+    const seenToolCalls = new Set();
 
-    for(let iteration = 0; iteration < 6; iteration += 1)
+    for(let iteration = 0; iteration < 4; iteration += 1)
     {
         const response = await createOpenAIResponse(
             apiKey,
@@ -921,6 +922,38 @@ async function runCalendarAssistant(apiKey, db, userId, messages, context)
             };
         }
 
+        const repeatedCalls = functionCalls.filter((toolCall) =>
+        {
+            const signature = `${toolCall.name}:${toolCall.arguments || ''}`;
+            if(seenToolCalls.has(signature))
+            {
+                return true;
+            }
+
+            seenToolCalls.add(signature);
+            return false;
+        });
+
+        if(repeatedCalls.length === functionCalls.length)
+        {
+            const reply = await callOpenAI(
+                apiKey,
+                input,
+                {
+                    instructions: `${context.systemPrompt}
+
+Use the existing tool results already in the conversation and answer the user directly now.
+Do not call more tools unless the user asks for a new action.`,
+                    useWebSearch: true,
+                }
+            );
+
+            return {
+                reply,
+                calendarChanged,
+            };
+        }
+
         input = [...input, ...response.output];
 
         for(const toolCall of functionCalls)
@@ -936,9 +969,29 @@ async function runCalendarAssistant(apiKey, db, userId, messages, context)
                 output: JSON.stringify(output),
             });
         }
+
+        input.push({
+            role: 'system',
+            content: 'Use the tool results above to answer the user directly. Do not repeat the same tool call with the same arguments.',
+        });
     }
 
-    throw new Error('AI tool-calling exceeded the allowed number of steps.');
+    const reply = await callOpenAI(
+        apiKey,
+        input,
+        {
+            instructions: `${context.systemPrompt}
+
+Answer the user directly using the tool results already gathered.
+Do not call any more tools in this response.`,
+            useWebSearch: true,
+        }
+    );
+
+    return {
+        reply,
+        calendarChanged,
+    };
 }
 
 exports.setApp = function(app, client)
