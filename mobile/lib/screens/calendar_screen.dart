@@ -1,5 +1,8 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -193,6 +196,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
         title: result.title,
         description: result.description,
         startDate: startDate,
+        endDate: task?.endDate,
+        location: task?.location ?? '',
+        source: task?.source ?? 'manual',
         isCompleted: task?.isCompleted ?? false,
       );
 
@@ -222,6 +228,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
         title: task.title,
         description: task.description,
         startDate: task.startDate,
+        endDate: task.endDate,
+        location: task.location,
+        source: task.source,
         isCompleted: value,
       );
       await _loadMonth();
@@ -245,6 +254,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _pickAndImportCalendarFile();
+                  },
+                  icon: const Icon(Icons.upload_file),
+                  label: const Text('Choose .ics or .zip file'),
+                ),
+              ),
+              const SizedBox(height: 12),
               TextField(
                 controller: urlController,
                 decoration: const InputDecoration(
@@ -313,6 +334,92 @@ class _CalendarScreenState extends State<CalendarScreen> {
       }
       _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
     }
+  }
+
+  Future<void> _pickAndImportCalendarFile() async {
+    try {
+      final file = await openFile(
+        acceptedTypeGroups: [
+          const XTypeGroup(
+            label: 'Calendar files',
+            extensions: ['ics', 'zip'],
+          ),
+        ],
+      );
+
+      if (file == null) {
+        return;
+      }
+
+      final name = file.name.toLowerCase();
+      final bytes = await file.readAsBytes();
+
+      if (name.endsWith('.ics')) {
+        final content = String.fromCharCodes(bytes);
+        await _importCalendarContents([content]);
+        return;
+      }
+
+      if (name.endsWith('.zip')) {
+        final archives = _extractIcsFilesFromZip(bytes);
+        if (archives.isEmpty) {
+          _showSnackBar('No .ics files were found in that zip archive.');
+          return;
+        }
+        await _importCalendarContents(archives);
+        return;
+      }
+
+      _showSnackBar('Only .ics and .zip files are supported.');
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  List<String> _extractIcsFilesFromZip(Uint8List bytes) {
+    final archive = ZipDecoder().decodeBytes(bytes);
+    final contents = <String>[];
+
+    for (final entry in archive.files) {
+      if (!entry.isFile || !entry.name.toLowerCase().endsWith('.ics')) {
+        continue;
+      }
+
+      final data = entry.content;
+      if (data is List<int>) {
+        contents.add(String.fromCharCodes(data));
+      }
+    }
+
+    return contents;
+  }
+
+  Future<void> _importCalendarContents(List<String> contents) async {
+    var totalImported = 0;
+
+    for (final content in contents) {
+      final importResult = await _calendarService.importCalendar(
+        session: _session,
+        icsContent: content,
+      );
+      _session = importResult.$1;
+      totalImported += importResult.$2;
+    }
+
+    await _loadMonth();
+    if (!mounted) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar('Imported $totalImported calendar events.');
+    });
   }
 
   void _openAiScreen() {

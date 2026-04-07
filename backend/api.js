@@ -72,14 +72,62 @@ async function fetchWeather(latitude, longitude)
     };
 }
 
-// OpenAI Chat Completions Call
-async function callOpenAI(apiKey, messages, model = 'gpt-4o-mini')
+function extractResponseText(responseBody)
 {
-    const bodyStr = JSON.stringify({ model, messages, temperature: 0.7 });
+    const outputs = Array.isArray(responseBody?.output) ? responseBody.output : [];
+    const textParts = [];
+
+    for(const item of outputs)
+    {
+        if(item?.type !== 'message' || !Array.isArray(item.content))
+        {
+            continue;
+        }
+
+        for(const content of item.content)
+        {
+            if(content?.type === 'output_text' && typeof content.text === 'string')
+            {
+                textParts.push(content.text);
+            }
+        }
+    }
+
+    return textParts.join('\n').trim();
+}
+
+// OpenAI Responses API call with optional web search.
+async function callOpenAI(apiKey, input, options = {})
+{
+    const {
+        model = 'gpt-5',
+        instructions = '',
+        useWebSearch = false,
+        temperature = 0.7,
+    } = options;
+
+    const requestBody = {
+        model,
+        input,
+        temperature,
+    };
+
+    if(instructions)
+    {
+        requestBody.instructions = instructions;
+    }
+
+    if(useWebSearch)
+    {
+        requestBody.tools = [{ type: 'web_search' }];
+        requestBody.tool_choice = 'auto';
+    }
+
+    const bodyStr = JSON.stringify(requestBody);
     const result  = await httpsRequest(
     {
         hostname: 'api.openai.com',
-        path:     '/v1/chat/completions',
+        path:     '/v1/responses',
         method:   'POST',
         headers:
         {
@@ -93,7 +141,14 @@ async function callOpenAI(apiKey, messages, model = 'gpt-4o-mini')
     {
         throw new Error(`OpenAI error ${result.status}: ${JSON.stringify(result.body)}`);
     }
-    return result.body.choices[0].message.content;
+
+    const outputText = extractResponseText(result.body);
+    if(outputText)
+    {
+        return outputText;
+    }
+
+    throw new Error(`OpenAI response did not include output text: ${JSON.stringify(result.body)}`);
 }
 
 function createTransporter()
@@ -238,13 +293,16 @@ function buildExternalEventId(subscriptionId, entry)
 
 function buildTaskFromIcsEntry(userId, subscriptionId, entry)
 {
+    const dueDate = new Date(entry.start);
+    const endDate = entry.end ? new Date(entry.end) : new Date(entry.start);
+
     return {
         user_id:        new ObjectId(userId),
         title:          entry.summary     || '(No title)',
         description:    entry.description || '',
         location:       entry.location    || '',
-        startDate:      new Date(entry.start),
-        endDate:        entry.end ? new Date(entry.end) : null,
+        dueDate:        dueDate,
+        endDate:        endDate,
         isCompleted:    false,
         source:         'ical',
         subscriptionId: new ObjectId(subscriptionId),
@@ -362,7 +420,7 @@ async function syncStoredCalendarSubscriptions(db, userId)
     }
 }
 
-function buildStartDateRangeFilter(startDate, endDate)
+function buildDueDateRangeFilter(startDate, endDate)
 {
     if(!startDate && !endDate)
     {
@@ -373,12 +431,12 @@ function buildStartDateRangeFilter(startDate, endDate)
     if(startDate) range.$gte = new Date(startDate);
     if(endDate)   range.$lte = new Date(endDate);
 
-    return { startDate: range };
+    return { dueDate: range };
 }
 
 function getTaskStartDate(task)
 {
-    return task.startDate || null;
+    return task.dueDate || task.startDate || null;
 }
 
 exports.setApp = function(app, client)
@@ -522,16 +580,16 @@ exports.setApp = function(app, client)
             const db = getDatabase(client);
             await syncStoredCalendarSubscriptions(db, userId);
             const query = { user_id: new ObjectId(userId) };
-            const dateRangeFilter = buildStartDateRangeFilter(startDate, endDate);
+            const dateRangeFilter = buildDueDateRangeFilter(startDate, endDate);
 
             if(dateRangeFilter)
             {
-                query.startDate = dateRangeFilter.startDate;
+                query.dueDate = dateRangeFilter.dueDate;
             }
 
             const results = await db.collection('tasks')
                 .find(query)
-                .sort({ startDate: 1 })
+                .sort({ dueDate: 1 })
                 .toArray();
 
             res.status(200).json({
@@ -571,7 +629,7 @@ exports.setApp = function(app, client)
                     { location:    { $regex: trimmedSearch + '.*', $options: 'i' } },
                 ]
             })
-            .sort({ startDate: 1 })
+            .sort({ dueDate: 1 })
             .toArray();
 
             res.status(200).json({
@@ -589,7 +647,7 @@ exports.setApp = function(app, client)
 
     app.post('/api/savecalendar', async (req, res) =>
     {
-        const { userId, jwtToken, taskId, title, description, startDate, isCompleted } = req.body;
+        const { userId, jwtToken, taskId, title, description, dueDate, startDate, endDate, location, source, isCompleted } = req.body;
 
         if(!validateJwtOrRespond(token, res, jwtToken))
         {
@@ -603,12 +661,16 @@ exports.setApp = function(app, client)
             if(taskId)
             {
                 const updates = {};
+                const nextDueDate = dueDate !== undefined ? dueDate : startDate;
                 if(title       !== undefined) updates.title       = title;
                 if(description !== undefined) updates.description = description;
-                if(startDate !== undefined)
+                if(nextDueDate !== undefined)
                 {
-                    updates.startDate = startDate ? new Date(startDate) : null;
+                    updates.dueDate = nextDueDate ? new Date(nextDueDate) : null;
                 }
+                if(endDate     !== undefined) updates.endDate     = endDate ? new Date(endDate) : null;
+                if(location    !== undefined) updates.location    = location;
+                if(source      !== undefined) updates.source      = source;
                 if(isCompleted !== undefined) updates.isCompleted = isCompleted;
 
                 await db.collection('tasks').updateOne(
@@ -618,12 +680,19 @@ exports.setApp = function(app, client)
             }
             else
             {
+                const nextDueDate = dueDate !== undefined ? dueDate : startDate;
+                const nextEndDate = endDate !== undefined
+                    ? (endDate ? new Date(endDate) : null)
+                    : (nextDueDate ? new Date(nextDueDate) : null);
                 const newTask = {
                     user_id:     new ObjectId(userId),
                     title:       title || '',
                     description: description || '',
-                    startDate:   startDate ? new Date(startDate) : null,
+                    location:    location || '',
+                    dueDate:     nextDueDate ? new Date(nextDueDate) : null,
+                    endDate:     nextEndDate,
                     isCompleted: isCompleted || false,
+                    source:      source || 'manual',
                 };
 
                 await db.collection('tasks').insertOne(newTask);
@@ -670,47 +739,6 @@ exports.setApp = function(app, client)
                 return;
             }
 
-            if(trimmedUrl)
-            {
-                const normalizedUrl = normalizeHttpsUrl(trimmedUrl).toString();
-                const existingSubscription = await db.collection('calendar_subscriptions').findOne(
-                {
-                    user_id: new ObjectId(userId),
-                    url: normalizedUrl,
-                });
-
-                let subscription = existingSubscription;
-
-                if(!subscription)
-                {
-                    const insertResult = await db.collection('calendar_subscriptions').insertOne(
-                    {
-                        user_id: new ObjectId(userId),
-                        url: normalizedUrl,
-                        name: '',
-                        lastSyncedAt: null,
-                        lastSyncError: '',
-                        createdAt: new Date(),
-                    });
-
-                    subscription = {
-                        _id: insertResult.insertedId,
-                        user_id: new ObjectId(userId),
-                        url: normalizedUrl,
-                        name: '',
-                        lastSyncedAt: null,
-                    };
-                }
-
-                const syncResult = await syncCalendarSubscription(db, userId, subscription, { force: true });
-                res.status(200).json({
-                    count: syncResult.insertedCount + syncResult.updatedCount,
-                    error: '',
-                    jwtToken: refreshJwtToken(token, jwtToken),
-                });
-                return;
-            }
-
             const parsed   = ical.sync.parseICS(calendarContent);
             const toInsert = [];
 
@@ -726,8 +754,8 @@ exports.setApp = function(app, client)
                     title:       entry.summary     || '(No title)',
                     description: entry.description || '',
                     location:    entry.location    || '',
-                    startDate:   new Date(entry.start),
-                    endDate:     entry.end ? new Date(entry.end) : null,
+                    dueDate:     new Date(entry.start),
+                    endDate:     entry.end ? new Date(entry.end) : new Date(entry.start),
                     isCompleted: false,
                     source:      'ical',
                 });
@@ -782,9 +810,9 @@ exports.setApp = function(app, client)
             const tasks = await db.collection('tasks').find(
             {
                 user_id: new ObjectId(userId),
-                startDate: { $gte: dayStart, $lte: dayEnd },
+                dueDate: { $gte: dayStart, $lte: dayEnd },
             })
-            .sort({ startDate: 1 })
+            .sort({ dueDate: 1 })
             .toArray();
 
             const taskSummary = tasks.length
@@ -798,7 +826,7 @@ exports.setApp = function(app, client)
                 user_id:     new ObjectId(userId),
                 isCompleted: true,
             })
-            .sort({ startDate: -1 })
+            .sort({ dueDate: -1 })
             .limit(30)
             .toArray();
 
@@ -898,9 +926,9 @@ Suggest practical, realistic calendar events that complement the existing tasks 
             const todayTasks = await db.collection('tasks').find(
             {
                 user_id: new ObjectId(userId),
-                startDate: { $gte: dayStart, $lte: dayEnd },
+                dueDate: { $gte: dayStart, $lte: dayEnd },
             })
-            .sort({ startDate: 1 })
+            .sort({ dueDate: 1 })
             .toArray();
 
             const todaySummary = todayTasks.length
@@ -916,9 +944,9 @@ Suggest practical, realistic calendar events that complement the existing tasks 
             const weekTasks = await db.collection('tasks').find({
                 user_id: new ObjectId(userId),
                 isCompleted: false,
-                startDate: { $gt: dayEnd, $lte: weekEnd },
+                dueDate: { $gt: dayEnd, $lte: weekEnd },
             })
-            .sort({ startDate: 1 })
+            .sort({ dueDate: 1 })
             .toArray();
 
             const comingWeek = weekTasks.length
@@ -931,7 +959,7 @@ Suggest practical, realistic calendar events that complement the existing tasks 
                 user_id:     new ObjectId(userId),
                 isCompleted: true,
             })
-            .sort({ startDate: -1 })
+            .sort({ dueDate: -1 })
             .limit(30)
             .toArray();
 

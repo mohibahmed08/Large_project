@@ -25,10 +25,10 @@ class CalendarTask {
       title: (json['title'] ?? '').toString(),
       description: (json['description'] ?? '').toString(),
       location: (json['location'] ?? '').toString(),
-      startDate: _parseDate(json['startDate']),
+      startDate: _parseDate(json['dueDate'] ?? json['startDate']),
       endDate: _parseDate(json['endDate']),
       isCompleted: json['isCompleted'] == true,
-      source: (json['source'] ?? '').toString(),
+      source: (json['source'] ?? 'manual').toString(),
     );
   }
 
