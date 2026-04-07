@@ -851,9 +851,14 @@ exports.setApp = function(app, client)
             // Build system prompt and completion prompt
             const systemPrompt =
                 `You are a helpful personal assistant that suggests calendar events for a user's day.
+                 You may use live web search when current or local information would improve your answer.
                  Respond ONLY with a valid JSON array of objects.
                  Each object must have: "title" (string), "description" (string), "suggestedTime" (HH:MM 24-hour).
                  Suggest 3-5 events. Do not include any explanation or text outside the JSON array.`;
+
+            const locationContext = latitude != null && longitude != null
+                ? `Approximate user coordinates: latitude ${latitude}, longitude ${longitude}.`
+                : 'No exact coordinates were provided.';
 
             const userPrompt =
                 `Today is ${targetDate.toDateString()}.
@@ -861,6 +866,8 @@ exports.setApp = function(app, client)
 ${localTimeSummary}
 
 Current weather: ${weatherSummary}
+
+${locationContext}
 
 Existing tasks for today:
 ${taskSummary}
@@ -871,12 +878,14 @@ ${preferences ? `Additional caller preferences: ${preferences}` : ''}
 
 Suggest practical, realistic calendar events that complement the existing tasks and fit the weather and preferences.`;
 
-            // Call OpenAI chat completion
-            const rawResponse = await callOpenAI(apiKey,
-            [
-                { role: 'system', content: systemPrompt },
-                { role: 'user',   content: userPrompt   },
-            ]);
+            const rawResponse = await callOpenAI(
+                apiKey,
+                [{ role: 'user', content: userPrompt }],
+                {
+                    instructions: systemPrompt,
+                    useWebSearch: true,
+                }
+            );
 
             let suggestions;
             try   { suggestions = JSON.parse(rawResponse); }
@@ -985,6 +994,8 @@ Suggest practical, realistic calendar events that complement the existing tasks 
             const systemPrompt =
                 `You are a knowledgeable personal calendar assistant.
                  You have access to the user's current schedule and preferences.
+                 You may use live web search when the user asks about current, nearby, or time-sensitive things.
+                 Do not claim you lack real-time access if web search would help; use it instead.
 
 Today is ${now.toDateString()}.
 ${localTimeLine}
@@ -1000,13 +1011,23 @@ Recently completed tasks (interests): ${recentTitles}
 
 Help the user manage their schedule, suggest events, answer questions about their day, and offer practical advice. Be concise but conversational and relatable.`;
 
-            // Call OpenAI chat completions
-            const openAIMessages = [
-                { role: 'system', content: systemPrompt },
+            const locationContext = latitude != null && longitude != null
+                ? `Approximate user coordinates: latitude ${latitude}, longitude ${longitude}.`
+                : 'No exact coordinates were provided.';
+
+            const responseInput = [
+                { role: 'user', content: locationContext },
                 ...messages,
             ];
 
-            const reply = await callOpenAI(apiKey, openAIMessages);
+            const reply = await callOpenAI(
+                apiKey,
+                responseInput,
+                {
+                    instructions: systemPrompt,
+                    useWebSearch: true,
+                }
+            );
 
             res.status(200).json({
                 reply,
