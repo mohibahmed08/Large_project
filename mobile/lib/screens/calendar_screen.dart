@@ -160,7 +160,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Future<void> _openTaskDialog({CalendarTask? task}) async {
-    final baseDate = task?.dueDate ?? _selectedDate;
+    final baseDate = task?.startDate ?? _selectedDate;
 
     final result = await Navigator.push<TaskEditorResult>(
       context,
@@ -178,12 +178,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return;
     }
 
-    final dueDate = DateTime(
+    final startDate = DateTime(
       baseDate.year,
       baseDate.month,
       baseDate.day,
-      task?.dueDate?.hour ?? 12,
-      task?.dueDate?.minute ?? 0,
+      task?.startDate?.hour ?? 12,
+      task?.startDate?.minute ?? 0,
     );
 
     try {
@@ -192,7 +192,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         taskId: task?.id,
         title: result.title,
         description: result.description,
-        dueDate: dueDate,
+        startDate: startDate,
         isCompleted: task?.isCompleted ?? false,
       );
 
@@ -221,7 +221,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         taskId: task.id,
         title: task.title,
         description: task.description,
-        dueDate: task.dueDate,
+        startDate: task.startDate,
         isCompleted: value,
       );
       await _loadMonth();
@@ -326,12 +326,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
             _session = session;
           },
           onCreateTaskFromSuggestion: (title, description, suggestedTime) async {
-            final dueDate = _dateWithTime(_selectedDate, suggestedTime);
+            final startDate = _dateWithTime(_selectedDate, suggestedTime);
             _session = await _calendarService.saveTask(
               session: _session,
               title: title,
               description: description,
-              dueDate: dueDate,
+              startDate: startDate,
             );
             await _loadMonth();
           },
@@ -377,15 +377,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   List<CalendarTask> get _tasksForSelectedDay {
     return _visibleTasks.where((task) {
-      final dueDate = task.dueDate;
-      return dueDate != null && DateUtils.isSameDay(dueDate, _selectedDate);
+      final startDate = task.startDate;
+      return startDate != null && DateUtils.isSameDay(startDate, _selectedDate);
     }).toList()
-      ..sort((a, b) => (a.dueDate ?? _selectedDate).compareTo(b.dueDate ?? _selectedDate));
+      ..sort((a, b) => (a.startDate ?? _selectedDate).compareTo(b.startDate ?? _selectedDate));
   }
 
   int _taskCountForDay(int day) {
     final date = DateTime(_currentDate.year, _currentDate.month, day);
-    return _tasks.where((task) => DateUtils.isSameDay(task.dueDate, date)).length;
+    return _tasks.where((task) => DateUtils.isSameDay(task.startDate, date)).length;
   }
 
   @override
@@ -637,8 +637,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                     [
                                       if (task.description.isNotEmpty)
                                         task.description,
-                                      if (task.dueDate != null)
-                                        'Due ${task.dueDate!.hour.toString().padLeft(2, '0')}:${task.dueDate!.minute.toString().padLeft(2, '0')}',
+                                      if (task.startDate != null)
+                                        'Starts ${task.startDate!.hour.toString().padLeft(2, '0')}:${task.startDate!.minute.toString().padLeft(2, '0')}',
                                       if (task.location.isNotEmpty) task.location,
                                       if (task.source.isNotEmpty)
                                         'Source: ${task.source}',

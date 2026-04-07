@@ -4,7 +4,7 @@ class CalendarTask {
     required this.title,
     required this.description,
     required this.location,
-    required this.dueDate,
+    required this.startDate,
     required this.endDate,
     required this.isCompleted,
     required this.source,
@@ -14,7 +14,7 @@ class CalendarTask {
   final String title;
   final String description;
   final String location;
-  final DateTime? dueDate;
+  final DateTime? startDate;
   final DateTime? endDate;
   final bool isCompleted;
   final String source;
@@ -25,7 +25,7 @@ class CalendarTask {
       title: (json['title'] ?? '').toString(),
       description: (json['description'] ?? '').toString(),
       location: (json['location'] ?? '').toString(),
-      dueDate: _parseDate(json['dueDate']),
+      startDate: _parseDate(json['startDate']),
       endDate: _parseDate(json['endDate']),
       isCompleted: json['isCompleted'] == true,
       source: (json['source'] ?? '').toString(),

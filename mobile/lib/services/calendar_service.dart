@@ -72,7 +72,7 @@ class CalendarService {
     String? taskId,
     required String title,
     String description = '',
-    DateTime? dueDate,
+    DateTime? startDate,
     bool isCompleted = false,
   }) async {
     final json = await _post(
@@ -82,7 +82,7 @@ class CalendarService {
         if (taskId != null && taskId.isNotEmpty) 'taskId': taskId,
         'title': title,
         'description': description,
-        if (dueDate != null) 'dueDate': dueDate.toIso8601String(),
+        if (startDate != null) 'startDate': startDate.toIso8601String(),
         'isCompleted': isCompleted,
       },
     );
