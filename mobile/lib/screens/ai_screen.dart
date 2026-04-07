@@ -37,6 +37,7 @@ class _AIScreenState extends State<AIScreen> {
   double? _latitude;
   double? _longitude;
   String? _locationNotice;
+  final Set<String> _savedSuggestionKeys = <String>{};
   final List<_ChatBubbleData> _messages = [
     const _ChatBubbleData(
       role: 'assistant',
@@ -68,32 +69,52 @@ class _AIScreenState extends State<AIScreen> {
     setState(() {
       _isSending = true;
       _messages.add(_ChatBubbleData(role: 'user', text: text));
+      _messages.add(const _ChatBubbleData(role: 'assistant', text: ''));
       _messageController.clear();
     });
 
     try {
-      final result = await _aiService.chat(
+      await for (final event in _aiService.chatStream(
         session: _session,
         messages: _messages
+            .where((message) => message.text.isNotEmpty)
             .map((message) => {'role': message.role, 'content': message.text})
             .toList(),
         latitude: _latitude,
         longitude: _longitude,
-      );
+      )) {
+        if (!mounted) {
+          return;
+        }
 
-      if (!mounted) {
-        return;
+        if (event.type == AiChatStreamEventType.delta) {
+          setState(() {
+            final lastIndex = _messages.length - 1;
+            final previous = _messages[lastIndex];
+            _messages[lastIndex] = _ChatBubbleData(
+              role: previous.role,
+              text: previous.text + event.delta,
+            );
+          });
+        } else if (event.type == AiChatStreamEventType.done &&
+            event.session != null) {
+          _session = event.session!;
+          widget.onSessionUpdated(_session);
+        } else if (event.type == AiChatStreamEventType.error) {
+          throw Exception(event.error ?? 'Streaming failed.');
+        }
       }
-
-      setState(() {
-        _session = result.session;
-        _messages.add(_ChatBubbleData(role: 'assistant', text: result.reply));
-      });
-      widget.onSessionUpdated(_session);
     } catch (error) {
       if (!mounted) {
         return;
       }
+      setState(() {
+        if (_messages.isNotEmpty &&
+            _messages.last.role == 'assistant' &&
+            _messages.last.text.isEmpty) {
+          _messages.removeLast();
+        }
+      });
       _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (!mounted) {
@@ -144,6 +165,11 @@ class _AIScreenState extends State<AIScreen> {
   }
 
   Future<void> _saveSuggestion(SuggestionItem suggestion) async {
+    final key = _suggestionKey(suggestion);
+    if (_savedSuggestionKeys.contains(key)) {
+      return;
+    }
+
     try {
       await widget.onCreateTaskFromSuggestion(
         suggestion.title,
@@ -153,6 +179,9 @@ class _AIScreenState extends State<AIScreen> {
       if (!mounted) {
         return;
       }
+      setState(() {
+        _savedSuggestionKeys.add(key);
+      });
       _showSnackBar('Saved suggestion to your calendar.');
     } catch (error) {
       if (!mounted) {
@@ -160,6 +189,10 @@ class _AIScreenState extends State<AIScreen> {
       }
       _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
     }
+  }
+
+  String _suggestionKey(SuggestionItem suggestion) {
+    return '${suggestion.title}|${suggestion.suggestedTime}|${suggestion.description}';
   }
 
   Future<void> _refreshLocation() async {
@@ -334,25 +367,39 @@ class _AIScreenState extends State<AIScreen> {
                   if (_suggestions.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     ..._suggestions.map(
-                      (suggestion) => Card(
-                        color: AppTheme.surfaceAlt.withValues(alpha: 0.7),
-                        child: ListTile(
-                          title: Text(suggestion.title),
-                          subtitle: Text(
-                            '${suggestion.suggestedTime.isEmpty ? 'No suggested time' : suggestion.suggestedTime}\n${suggestion.description}',
-                            style: const TextStyle(
-                              color: AppTheme.textMuted,
-                              height: 1.35,
+                      (suggestion) {
+                        final isSaved = _savedSuggestionKeys.contains(
+                          _suggestionKey(suggestion),
+                        );
+
+                        return Card(
+                          color: AppTheme.surfaceAlt.withValues(alpha: 0.7),
+                          child: ListTile(
+                            title: Text(suggestion.title),
+                            subtitle: Text(
+                              '${suggestion.suggestedTime.isEmpty ? 'No suggested time' : suggestion.suggestedTime}\n${suggestion.description}',
+                              style: const TextStyle(
+                                color: AppTheme.textMuted,
+                                height: 1.35,
+                              ),
+                            ),
+                            isThreeLine: true,
+                            trailing: IconButton(
+                              onPressed:
+                                  isSaved ? null : () => _saveSuggestion(suggestion),
+                              icon: Icon(
+                                isSaved
+                                    ? Icons.check_circle
+                                    : Icons.add_circle_outline,
+                                color: isSaved ? AppTheme.success : null,
+                              ),
+                              tooltip: isSaved
+                                  ? 'Already added'
+                                  : 'Add to calendar',
                             ),
                           ),
-                          isThreeLine: true,
-                          trailing: IconButton(
-                            onPressed: () => _saveSuggestion(suggestion),
-                            icon: const Icon(Icons.add_circle_outline),
-                            tooltip: 'Add to calendar',
-                          ),
-                        ),
-                      ),
+                        );
+                      },
                     ),
                   ],
                   const SizedBox(height: 12),
@@ -398,7 +445,7 @@ class _AIScreenState extends State<AIScreen> {
                             code: TextStyle(
                               color: isUser
                                   ? AppTheme.textPrimary
-                                  : AppTheme.accentSoft,
+                                  : AppTheme.accentStrong,
                             ),
                           ),
                         ),

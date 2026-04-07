@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -14,6 +15,34 @@ class AiChatResult {
 
   final String reply;
   final UserSession session;
+}
+
+class AiChatStreamEvent {
+  AiChatStreamEvent.delta(this.delta)
+      : type = AiChatStreamEventType.delta,
+        session = null,
+        error = null;
+
+  AiChatStreamEvent.done(this.session)
+      : type = AiChatStreamEventType.done,
+        delta = '',
+        error = null;
+
+  AiChatStreamEvent.error(this.error)
+      : type = AiChatStreamEventType.error,
+        delta = '',
+        session = null;
+
+  final AiChatStreamEventType type;
+  final String delta;
+  final UserSession? session;
+  final String? error;
+}
+
+enum AiChatStreamEventType {
+  delta,
+  done,
+  error,
 }
 
 class AiSuggestionResult {
@@ -55,6 +84,68 @@ class AiService {
       reply: json['reply']?.toString() ?? '',
       session: _updatedSession(session, json),
     );
+  }
+
+  Stream<AiChatStreamEvent> chatStream({
+    required UserSession session,
+    required List<Map<String, String>> messages,
+    double? latitude,
+    double? longitude,
+  }) async* {
+    final localNow = DateTime.now();
+    final client = http.Client();
+
+    try {
+      final request = http.Request(
+        'POST',
+        Uri.parse('$baseUrl/chatstream'),
+      );
+      request.headers['Content-Type'] = 'application/json';
+      request.body = jsonEncode({
+        'userId': session.userId,
+        'jwtToken': session.accessToken,
+        'messages': messages,
+        'localNow': localNow.toIso8601String(),
+        'timeZone': localNow.timeZoneName,
+        'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
+      });
+
+      final response = await client.send(request);
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final body = await response.stream.bytesToString();
+        final json = _decodeBody(body);
+        throw Exception(json['error']?.toString() ?? 'Request failed.');
+      }
+
+      await for (final line
+          in response.stream.transform(utf8.decoder).transform(const LineSplitter())) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) {
+          continue;
+        }
+
+        final payload = _decodeBody(trimmed);
+        final type = payload['type']?.toString() ?? '';
+
+        if (type == 'delta') {
+          final delta = payload['delta']?.toString() ?? '';
+          if (delta.isNotEmpty) {
+            yield AiChatStreamEvent.delta(delta);
+          }
+        } else if (type == 'done') {
+          yield AiChatStreamEvent.done(_updatedSession(session, payload));
+        } else if (type == 'error') {
+          yield AiChatStreamEvent.error(
+            payload['error']?.toString() ?? 'Streaming failed.',
+          );
+        }
+      }
+    } finally {
+      client.close();
+    }
   }
 
   Future<AiSuggestionResult> suggestEvents({
