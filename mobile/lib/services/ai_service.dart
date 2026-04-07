@@ -62,10 +62,7 @@ class AiService {
       },
     );
 
-    final suggestions = ((json['suggestions'] as List?) ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .map(SuggestionItem.fromJson)
-        .toList();
+    final suggestions = _parseSuggestions(json['suggestions']);
 
     return AiSuggestionResult(
       suggestions: suggestions,
@@ -107,6 +104,66 @@ class AiService {
     }
 
     return {};
+  }
+
+  List<SuggestionItem> _parseSuggestions(dynamic rawSuggestions) {
+    final items = (rawSuggestions as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(SuggestionItem.fromJson)
+        .toList();
+
+    if (items.length == 1 && items.first.title == 'Parse error') {
+      final recovered = _recoverSuggestionsFromText(items.first.description);
+      if (recovered.isNotEmpty) {
+        return recovered;
+      }
+    }
+
+    return items;
+  }
+
+  List<SuggestionItem> _recoverSuggestionsFromText(String text) {
+    final cleaned = _extractJsonArray(text);
+    if (cleaned.isEmpty) {
+      return const [];
+    }
+
+    try {
+      final decoded = jsonDecode(cleaned);
+      if (decoded is! List) {
+        return const [];
+      }
+
+      return decoded
+          .whereType<Map>()
+          .map(
+            (item) => SuggestionItem.fromJson(
+              item.map(
+                (key, value) => MapEntry(key.toString(), value),
+              ),
+            ),
+          )
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  String _extractJsonArray(String text) {
+    final fenceMatch = RegExp(r'```(?:json)?\s*([\s\S]*?)```', multiLine: true)
+        .firstMatch(text);
+    final fenced = fenceMatch?.group(1)?.trim();
+    if (fenced != null && fenced.startsWith('[') && fenced.endsWith(']')) {
+      return fenced;
+    }
+
+    final start = text.indexOf('[');
+    final end = text.lastIndexOf(']');
+    if (start >= 0 && end > start) {
+      return text.substring(start, end + 1).trim();
+    }
+
+    return '';
   }
 
   UserSession _updatedSession(UserSession session, Map<String, dynamic> json) {
