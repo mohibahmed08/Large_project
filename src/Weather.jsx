@@ -76,6 +76,16 @@ function getDateRange(date, totalDays = 0) {
     // Calculate end date
     const endDateObj = new Date(targetDate); // copy date
     endDateObj.setDate(endDateObj.getDate() + totalDays); // automatically handles month/year rollover
+
+    // Can go a max of two weeks out
+    const maxDate = new Date();
+    maxDate.setDate(maxDate.getDate() + 15);
+
+    // Max endDate to maxDate
+    if (endDateObj > maxDate) {
+        endDateObj.setTime(maxDate.getTime());
+    }
+
     const endY = endDateObj.getFullYear();
     const endM = String(endDateObj.getMonth() + 1).padStart(2, "0");
     const endD = String(endDateObj.getDate()).padStart(2, "0");
