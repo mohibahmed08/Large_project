@@ -156,6 +156,8 @@ function App() {
         return {
             userId: decoded.userId,
             jwtToken,
+            firstName: decoded.firstName || '',
+            lastName: decoded.lastName || '',
         };
     };
 
