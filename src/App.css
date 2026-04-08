@@ -390,7 +390,18 @@
 }
 
 .ai-message-list li + li {
-  margin-top: 4px;
+    margin-top: 4px;
+}
+
+.ai-message a {
+    color: #bfdbfe;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.ai-message strong {
+    color: #f8fafc;
+    font-weight: 700;
 }
 
 .ai-send-btn {

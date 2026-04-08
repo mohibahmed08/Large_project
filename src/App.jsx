@@ -95,16 +95,46 @@ function normalizeSuggestions(rawSuggestions) {
 }
 
 function renderInlineMarkdown(text) {
-    return String(text || '')
-        .split(/(\*\*[^*]+\*\*)/)
-        .filter(Boolean)
-        .map((part, index) => {
-            if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
-                return <strong key={`bold-${index}`}>{part.slice(2, -2)}</strong>;
-            }
+    const source = String(text || '');
+    const nodes = [];
+    const pattern = /(\*\*[^*]+\*\*|\[[^\]]+\]\s*\((https?:\/\/[^\s)]+)\))/g;
+    let lastIndex = 0;
+    let match;
 
-            return <span key={`text-${index}`}>{part}</span>;
-        });
+    while ((match = pattern.exec(source)) !== null) {
+        if (match.index > lastIndex) {
+            nodes.push(<span key={`text-${lastIndex}`}>{source.slice(lastIndex, match.index)}</span>);
+        }
+
+        const token = match[0];
+        if (token.startsWith('**') && token.endsWith('**') && token.length > 4) {
+            nodes.push(<strong key={`bold-${match.index}`}>{token.slice(2, -2)}</strong>);
+        } else {
+            const linkMatch = /^\[([^\]]+)\]\s*\((https?:\/\/[^\s)]+)\)$/.exec(token);
+            if (linkMatch) {
+                nodes.push(
+                    <a
+                        key={`link-${match.index}`}
+                        href={linkMatch[2]}
+                        target="_blank"
+                        rel="noreferrer"
+                    >
+                        {linkMatch[1]}
+                    </a>
+                );
+            } else {
+                nodes.push(<span key={`token-${match.index}`}>{token}</span>);
+            }
+        }
+
+        lastIndex = match.index + token.length;
+    }
+
+    if (lastIndex < source.length) {
+        nodes.push(<span key={`text-${lastIndex}`}>{source.slice(lastIndex)}</span>);
+    }
+
+    return nodes.length ? nodes : source;
 }
 
 function renderAssistantMessage(text) {
