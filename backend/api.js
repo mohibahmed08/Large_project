@@ -1,7 +1,7 @@
 const crypto     = require('crypto');
 const https      = require('https');
 const { ObjectId } = require('mongodb');
-const { DateTime, IANAZone } = require('luxon');
+const { DateTime, FixedOffsetZone, IANAZone } = require('luxon');
 
 // Make an HTTPS request and resolve
 function httpsRequest(options, body)
@@ -842,6 +842,76 @@ function normalizeTimeZone(timeZone)
     return IANAZone.isValidZone(text) ? text : '';
 }
 
+function resolveUserZone(options = {})
+{
+    const zone = normalizeTimeZone(options.timeZone);
+    if(zone)
+    {
+        return zone;
+    }
+
+    if(Number.isFinite(options.utcOffsetMinutes))
+    {
+        return FixedOffsetZone.instance(Number(options.utcOffsetMinutes));
+    }
+
+    return 'utc';
+}
+
+function toUserDateTime(value, options = {})
+{
+    if(!(value instanceof Date) || !Number.isFinite(value.getTime()))
+    {
+        return null;
+    }
+
+    return DateTime.fromJSDate(value, { zone: resolveUserZone(options) });
+}
+
+function getDayRangeInUserZone(value, options = {})
+{
+    const dateTime = toUserDateTime(value, options);
+    if(!dateTime || !dateTime.isValid)
+    {
+        return {
+            start: null,
+            end: null,
+        };
+    }
+
+    return {
+        start: dateTime.startOf('day').toUTC().toJSDate(),
+        end: dateTime.endOf('day').toUTC().toJSDate(),
+    };
+}
+
+function formatDateTimeForUser(value, options = {}, format = DateTime.DATETIME_MED)
+{
+    const dateTime = toUserDateTime(value, options);
+    return dateTime && dateTime.isValid ? dateTime.toLocaleString(format) : '';
+}
+
+function formatTimeForUser(value, options = {})
+{
+    return formatDateTimeForUser(value, options, DateTime.TIME_SIMPLE);
+}
+
+function formatDateForUser(value, options = {})
+{
+    return formatDateTimeForUser(value, options, DateTime.DATE_FULL);
+}
+
+function formatLocalTimeContext(value, options = {})
+{
+    const dateTime = toUserDateTime(value, options);
+    if(!dateTime || !dateTime.isValid)
+    {
+        return '';
+    }
+
+    return `${dateTime.toFormat("cccc, LLLL d, yyyy 'at' h:mm a")} (${dateTime.offsetNameShort}, UTC${dateTime.toFormat('ZZ')})`;
+}
+
 function parseDateTimeInUserZone(value, options = {})
 {
     const { timeZone, utcOffsetMinutes } = options;
@@ -1169,8 +1239,12 @@ async function sendTaskReminderEmail(user, task)
 
     const startDate = getTaskStartDate(task);
     const endDate = task.endDate ? new Date(task.endDate) : null;
-    const startText = startDate ? startDate.toLocaleString() : 'an upcoming time';
-    const endText = endDate ? endDate.toLocaleString() : '';
+    const timeOptions = {
+        timeZone: user?.timeZone,
+        utcOffsetMinutes: user?.utcOffsetMinutes,
+    };
+    const startText = startDate ? formatDateTimeForUser(startDate, timeOptions) : 'an upcoming time';
+    const endText = endDate ? formatDateTimeForUser(endDate, timeOptions) : '';
     const locationLine = task.location ? `<p>Location: ${task.location}</p>` : '';
     const descriptionLine = task.description ? `<p>${task.description}</p>` : '';
 
@@ -2927,10 +3001,10 @@ exports.setApp = function(app, client)
         try
         {
             const db          = getDatabase(client);
+            const timeOptions = { timeZone, utcOffsetMinutes };
             const targetDate  = date ? parseDateTimeWithOffset(date, utcOffsetMinutes, timeZone) : new Date();
             const localNowDate = localNow ? parseDateTimeWithOffset(localNow, utcOffsetMinutes, timeZone) : new Date();
-            const dayStart    = new Date(targetDate); dayStart.setHours(0, 0, 0, 0);
-            const dayEnd      = new Date(targetDate); dayEnd.setHours(23, 59, 59, 999);
+            const { start: dayStart, end: dayEnd } = getDayRangeInUserZone(targetDate, timeOptions);
 
             // Fetch the current tasks for the target day
             const tasks = await db.collection('tasks').find(
@@ -2942,7 +3016,7 @@ exports.setApp = function(app, client)
             .toArray();
 
             const taskSummary = tasks.length
-                ? tasks.map(t => `- ${t.title}${getTaskStartDate(t) ? ' at ' + getTaskStartDate(t).toLocaleTimeString() : ''}${t.location ? ' (' + t.location + ')' : ''}`)
+                ? tasks.map(t => `- ${t.title}${getTaskStartDate(t) ? ' at ' + formatTimeForUser(getTaskStartDate(t), timeOptions) : ''}${t.location ? ' (' + t.location + ')' : ''}`)
                       .join('\n')
                 : 'No tasks scheduled for this day.';
 
@@ -2969,7 +3043,7 @@ exports.setApp = function(app, client)
             }
 
             const localTimeSummary = [
-                `Local time: ${localNowDate.toString()}.`,
+                `Local time: ${formatLocalTimeContext(localNowDate, timeOptions)}.`,
                 timeZone ? `Timezone: ${timeZone}.` : '',
                 utcOffsetMinutes !== undefined ? `UTC offset minutes: ${utcOffsetMinutes}.` : '',
             ].filter(Boolean).join(' ');
@@ -2987,7 +3061,7 @@ exports.setApp = function(app, client)
                 : 'No exact coordinates were provided.';
 
             const userPrompt =
-                `Today is ${targetDate.toDateString()}.
+                `Today is ${formatDateForUser(targetDate, timeOptions)}.
 
 ${localTimeSummary}
 
@@ -3053,9 +3127,9 @@ Suggest practical, realistic calendar events that complement the existing tasks 
         try
         {
             const db   = getDatabase(client);
+            const timeOptions = { timeZone, utcOffsetMinutes };
             const now  = localNow ? parseDateTimeWithOffset(localNow, utcOffsetMinutes, timeZone) : new Date();
-            const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
-            const dayEnd   = new Date(now); dayEnd.setHours(23, 59, 59, 999);
+            const { start: dayStart, end: dayEnd } = getDayRangeInUserZone(now, timeOptions);
 
             // Current tasks for today
             const todayTasks = await db.collection('tasks').find(
@@ -3067,14 +3141,12 @@ Suggest practical, realistic calendar events that complement the existing tasks 
             .toArray();
 
             const todaySummary = todayTasks.length
-                ? todayTasks.map(t => `- ${t.title}${getTaskStartDate(t) ? ' at ' + getTaskStartDate(t).toLocaleTimeString() : ''}`)
+                ? todayTasks.map(t => `- ${t.title}${getTaskStartDate(t) ? ' at ' + formatTimeForUser(getTaskStartDate(t), timeOptions) : ''}`)
                             .join('\n')
                 : 'No tasks today.';
 
             // Current tasks for this week (where isCompleted: false)
-            const weekEnd = new Date(now);
-            weekEnd.setDate(weekEnd.getDate() + 7);
-            weekEnd.setHours(23, 59, 59, 999);
+            const weekEnd = toUserDateTime(now, timeOptions).plus({ days: 7 }).endOf('day').toUTC().toJSDate();
 
             const weekTasks = await db.collection('tasks').find({
                 user_id: new ObjectId(userId),
@@ -3085,7 +3157,7 @@ Suggest practical, realistic calendar events that complement the existing tasks 
             .toArray();
 
             const comingWeek = weekTasks.length
-                ? weekTasks.map(t => `- ${t.title}${getTaskStartDate(t) ? ' on ' + new Date(getTaskStartDate(t)).toLocaleString() : ''}`).join('\n')
+                ? weekTasks.map(t => `- ${t.title}${getTaskStartDate(t) ? ' on ' + formatDateTimeForUser(getTaskStartDate(t), timeOptions) : ''}`).join('\n')
                 : 'No upcoming tasks this week.';
 
             // Get user preferences by getting recent task history
@@ -3111,7 +3183,7 @@ Suggest practical, realistic calendar events that complement the existing tasks 
             }
 
             const localTimeLine = [
-                `Local time: ${now.toString()}.`,
+                `Local time: ${formatLocalTimeContext(now, timeOptions)}.`,
                 timeZone ? `Timezone: ${timeZone}.` : '',
                 utcOffsetMinutes !== undefined ? `UTC offset minutes: ${utcOffsetMinutes}.` : '',
             ].filter(Boolean).join(' ');
@@ -3133,7 +3205,7 @@ Suggest practical, realistic calendar events that complement the existing tasks 
                  The schedule shown in this prompt is only a summary. If the user asks about future events or anything beyond the visible summary, use the calendar tools to search broader ranges before answering.
                  Your final reply should sound conversational, warm, and natural rather than robotic. Keep it concise, but talk like a helpful person.
 
-Today is ${now.toDateString()}.
+Today is ${formatDateForUser(now, timeOptions)}.
 ${localTimeLine}
 ${weatherLine}
 
@@ -3232,9 +3304,9 @@ Help the user manage their schedule, suggest events, answer questions about thei
         try
         {
             const db   = getDatabase(client);
+            const timeOptions = { timeZone, utcOffsetMinutes };
             const now  = localNow ? parseDateTimeWithOffset(localNow, utcOffsetMinutes, timeZone) : new Date();
-            const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
-            const dayEnd   = new Date(now); dayEnd.setHours(23, 59, 59, 999);
+            const { start: dayStart, end: dayEnd } = getDayRangeInUserZone(now, timeOptions);
 
             const todayTasks = await db.collection('tasks').find(
             {
@@ -3245,12 +3317,10 @@ Help the user manage their schedule, suggest events, answer questions about thei
             .toArray();
 
             const todaySummary = todayTasks.length
-                ? todayTasks.map(t => `- ${t.title}${getTaskStartDate(t) ? ' at ' + getTaskStartDate(t).toLocaleTimeString() : ''}`).join('\n')
+                ? todayTasks.map(t => `- ${t.title}${getTaskStartDate(t) ? ' at ' + formatTimeForUser(getTaskStartDate(t), timeOptions) : ''}`).join('\n')
                 : 'No tasks today.';
 
-            const weekEnd = new Date(now);
-            weekEnd.setDate(weekEnd.getDate() + 7);
-            weekEnd.setHours(23, 59, 59, 999);
+            const weekEnd = toUserDateTime(now, timeOptions).plus({ days: 7 }).endOf('day').toUTC().toJSDate();
 
             const weekTasks = await db.collection('tasks').find({
                 user_id: new ObjectId(userId),
@@ -3261,7 +3331,7 @@ Help the user manage their schedule, suggest events, answer questions about thei
             .toArray();
 
             const comingWeek = weekTasks.length
-                ? weekTasks.map(t => `- ${t.title}${getTaskStartDate(t) ? ' on ' + new Date(getTaskStartDate(t)).toLocaleString() : ''}`).join('\n')
+                ? weekTasks.map(t => `- ${t.title}${getTaskStartDate(t) ? ' on ' + formatDateTimeForUser(getTaskStartDate(t), timeOptions) : ''}`).join('\n')
                 : 'No upcoming tasks this week.';
 
             const recent = await db.collection('tasks').find(
@@ -3285,7 +3355,7 @@ Help the user manage their schedule, suggest events, answer questions about thei
             }
 
             const localTimeLine = [
-                `Local time: ${now.toString()}.`,
+                `Local time: ${formatLocalTimeContext(now, timeOptions)}.`,
                 timeZone ? `Timezone: ${timeZone}.` : '',
                 utcOffsetMinutes !== undefined ? `UTC offset minutes: ${utcOffsetMinutes}.` : '',
             ].filter(Boolean).join(' ');
@@ -3306,7 +3376,7 @@ Help the user manage their schedule, suggest events, answer questions about thei
                  The schedule shown in this prompt is only a summary. If the user asks about future events or anything beyond the visible summary, use the calendar tools to search broader ranges before answering.
                  Your final reply should sound conversational, warm, and natural rather than robotic. Keep it concise, but talk like a helpful person.
 
-Today is ${now.toDateString()}.
+Today is ${formatDateForUser(now, timeOptions)}.
 ${localTimeLine}
 ${weatherLine}
 
