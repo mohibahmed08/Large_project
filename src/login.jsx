@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import './login.css';
 
-const API_BASE = process.env.REACT_APP_API_URL ?? 'http://localhost:5000';
+const RAW_API_BASE = process.env.REACT_APP_API_URL ?? 'http://localhost:5000';
+const API_ROOT = RAW_API_BASE.endsWith('/api') ? RAW_API_BASE : `${RAW_API_BASE}/api`;
 
 const Login = ({ setIsAuthenticated }) => {
   // UI State
@@ -45,7 +46,7 @@ const Login = ({ setIsAuthenticated }) => {
 
     try {
       if (isLogin) {
-        const res = await fetch(`${API_BASE}/api/login`, {
+        const res = await fetch(`${API_ROOT}/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ login: email, password }),
@@ -57,10 +58,11 @@ const Login = ({ setIsAuthenticated }) => {
           return;
         }
 
-        localStorage.setItem('jwtToken', data.jwtToken ?? '');
+        const accessToken = data.accessToken ?? '';
+        localStorage.setItem('jwtToken', accessToken);
         setIsAuthenticated(true);
       } else {
-        const res = await fetch(`${API_BASE}/api/signup`, {
+        const res = await fetch(`${API_ROOT}/signup`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ firstName, lastName, email, password }),
