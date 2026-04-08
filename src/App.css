@@ -124,6 +124,204 @@
 
 .ai-input::placeholder { color: #9ca3af; }
 
+.ai-panel {
+  gap: 12px;
+}
+
+.ai-hero-card {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.68));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-hero-card h2 {
+  margin: 0;
+}
+
+.ai-subtitle {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #9ca3af;
+  line-height: 1.45;
+}
+
+.ai-location-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: #cbd5e1;
+  line-height: 1.45;
+}
+
+.ai-location-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #60a5fa;
+  flex-shrink: 0;
+}
+
+.ai-icon-btn {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: #cbd5e1;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.ai-icon-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.ai-preferences {
+  min-height: 68px;
+  margin: 0;
+}
+
+.ai-main-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.ai-section {
+  background: rgba(18, 18, 31, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ai-section.active {
+  flex: 1;
+}
+
+.ai-section.compact {
+  flex: 0 0 auto;
+}
+
+.ai-main-shell.chat-priority .ai-suggestions.compact .ai-suggestion-list {
+  max-height: 130px;
+}
+
+.ai-main-shell.suggestions-priority .ai-chat.compact .ai-chat-feed {
+  max-height: 140px;
+}
+
+.ai-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 12px 0 12px;
+}
+
+.ai-section-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.ai-section-header span {
+  color: #9ca3af;
+  font-size: 0.75rem;
+}
+
+.ai-suggestion-list,
+.ai-chat-feed {
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.ai-suggestion-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-suggestion-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(8, 15, 29, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ai-suggestion-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-suggestion-time {
+  color: #60a5fa;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.ai-suggestion-title {
+  margin-top: 4px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.ai-suggestion-description {
+  margin-top: 4px;
+  color: #cbd5e1;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.ai-add-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  background: rgba(96, 165, 250, 0.12);
+  color: #bfdbfe;
+  font-size: 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ai-add-btn.saved {
+  background: rgba(34, 197, 94, 0.14);
+  border-color: rgba(34, 197, 94, 0.4);
+  color: #86efac;
+}
+
+.ai-message {
+  max-width: 92%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.ai-message.assistant {
+  align-self: flex-start;
+  background: rgba(8, 15, 29, 0.58);
+}
+
+.ai-message.user {
+  align-self: flex-end;
+  background: rgba(96, 165, 250, 0.18);
+}
+
 .ai-send-btn {
   background: #60a5fa;
   color: #12121f;
@@ -136,6 +334,12 @@
 }
 
 .ai-send-btn:hover { background: #3b82f6; }
+
+.ai-chat-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 
 .logout-container {
     margin-top: 10px;
