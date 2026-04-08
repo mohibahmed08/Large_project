@@ -49,6 +49,72 @@ function dateWithSuggestedTime(base, suggestedTime) {
     );
 }
 
+function extractJsonArray(text) {
+    const fenceMatch = /```(?:json)?\s*([\s\S]*?)```/m.exec(text);
+    const fenced = fenceMatch?.[1]?.trim();
+    if (fenced && fenced.startsWith('[') && fenced.endsWith(']')) {
+        return fenced;
+    }
+
+    const start = text.indexOf('[');
+    const end = text.lastIndexOf(']');
+    if (start >= 0 && end > start) {
+        return text.slice(start, end + 1).trim();
+    }
+
+    return '';
+}
+
+function normalizeSuggestions(rawSuggestions) {
+    const items = Array.isArray(rawSuggestions) ? rawSuggestions : [];
+    if (
+        items.length === 1 &&
+        items[0]?.title === 'Parse error' &&
+        typeof items[0]?.description === 'string'
+    ) {
+        const cleaned = extractJsonArray(items[0].description);
+        if (cleaned) {
+            try {
+                const decoded = JSON.parse(cleaned);
+                return Array.isArray(decoded) ? decoded : [];
+            } catch {
+                return items;
+            }
+        }
+    }
+
+    return items;
+}
+
+function SparklesIcon() {
+    return (
+        <svg viewBox="0 0 24 24" className="ai-inline-icon" aria-hidden="true">
+            <path d="M12 3 13.8 8.2 19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z" fill="currentColor" />
+            <path d="M18.5 3 19.2 5 21 5.8 19.2 6.5 18.5 8.5 17.8 6.5 16 5.8 17.8 5Z" fill="currentColor" />
+        </svg>
+    );
+}
+
+function SendIcon() {
+    return (
+        <svg viewBox="0 0 24 24" className="ai-inline-icon" aria-hidden="true">
+            <path d="M3 20 21 12 3 4l3.8 7.2L15 12l-8.2.8Z" fill="currentColor" />
+        </svg>
+    );
+}
+
+function LocationIcon() {
+    return (
+        <svg viewBox="0 0 24 24" className="ai-inline-icon" aria-hidden="true">
+            <path d="M11 2h2v3h-2Z" fill="currentColor" />
+            <path d="M11 19h2v3h-2Z" fill="currentColor" />
+            <path d="M2 11h3v2H2Z" fill="currentColor" />
+            <path d="M19 11h3v2h-3Z" fill="currentColor" />
+            <path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10Zm0 2.2a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6Z" fill="currentColor" />
+        </svg>
+    );
+}
+
 function App() {
     const [isAuthenticated, setIsAuthenticated] = useState(Boolean(localStorage.getItem('jwtToken')));
     const [leftOpen, setLeftOpen] = useState(true);
@@ -166,7 +232,7 @@ function App() {
             }
 
             updateToken(data.jwtToken);
-            setSuggestions(Array.isArray(data.suggestions) ? data.suggestions : []);
+            setSuggestions(normalizeSuggestions(data.suggestions));
         } catch (error) {
             setMessages((prev) => [...prev, { role: 'assistant', text: error.message }]);
         } finally {
@@ -377,27 +443,30 @@ function App() {
                         </button>
                         {rightOpen && (
                             <div className="sidebar-content ai-panel">
-                                <div className="ai-hero-card">
-                                    <div className="ai-badge">AI</div>
+                                <div className="ai-panel-header">
                                     <h2>AI Assistant</h2>
+                                </div>
+
+                                <div className="ai-hero-card">
+                                    <h3>Schedule ideas with context</h3>
                                     <p className="ai-subtitle">
-                                        Ask about your schedule or get suggestions for today.
+                                        Use the same assistant style as mobile to ask questions or generate suggestions for the selected day.
                                     </p>
                                     <div className="ai-location-row">
-                                        <span className="ai-location-dot" />
                                         <span className="ai-location-text">{locationNotice}</span>
                                         <button
                                             className="ai-icon-btn"
                                             type="button"
                                             onClick={ensureLocation}
                                             disabled={isLocating}
+                                            aria-label="Refresh location"
                                         >
-                                            {isLocating ? '...' : 'Refresh'}
+                                            {isLocating ? '...' : <LocationIcon />}
                                         </button>
                                     </div>
                                     <textarea
                                         className="ai-input ai-preferences"
-                                        placeholder="Quiet evening, outdoor ideas, study-focused..."
+                                        placeholder="Suggestion preferences"
                                         value={suggestionPreferences}
                                         onChange={(event) => setSuggestionPreferences(event.target.value)}
                                     />
@@ -406,8 +475,10 @@ function App() {
                                         onClick={loadSuggestions}
                                         disabled={aiLoading}
                                     >
-                                        <span className="ai-btn-stars">*</span>
-                                        {aiLoading && aiMode === 'suggestions' ? 'Loading...' : 'Suggest Events'}
+                                        <SparklesIcon />
+                                        {aiLoading && aiMode === 'suggestions'
+                                            ? 'Loading...'
+                                            : `Suggest events for ${currentDate.getMonth() + 1}/${currentDate.getDate()}/${currentDate.getFullYear()}`}
                                     </button>
                                 </div>
 
@@ -489,7 +560,7 @@ function App() {
                                         }}
                                     />
                                     <button className="ai-send-btn ai-composer-send" onClick={sendChat} disabled={aiLoading}>
-                                        {aiLoading && aiMode === 'chat' ? '...' : 'Send'}
+                                        {aiLoading && aiMode === 'chat' ? '...' : <SendIcon />}
                                     </button>
                                 </div>
                             </div>
