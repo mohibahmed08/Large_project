@@ -75,7 +75,8 @@
 
 /* day cell shape */
 .calendar-month-day-grid-wrapper > *{
-  aspect-ratio: 1 / 0.9;
+  aspect-ratio: 1 / 0.72;
+  min-width: 0;
 }
 
 /* INDENT FIRST DAY IF NOT SINGLE MONTH */

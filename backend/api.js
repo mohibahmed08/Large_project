@@ -909,6 +909,20 @@ async function updateUserCalendarSubscription(db, userId, subscriptionId, update
     );
 }
 
+async function removeUserCalendarSubscription(db, userId, subscriptionId)
+{
+    const normalizedId = subscriptionId instanceof ObjectId
+        ? subscriptionId
+        : new ObjectId(String(subscriptionId));
+
+    const result = await db.collection('users').updateOne(
+        { _id: new ObjectId(userId) },
+        { $pull: { calendarSubscriptions: { _id: normalizedId } } }
+    );
+
+    return result.modifiedCount > 0;
+}
+
 function normalizeTaskForTool(task)
 {
     if(!task) return null;
@@ -1786,6 +1800,119 @@ exports.setApp = function(app, client)
         catch(error)
         {
             res.status(500).json({ count: 0, error: error.toString(), jwtToken: '' });
+        }
+    });
+
+    app.post('/api/listcalendarsubscriptions', async (req, res) =>
+    {
+        const { userId, jwtToken } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        try
+        {
+            const db = getDatabase(client);
+            const subscriptions = await getUserCalendarSubscriptions(db, userId);
+            res.status(200).json({
+                subscriptions: subscriptions.map((subscription) => ({
+                    _id: String(subscription._id),
+                    url: subscription.url,
+                    name: subscription.name,
+                    lastSyncedAt: subscription.lastSyncedAt ? subscription.lastSyncedAt.toISOString() : null,
+                    lastSyncError: subscription.lastSyncError,
+                })),
+                error: '',
+                jwtToken: refreshJwtToken(token, jwtToken),
+            });
+        }
+        catch(error)
+        {
+            res.status(500).json({ subscriptions: [], error: error.toString(), jwtToken: '' });
+        }
+    });
+
+    app.post('/api/deletecalendarsubscription', async (req, res) =>
+    {
+        const { userId, jwtToken, subscriptionId } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        if(!subscriptionId)
+        {
+            res.status(400).json({ error: 'subscriptionId is required', jwtToken: '' });
+            return;
+        }
+
+        try
+        {
+            const db = getDatabase(client);
+            const normalizedId = new ObjectId(String(subscriptionId));
+            await db.collection('tasks').deleteMany({
+                user_id: new ObjectId(userId),
+                subscriptionId: normalizedId,
+            });
+            await removeUserCalendarSubscription(db, userId, normalizedId);
+
+            res.status(200).json({ error: '', jwtToken: refreshJwtToken(token, jwtToken) });
+        }
+        catch(error)
+        {
+            res.status(500).json({ error: error.toString(), jwtToken: '' });
+        }
+    });
+
+    app.post('/api/synccalendarsubscription', async (req, res) =>
+    {
+        const { userId, jwtToken, subscriptionId } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        if(!subscriptionId)
+        {
+            res.status(400).json({ error: 'subscriptionId is required', jwtToken: '' });
+            return;
+        }
+
+        try
+        {
+            const db = getDatabase(client);
+            const subscriptions = await getUserCalendarSubscriptions(db, userId);
+            const subscription = subscriptions.find((item) => String(item._id) === String(subscriptionId));
+
+            if(!subscription)
+            {
+                res.status(404).json({ error: 'Subscription not found', jwtToken: '' });
+                return;
+            }
+
+            await syncCalendarSubscription(db, userId, subscription, { force: true });
+            const refreshed = await getUserCalendarSubscriptions(db, userId);
+            const updated = refreshed.find((item) => String(item._id) === String(subscriptionId));
+
+            res.status(200).json({
+                subscription: updated ? {
+                    _id: String(updated._id),
+                    url: updated.url,
+                    name: updated.name,
+                    lastSyncedAt: updated.lastSyncedAt ? updated.lastSyncedAt.toISOString() : null,
+                    lastSyncError: updated.lastSyncError,
+                } : null,
+                error: '',
+                jwtToken: refreshJwtToken(token, jwtToken),
+            });
+        }
+        catch(error)
+        {
+            res.status(500).json({ subscription: null, error: error.toString(), jwtToken: '' });
         }
     });
 

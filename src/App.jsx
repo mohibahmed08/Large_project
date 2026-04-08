@@ -132,6 +132,8 @@ function App() {
     const [messages, setMessages] = useState([
         { role: 'assistant', text: 'Ask about your day or grab event suggestions.' },
     ]);
+    const [calendarRefreshKey, setCalendarRefreshKey] = useState(0);
+    const [calendarModalIntent, setCalendarModalIntent] = useState(null);
 
     const currentDate = new Date();
     const verticalDateString = currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -161,6 +163,18 @@ function App() {
         if (nextToken) {
             localStorage.setItem('jwtToken', nextToken);
         }
+    };
+
+    const refreshCalendar = () => {
+        setCalendarRefreshKey((prev) => prev + 1);
+    };
+
+    const openCalendarModal = (kind) => {
+        setCalendarModalIntent({
+            kind,
+            date: new Date().toISOString(),
+            key: Date.now(),
+        });
     };
 
     const ensureLocation = async () => {
@@ -315,6 +329,9 @@ function App() {
                         });
                     } else if (payload.type === 'done') {
                         updateToken(payload.jwtToken);
+                        if (payload.calendarChanged) {
+                            refreshCalendar();
+                        }
                     } else if (payload.type === 'error') {
                         throw new Error(payload.error || 'Streaming failed.');
                     }
@@ -380,6 +397,7 @@ function App() {
 
             updateToken(data.jwtToken);
             setSavedSuggestionKeys((prev) => [...prev, key]);
+            refreshCalendar();
         } catch (error) {
             setMessages((prev) => [...prev, { role: 'assistant', text: error.message }]);
             setAiMode('chat');
@@ -388,9 +406,11 @@ function App() {
         }
     };
 
+    const currentSession = isAuthenticated ? getSession() : null;
+
     return (
         <>
-            {isAuthenticated ? (
+            {isAuthenticated && currentSession ? (
                 <div className="main-layout" style={{ '--bg-img': `url(${background}` }}>
                     <div className={`sidebar left-sidebar ${leftOpen ? 'open' : 'closed'}`}>
                         <button className="toggle-btn right-align" onClick={() => setLeftOpen(!leftOpen)}>
@@ -405,10 +425,11 @@ function App() {
                                 </div>
 
                                 <nav style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                                    <button className="nav-item"><span className="nav-icon">Plan</span></button>
-                                    <button className="nav-item"><span className="nav-icon">Event</span></button>
-                                    <button className="nav-item"><span className="nav-icon">Task</span></button>
+                                    <button className="nav-item" onClick={() => openCalendarModal('plan')}><span className="nav-icon">Plan</span></button>
+                                    <button className="nav-item" onClick={() => openCalendarModal('event')}><span className="nav-icon">Event</span></button>
+                                    <button className="nav-item" onClick={() => openCalendarModal('task')}><span className="nav-icon">Task</span></button>
                                     <hr style={{ border: '0', borderTop: '1px solid #2c2c3e', margin: '10px 0' }} />
+                                    <button className="nav-item" onClick={() => openCalendarModal('import')}><span className="nav-icon">Import</span></button>
                                     <button className="nav-item"><span className="nav-icon">Settings</span></button>
                                 </nav>
 
@@ -433,7 +454,15 @@ function App() {
 
                     <div className="center-content">
                         <div className="calendar-wrapper">
-                            <Calendar singleMonth={false} setBackground={setBackground} />
+                            <Calendar
+                                singleMonth={false}
+                                setBackground={setBackground}
+                                session={currentSession}
+                                apiRoot={API_ROOT}
+                                onSessionRefresh={updateToken}
+                                refreshKey={calendarRefreshKey}
+                                modalIntent={calendarModalIntent}
+                            />
                         </div>
                     </div>
 

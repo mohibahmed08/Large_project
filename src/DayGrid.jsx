@@ -1,5 +1,3 @@
-import {useState} from 'react';
-
 //IMMPORT THE STYLE SHEET
 import './DayGrid.css';
 
@@ -8,7 +6,19 @@ import './DayGrid.css';
 //WITHIN THE CALENDAR U.I.
 
 //SHOULD BE USED AS AN ARRAY OF DAYS WITHIN THE CALENDAR U.I.
-function DayGrid( { weather, setCurrentWeather, maxFutureWeatherDays, maxPastWeatherDays, dayOfMonth, year, month, isOtherMonth} ){
+function DayGrid({
+    weather,
+    setCurrentWeather,
+    maxFutureWeatherDays,
+    maxPastWeatherDays,
+    dayOfMonth,
+    year,
+    month,
+    isOtherMonth,
+    tasks = [],
+    onSelectDay,
+    onSelectTask,
+}){
 
     //DATE OBJECT FOR DETERMINING THINGS
     const date = new Date();
@@ -32,49 +42,51 @@ function DayGrid( { weather, setCurrentWeather, maxFutureWeatherDays, maxPastWea
     //COMPUTES THE START HOUR FOR EACH DAY
     // const hourIndex = dayIndex * 24; // start of the day in hourly array
 
-    //ARRAY OF DAY'S CONTENT (BOTH REMINDERS AND SUGGESTIONS)
-    //CURRENT SUBFIELDS: { type, time, stringTitle, stringInfo }
-    const [content, setContent] = useState([
-        // { time: "9:30am", stringTitle: "Test" },
-        // { time: "10:20am", stringTitle: "Work" },
-        // { time: "11:15am", stringTitle: "Meeting" },
-        // { time: "9:30am", stringTitle: "Test" },
-        // { time: "10:20am", stringTitle: "Work" },
-        // { time: "11:15am", stringTitle: "Meeting" },
-    ]);    
-    //SET THE CONTENT OF THE ARRAY THROUGH FETCH
-    // getContent(setContent, dayOfMonth);
-
     //GENERAL WEATHER FOR THE CURRENT DAY
     const generalWeather = weather ? weatherCodeToText(getDailyGeneralWeather(weather.hourly.weathercode, dayIndex)) : "";
     
     //PASS IN THE CURRENT WEATHER FOR TODAY
     if(isToday) setCurrentWeather(generalWeather);
 
+    const eventPillClass = (task) => {
+        const source = String(task?.source || '').toLowerCase();
+        if (source === 'plan') return 'plan';
+        if (source === 'task') return 'task';
+        if (source === 'ical') return 'imported';
+        return 'event';
+    };
+
     //RETURN DOM
     return (
         <>
             {/* THE DATE BOX ITSELF CONTAINING SUBINFO AND IF ACTIVE (CURRRENT DAY), OTHER MONTH IF SPACER FROM PRIOR/NEXT MONTH BLEEDING OVER TO THIS ONE */}
-            <div className = {`day-grid-wrapper ${isToday ? "active" : ""} ${isOtherMonth ? "other-month" : ""}`}>
+            <div
+                className = {`day-grid-wrapper ${isToday ? "active" : ""} ${isOtherMonth ? "other-month" : ""}`}
+                onClick={() => onSelectDay?.(targetDate)}
+            >
                 {/* TOP LEFT WEATHER OF THE CURRENT DAY */}
                 {isWithinWeather && <text className = "day-grid-weather-header">{generalWeather}</text>}
                 {/* TOP RIGHT DAY NUMBER IN THE BOX */}
                 <text className = "day-grid-day-number">{dayOfMonth}</text>
                 {/* SECTION TO HOLD TILED REMINDERS / SUGGESTIONS */}
                 <div className = {`day-grid-tile-wrapper`}>
-                    {/* IF CONTENT ISN'T EMPTY, THEN CREATE THE LIST */}
-                    {content.length > 0 && <ul className = "day-grid-ul">
-                        {/* IF CONTENT ISN'T EMPTY, MAP (ITERATE) THROUGH CONTENT */}
-                        {content.map((item, index) => (
-                            //CREATE A LIST ELEMENT OF TYPE (SUGGESTION OR REMINDER) 
-                            //WITH INDEX KEY FOR DIFFERENTIATE
-                            <li className = {`day-grid-tile-row ${item.type}`} key = {index}>
-                                {/* HAVE THE TIME ON THE LEFT SIDE */}
-                                <text className = 'day-grid-tile-time'>{item.time || "No Time"}</text>
-                                {/* HAVE THE STRING TITLE ON THE RIGHT SIDE */}
-                                <text className = 'day-grid-tile-string-title'>{item.stringTitle || "No Title"}</text>
+                    {tasks.length > 0 && <ul className = "day-grid-ul">
+                        {tasks.slice(0, 3).map((task) => (
+                            <li
+                                className = {`day-grid-event-pill ${eventPillClass(task)}`}
+                                key = {task._id || `${task.title}-${task.dueDate}`}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    onSelectTask?.(task, targetDate);
+                                }}
+                            >
+                                {task.reminderEnabled && <span className="day-grid-event-pill-dot" />}
+                                <span className='day-grid-event-pill-title'>{task.title || "Untitled"}</span>
                             </li>
                         ))}
+                        {tasks.length > 3 && (
+                            <li className="day-grid-more-events">+{tasks.length - 3} more</li>
+                        )}
                     </ul>}
                 </div>
             </div>
@@ -126,38 +138,6 @@ function getDailyGeneralWeather(hourlyWeather, dayIndex) {
     }
 
     return generalCode;
-}
-
-//OBTAINS SUGGESTIONS FROM BACKEND THROUGH API CALL
-function getContent(setContent, dayOfMonth){
-    
-    //FETCH COMMAND TO API TO SEARCH THE DATE AND RETURN ANY
-    //REMINDERS WITH INFO: { time, stringTitle, stringInfo }
-
-    //THIS METHOD WILL SET THE TYPE OF ANYTHING AT THIS POINT
-    //AS A REMINDER TYPE, DYNAMICALLY SUGGESTIONS WILL BE MADE
-    //WHILST THE APPLICATION IS RUNNING
-
-    //FETCH AT SPECIFIC PORT (CHANGE WHEN MADE)
-    fetch(`https://example.com/${dayOfMonth}/data`)
-        //WHAT TO DO WITH THE RESPONSE
-        .then((response) => {
-            //IF RESPONSES ERRORS, THEN THROW A NEW ERROR
-            if (!response.ok) throw new Error(`HTTP ERROR: ${response.status}`);
-            //RETURN PROMISE TO RESULTING ARRAY FETCHED
-            return response.json();
-        })
-        //OBTAIN THE FETCHED DATA
-        .then((data) => {
-            //OTHERWISE OBTAIN THE JSON (ARRAY OF SUBINFO: { time, stringTitle, stringInfo }) 
-            //AND OVERRIDE THE CONTENT TO THE NEW ARRAY
-            setContent(data != null ? data : []);
-        })
-        //CATCH EXTRANIOUS ERRORS
-        .catch((error) => {
-            console.error("Fetch error:", error);
-        });    
-
 }
 
 //EXPORT TO OTHER JSX CLASSES FOR USABILITY
