@@ -545,6 +545,37 @@ function buildIcsTaskSignature(entry, options = {})
     };
 }
 
+function normalizeLegacyIcsTaskForResponse(task, options = {})
+{
+    if(task?.source !== 'ical' || !task?.dueDate)
+    {
+        return task;
+    }
+
+    const dueDate = task.dueDate instanceof Date ? task.dueDate : new Date(task.dueDate);
+    const endDate = task?.endDate ? (task.endDate instanceof Date ? task.endDate : new Date(task.endDate)) : null;
+    const shouldUseDefaultDueTime =
+        isExactMidnight(dueDate) &&
+        (!endDate || endDate.getTime() === dueDate.getTime());
+
+    if(!shouldUseDefaultDueTime)
+    {
+        return task;
+    }
+
+    const normalizedDueDate = endOfDayInZoneFromIcsDate(dueDate, options);
+    if(!normalizedDueDate)
+    {
+        return task;
+    }
+
+    return {
+        ...task,
+        dueDate: normalizedDueDate,
+        endDate: normalizedDueDate,
+    };
+}
+
 function buildTaskFromIcsEntry(userId, subscriptionId, entry, options = {})
 {
     const signature = buildIcsTaskSignature(entry, options);
@@ -1616,7 +1647,10 @@ exports.setApp = function(app, client)
                 .toArray();
 
             res.status(200).json({
-                tasks: results,
+                tasks: results.map((task) => normalizeLegacyIcsTaskForResponse(task, {
+                    timeZone,
+                    utcOffsetMinutes,
+                })),
                 error: '',
                 jwtToken: refreshJwtToken(token, jwtToken),
             });
@@ -1656,7 +1690,7 @@ exports.setApp = function(app, client)
             .toArray();
 
             res.status(200).json({
-                results,
+                results: results.map((task) => normalizeLegacyIcsTaskForResponse(task)),
                 error: '',
                 jwtToken: refreshJwtToken(token, jwtToken),
             });
