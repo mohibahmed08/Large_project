@@ -409,6 +409,22 @@ function refreshJwtToken(tokenUtils, accessToken)
     return refreshedToken.error ? '' : refreshedToken.accessToken;
 }
 
+function buildSettingsPayload(user)
+{
+    const reminderDefaults = normalizeReminderSettings(user?.reminderDefaults || {}, {
+        reminderEnabled: false,
+        reminderMinutesBefore: 30,
+    });
+
+    return {
+        firstName: String(user?.firstName || ''),
+        lastName: String(user?.lastName || ''),
+        email: String(user?.email || ''),
+        pendingEmail: String(user?.pendingEmail || ''),
+        reminderDefaults,
+    };
+}
+
 const CALENDAR_SYNC_INTERVAL_MS = 15 * 60 * 1000;
 
 function normalizeHttpsUrl(urlText)
@@ -1616,6 +1632,249 @@ exports.setApp = function(app, client)
         catch(error)
         {
             res.status(500).json({ error: error.toString() });
+        }
+    });
+
+    app.get('/api/verifyemailchange', async (req, res) =>
+    {
+        const { token: emailChangeToken } = req.query;
+
+        if(!emailChangeToken)
+        {
+            res.status(400).send('Missing email change token');
+            return;
+        }
+
+        try
+        {
+            const db = getDatabase(client);
+            const user = await db.collection('users').findOne({
+                emailChangeToken,
+                emailChangeTokenExpires: { $gt: new Date() },
+            });
+
+            if(!user || !user.pendingEmail)
+            {
+                res.status(400).send('Invalid or expired email change link');
+                return;
+            }
+
+            const existingUser = await db.collection('users').findOne({
+                email: user.pendingEmail,
+                _id: { $ne: user._id },
+            });
+
+            if(existingUser)
+            {
+                res.status(409).send('That email is already in use');
+                return;
+            }
+
+            await db.collection('users').updateOne(
+                { _id: user._id },
+                {
+                    $set: { email: user.pendingEmail, isVerified: true },
+                    $unset: {
+                        pendingEmail: '',
+                        emailChangeToken: '',
+                        emailChangeTokenExpires: '',
+                    },
+                }
+            );
+
+            res.redirect(`${process.env.CLIENT_ORIGIN || 'http://localhost:3000'}?emailChanged=1`);
+        }
+        catch(error)
+        {
+            res.status(500).send(error.toString());
+        }
+    });
+
+    app.post('/api/getaccountsettings', async (req, res) =>
+    {
+        const { userId, jwtToken } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        try
+        {
+            const db = getDatabase(client);
+            const user = await db.collection('users').findOne(
+                { _id: new ObjectId(userId) },
+                {
+                    projection: {
+                        firstName: 1,
+                        lastName: 1,
+                        email: 1,
+                        pendingEmail: 1,
+                        reminderDefaults: 1,
+                    },
+                }
+            );
+
+            if(!user)
+            {
+                res.status(404).json({ settings: null, error: 'User not found', jwtToken: '' });
+                return;
+            }
+
+            res.status(200).json({
+                settings: buildSettingsPayload(user),
+                error: '',
+                jwtToken: refreshJwtToken(token, jwtToken),
+            });
+        }
+        catch(error)
+        {
+            res.status(500).json({ settings: null, error: error.toString(), jwtToken: '' });
+        }
+    });
+
+    app.post('/api/saveaccountsettings', async (req, res) =>
+    {
+        const {
+            userId,
+            jwtToken,
+            firstName,
+            lastName,
+            reminderEnabled,
+            reminderMinutesBefore,
+        } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        try
+        {
+            const db = getDatabase(client);
+            const updates = {
+                firstName: String(firstName || '').trim(),
+                lastName: String(lastName || '').trim(),
+                reminderDefaults: normalizeReminderSettings({
+                    reminderEnabled,
+                    reminderMinutesBefore,
+                }, {
+                    reminderEnabled: false,
+                    reminderMinutesBefore: 30,
+                }),
+            };
+
+            await db.collection('users').updateOne(
+                { _id: new ObjectId(userId) },
+                { $set: updates }
+            );
+
+            const refreshedUser = await db.collection('users').findOne(
+                { _id: new ObjectId(userId) },
+                {
+                    projection: {
+                        firstName: 1,
+                        lastName: 1,
+                        email: 1,
+                        pendingEmail: 1,
+                        reminderDefaults: 1,
+                    },
+                }
+            );
+
+            const refreshedToken = token.createToken(
+                refreshedUser?.firstName || '',
+                refreshedUser?.lastName || '',
+                userId
+            );
+
+            res.status(200).json({
+                settings: buildSettingsPayload(refreshedUser),
+                error: '',
+                jwtToken: refreshedToken.error ? '' : refreshedToken.accessToken,
+            });
+        }
+        catch(error)
+        {
+            res.status(500).json({ settings: null, error: error.toString(), jwtToken: '' });
+        }
+    });
+
+    app.post('/api/requestemailchange', async (req, res) =>
+    {
+        const { userId, jwtToken, nextEmail } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        const normalizedEmail = String(nextEmail || '').trim().toLowerCase();
+        if(!normalizedEmail)
+        {
+            res.status(400).json({ error: 'New email is required', jwtToken: '' });
+            return;
+        }
+
+        try
+        {
+            const db = getDatabase(client);
+            const user = await db.collection('users').findOne({ _id: new ObjectId(userId) });
+
+            if(!user)
+            {
+                res.status(404).json({ error: 'User not found', jwtToken: '' });
+                return;
+            }
+
+            if(String(user.email || '').toLowerCase() === normalizedEmail)
+            {
+                res.status(400).json({ error: 'That is already your current email', jwtToken: '' });
+                return;
+            }
+
+            const existingUser = await db.collection('users').findOne({
+                email: normalizedEmail,
+                _id: { $ne: new ObjectId(userId) },
+            });
+
+            if(existingUser)
+            {
+                res.status(409).json({ error: 'An account with that email already exists', jwtToken: '' });
+                return;
+            }
+
+            const emailChangeToken = crypto.randomBytes(32).toString('hex');
+            const emailChangeTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+            const verifyLink = `${process.env.SERVER_URL}/api/verifyemailchange?token=${emailChangeToken}`;
+
+            await db.collection('users').updateOne(
+                { _id: new ObjectId(userId) },
+                {
+                    $set: {
+                        pendingEmail: normalizedEmail,
+                        emailChangeToken,
+                        emailChangeTokenExpires,
+                    },
+                }
+            );
+
+            await sendWithResend(
+                normalizedEmail,
+                'Confirm your new Calendar++ email',
+                `<p>You requested an email change for Calendar++.</p>
+                 <p>Click below to confirm your new address. Link expires in 24 hours.</p>
+                 <a href="${verifyLink}">Confirm New Email</a>`
+            );
+
+            res.status(200).json({
+                error: '',
+                jwtToken: refreshJwtToken(token, jwtToken),
+            });
+        }
+        catch(error)
+        {
+            res.status(500).json({ error: error.toString(), jwtToken: '' });
         }
     });
 
