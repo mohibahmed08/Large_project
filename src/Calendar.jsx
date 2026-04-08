@@ -191,6 +191,16 @@ function weatherCodeBadge(code) {
     return 'Now';
 }
 
+function weatherGlyph(code) {
+    if ([0, 1].includes(code)) return '\u2600\uFE0F';
+    if ([2, 3].includes(code)) return '\u26C5';
+    if ([45, 48].includes(code)) return '\uD83C\uDF2B\uFE0F';
+    if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return '\uD83C\uDF27\uFE0F';
+    if ([71, 73, 75, 77, 85, 86].includes(code)) return '\u2744\uFE0F';
+    if ([95, 96, 99].includes(code)) return '\u26C8\uFE0F';
+    return '\u2022';
+}
+
 function dayWeatherRange(selectedDate) {
     const start = new Date(selectedDate);
     start.setHours(0, 0, 0, 0);
@@ -970,41 +980,6 @@ function Calendar({
         }));
     };
 
-    const exportCalendar = async () => {
-        if (!session?.userId || !session?.jwtToken) {
-            return;
-        }
-
-        try {
-            const response = await fetch(`${apiRoot}/exportcalendar`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    userId: session.userId,
-                    jwtToken: session.jwtToken,
-                }),
-            });
-
-            const data = await response.json();
-            if (!response.ok) {
-                throw new Error(data.error || 'Could not export calendar.');
-            }
-
-            onSessionRefresh?.(data.jwtToken);
-            const blob = new Blob([data.ics || ''], { type: 'text/calendar;charset=utf-8' });
-            const downloadUrl = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = downloadUrl;
-            link.download = data.filename || 'calendar-plus-plus.ics';
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            URL.revokeObjectURL(downloadUrl);
-        } catch (error) {
-            setDayModalState((prev) => ({ ...prev, feedback: error.message }));
-        }
-    };
-
     const editorMeta = editorState ? ITEM_TYPE_META[editorState.itemType] || ITEM_TYPE_META.event : null;
 
     return (
@@ -1061,9 +1036,6 @@ function Calendar({
                                 <h2>{selectedDate.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}</h2>
                             </div>
                             <div className="calendar-day-modal-header-actions">
-                                <button type="button" className="calendar-task-close-btn" onClick={exportCalendar}>
-                                    Export iCal
-                                </button>
                                 <button type="button" className="calendar-task-close-btn" onClick={() => openCreateModal(lastModalType || 'event', selectedDate)}>
                                     Add item
                                 </button>
@@ -1098,10 +1070,10 @@ function Calendar({
                                         <div className="calendar-day-weather-weekday">
                                             {new Date(`${entry.date}T00:00:00`).toLocaleDateString([], { weekday: 'short' })}
                                         </div>
-                                        <div className="calendar-day-weather-icon">{weatherCodeBadge(entry.code)}</div>
+                                        <div className="calendar-day-weather-icon">{weatherGlyph(entry.code)}</div>
                                         <div className="calendar-day-weather-range">
-                                            <span>{Math.round(Number(entry.max || 0))}°</span>
-                                            <span>{Math.round(Number(entry.min || 0))}°</span>
+                                            <span>{Math.round(Number(entry.max || 0))}{'\u00B0'}</span>
+                                            <span>{Math.round(Number(entry.min || 0))}{'\u00B0'}</span>
                                         </div>
                                         <div className="calendar-day-weather-label">{weatherCodeToLabel(entry.code)}</div>
                                     </div>
@@ -1319,3 +1291,4 @@ function Calendar({
 }
 
 export default Calendar;
+
