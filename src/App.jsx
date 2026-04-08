@@ -62,7 +62,7 @@ function App() {
     const [aiMode, setAiMode] = useState('chat');
     const [location, setLocation] = useState(null);
     const [isLocating, setIsLocating] = useState(false);
-    const [locationNotice, setLocationNotice] = useState('Location is off, so the AI will lean on time and calendar context.');
+    const [locationNotice, setLocationNotice] = useState('Location is off, so the AI will use calendar context only.');
     const [messages, setMessages] = useState([
         { role: 'assistant', text: 'Ask about your day or grab event suggestions.' },
     ]);
@@ -100,13 +100,13 @@ function App() {
     const ensureLocation = async () => {
         if (location || isLocating || !window.navigator.geolocation) {
             if (!window.navigator.geolocation) {
-                setLocationNotice('Location is not available in this browser, so nearby context is turned off.');
+                setLocationNotice('Location is not available in this browser.');
             }
             return location;
         }
 
         setIsLocating(true);
-        setLocationNotice('Checking your location for nearby context...');
+        setLocationNotice('Checking location...');
 
         try {
             const coords = await new Promise((resolve, reject) => {
@@ -128,7 +128,7 @@ function App() {
             setLocationNotice('Nearby suggestions are using your current location.');
             return coords;
         } catch {
-            setLocationNotice('Could not read your location, so nearby suggestions may be more generic.');
+            setLocationNotice('Could not read your location, so suggestions may be more generic.');
             return null;
         } finally {
             setIsLocating(false);
@@ -380,11 +380,11 @@ function App() {
                                 <div className="ai-hero-card">
                                     <h2>AI Assistant</h2>
                                     <p className="ai-subtitle">
-                                        Ask about your schedule or pull suggestions with the same context-aware flow as mobile.
+                                        Ask about your schedule or get suggestions for today.
                                     </p>
                                     <div className="ai-location-row">
                                         <span className="ai-location-dot" />
-                                        <span>{locationNotice}</span>
+                                        <span className="ai-location-text">{locationNotice}</span>
                                         <button
                                             className="ai-icon-btn"
                                             type="button"
@@ -452,7 +452,7 @@ function App() {
                                     <div className={`ai-section ai-chat ${aiMode === 'chat' ? 'active' : 'compact'}`}>
                                         <div className="ai-section-header">
                                             <h3>Chat</h3>
-                                            <span>Newer messages take focus</span>
+                                            <span>Latest takes focus</span>
                                         </div>
                                         <div className="ai-chat-feed">
                                             {messages.map((message, index) => (
