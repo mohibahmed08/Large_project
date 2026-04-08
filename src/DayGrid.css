@@ -88,6 +88,12 @@
   color: #ffffffc1;                       /* keep text readable */
 }
 
+.day-grid-wrapper.selected {
+  border: 3px solid rgba(147, 197, 253, 0.9);
+  background-color: rgba(26, 26, 46, 0.68);
+  box-shadow: 0 0 0 1px rgba(147, 197, 253, 0.22), 0 6px 18px rgba(96, 165, 250, 0.14);
+}
+
 /* TOP LEFT DAY NUMBER */
 .day-grid-day-number{
   position: absolute;
@@ -107,6 +113,8 @@
   justify-content: flex-start; /* top */
   align-items: flex-start;     /* left */
   min-height: 100%;
+  height: 100%;
+  overflow-y: auto;
 }
 /* ============ SUGGESTION / REMINDER TILE FIELDS ============ */
 
@@ -116,6 +124,9 @@
   padding: 0;       /* remove default padding */
   margin: 0;
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .day-grid-event-pill {
@@ -123,7 +134,6 @@
   gap: 6px;
   justify-content: flex-start; /* left-align row content */
   align-items: center;         /* vertically center time/title within row */
-  margin-bottom: 4px;          /* spacing between rows */
   width: 100%;
   padding: 4px 8px;
   border-radius: 999px;

@@ -18,6 +18,7 @@ function DayGrid({
     tasks = [],
     onSelectDay,
     onSelectTask,
+    selectedDate,
 }){
 
     //DATE OBJECT FOR DETERMINING THINGS
@@ -30,6 +31,11 @@ function DayGrid({
     const targetDate = new Date(year, month, dayOfMonth);
     //NORMALIZE THE HOURS
     targetDate.setHours(0,0,0,0);
+    const normalizedSelectedDate = selectedDate ? new Date(selectedDate) : null;
+    if (normalizedSelectedDate) {
+        normalizedSelectedDate.setHours(0, 0, 0, 0);
+    }
+    const isSelected = normalizedSelectedDate ? targetDate.getTime() === normalizedSelectedDate.getTime() : false;
     //COMPUTE THE DIFFERENCE IN TIME
     const diffMs = targetDate - date; 
     //CONVERT THAT TO DAYS AND DETERMINE DIFFERENCE IN DAYS
@@ -61,7 +67,7 @@ function DayGrid({
         <>
             {/* THE DATE BOX ITSELF CONTAINING SUBINFO AND IF ACTIVE (CURRRENT DAY), OTHER MONTH IF SPACER FROM PRIOR/NEXT MONTH BLEEDING OVER TO THIS ONE */}
             <div
-                className = {`day-grid-wrapper ${isToday ? "active" : ""} ${isOtherMonth ? "other-month" : ""}`}
+                className = {`day-grid-wrapper ${isToday ? "active" : ""} ${isSelected ? "selected" : ""} ${isOtherMonth ? "other-month" : ""}`}
                 onClick={() => onSelectDay?.(targetDate)}
             >
                 {/* TOP LEFT WEATHER OF THE CURRENT DAY */}
@@ -71,7 +77,7 @@ function DayGrid({
                 {/* SECTION TO HOLD TILED REMINDERS / SUGGESTIONS */}
                 <div className = {`day-grid-tile-wrapper`}>
                     {tasks.length > 0 && <ul className = "day-grid-ul">
-                        {tasks.slice(0, 3).map((task) => (
+                        {tasks.map((task) => (
                             <li
                                 className = {`day-grid-event-pill ${eventPillClass(task)}`}
                                 key = {task._id || `${task.title}-${task.dueDate}`}
@@ -84,9 +90,6 @@ function DayGrid({
                                 <span className='day-grid-event-pill-title'>{task.title || "Untitled"}</span>
                             </li>
                         ))}
-                        {tasks.length > 3 && (
-                            <li className="day-grid-more-events">+{tasks.length - 3} more</li>
-                        )}
                     </ul>}
                 </div>
             </div>

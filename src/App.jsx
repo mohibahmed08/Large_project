@@ -1,5 +1,5 @@
 import './App.css';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import Calendar from './Calendar.jsx';
 import Login from './login.jsx';
@@ -11,6 +11,14 @@ import rightCloseIcon from './icons/panel-right-close.svg';
 
 const RAW_API_BASE = process.env.REACT_APP_API_URL ?? 'http://localhost:5000';
 const API_ROOT = RAW_API_BASE.endsWith('/api') ? RAW_API_BASE : `${RAW_API_BASE}/api`;
+const REMINDER_OPTIONS = [
+    { value: 0, label: 'At time of event' },
+    { value: 5, label: '5 minutes before' },
+    { value: 15, label: '15 minutes before' },
+    { value: 30, label: '30 minutes before' },
+    { value: 60, label: '1 hour before' },
+    { value: 1440, label: '1 day before' },
+];
 
 function decodeToken(token) {
     if (!token) {
@@ -134,6 +142,24 @@ function App() {
     ]);
     const [calendarRefreshKey, setCalendarRefreshKey] = useState(0);
     const [calendarModalIntent, setCalendarModalIntent] = useState(null);
+    const [accountModalOpen, setAccountModalOpen] = useState(false);
+    const [accountTab, setAccountTab] = useState('account');
+    const [accountSettings, setAccountSettings] = useState(null);
+    const [accountDraft, setAccountDraft] = useState({
+        firstName: '',
+        lastName: '',
+        email: '',
+        pendingEmail: '',
+        reminderDefaults: {
+            reminderEnabled: false,
+            reminderMinutesBefore: 30,
+        },
+    });
+    const [emailDraft, setEmailDraft] = useState('');
+    const [accountLoading, setAccountLoading] = useState(false);
+    const [accountSaving, setAccountSaving] = useState(false);
+    const [accountFeedback, setAccountFeedback] = useState('');
+    const [emailFeedback, setEmailFeedback] = useState('');
 
     const currentDate = new Date();
     const verticalDateString = currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -167,8 +193,74 @@ function App() {
         }
     };
 
+    const loadAccountSettings = async (sessionOverride = null) => {
+        const session = sessionOverride || getSession();
+        if (!session) {
+            return;
+        }
+
+        setAccountLoading(true);
+        try {
+            const response = await fetch(`${API_ROOT}/getaccountsettings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: session.userId,
+                    jwtToken: session.jwtToken,
+                }),
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Could not load account settings.');
+            }
+
+            updateToken(data.jwtToken);
+            const nextSettings = data.settings || {
+                firstName: session.firstName || '',
+                lastName: session.lastName || '',
+                email: '',
+                pendingEmail: '',
+                reminderDefaults: {
+                    reminderEnabled: false,
+                    reminderMinutesBefore: 30,
+                },
+            };
+            setAccountSettings(nextSettings);
+            setAccountDraft(nextSettings);
+            setEmailDraft('');
+        } catch (error) {
+            setAccountFeedback(error.message);
+        } finally {
+            setAccountLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (isAuthenticated) {
+            const session = getSession();
+            if (session) {
+                loadAccountSettings(session);
+            }
+        } else {
+            setAccountSettings(null);
+        }
+    }, [isAuthenticated]);
+
     const refreshCalendar = () => {
         setCalendarRefreshKey((prev) => prev + 1);
+    };
+
+    const openAccountModal = (tab = 'account') => {
+        setAccountTab(tab);
+        setAccountFeedback('');
+        setEmailFeedback('');
+        setAccountModalOpen(true);
+        if (accountSettings) {
+            setAccountDraft(accountSettings);
+        } else {
+            loadAccountSettings();
+        }
     };
 
     const openCalendarModal = (kind) => {
@@ -177,6 +269,79 @@ function App() {
             date: new Date().toISOString(),
             key: Date.now(),
         });
+    };
+
+    const saveAccountSettings = async () => {
+        const session = getSession();
+        if (!session) {
+            return;
+        }
+
+        setAccountSaving(true);
+        setAccountFeedback('');
+        try {
+            const response = await fetch(`${API_ROOT}/saveaccountsettings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: session.userId,
+                    jwtToken: session.jwtToken,
+                    firstName: accountDraft.firstName,
+                    lastName: accountDraft.lastName,
+                    reminderEnabled: accountDraft.reminderDefaults?.reminderEnabled === true,
+                    reminderMinutesBefore: Number(accountDraft.reminderDefaults?.reminderMinutesBefore || 30),
+                }),
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Could not save settings.');
+            }
+
+            updateToken(data.jwtToken);
+            setAccountSettings(data.settings || accountDraft);
+            setAccountDraft(data.settings || accountDraft);
+            setAccountFeedback('Settings saved.');
+        } catch (error) {
+            setAccountFeedback(error.message);
+        } finally {
+            setAccountSaving(false);
+        }
+    };
+
+    const requestEmailChange = async () => {
+        const session = getSession();
+        if (!session || !emailDraft.trim()) {
+            return;
+        }
+
+        setAccountSaving(true);
+        setEmailFeedback('');
+        try {
+            const response = await fetch(`${API_ROOT}/requestemailchange`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: session.userId,
+                    jwtToken: session.jwtToken,
+                    nextEmail: emailDraft.trim(),
+                }),
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Could not start email change.');
+            }
+
+            updateToken(data.jwtToken);
+            setEmailFeedback('Verification sent to the new email address.');
+            await loadAccountSettings();
+            setEmailDraft('');
+        } catch (error) {
+            setEmailFeedback(error.message);
+        } finally {
+            setAccountSaving(false);
+        }
     };
 
     const ensureLocation = async () => {
@@ -409,15 +574,16 @@ function App() {
     };
 
     const currentSession = isAuthenticated ? getSession() : null;
-    const profileFirstName = currentSession?.firstName || 'John';
-    const profileLastName = currentSession?.lastName || 'Doe';
+    const profileFirstName = accountSettings?.firstName || currentSession?.firstName || 'John';
+    const profileLastName = accountSettings?.lastName || currentSession?.lastName || 'Doe';
     const profileInitials = `${profileFirstName.charAt(0)}${profileLastName.charAt(0)}`.toUpperCase();
 
     return (
         <>
             {isAuthenticated && currentSession ? (
-                <div className="main-layout" style={{ '--bg-img': `url(${background}` }}>
-                    <div className={`sidebar left-sidebar ${leftOpen ? 'open' : 'closed'}`}>
+                <>
+                    <div className="main-layout" style={{ '--bg-img': `url(${background}` }}>
+                        <div className={`sidebar left-sidebar ${leftOpen ? 'open' : 'closed'}`}>
                         <button className="toggle-btn right-align" onClick={() => setLeftOpen(!leftOpen)}>
                             <img src={leftOpen ? leftCloseIcon : leftOpenIcon} alt="Toggle Left" />
                         </button>
@@ -435,15 +601,22 @@ function App() {
                                     <button className="nav-item" onClick={() => openCalendarModal('task')}><span className="nav-icon">Task</span></button>
                                     <hr style={{ border: '0', borderTop: '1px solid #2c2c3e', margin: '10px 0' }} />
                                     <button className="nav-item" onClick={() => openCalendarModal('import')}><span className="nav-icon">Import</span></button>
-                                    <button className="nav-item"><span className="nav-icon">Settings</span></button>
+                                    <button className="nav-item" onClick={() => openAccountModal('settings')}><span className="nav-icon">Settings</span></button>
                                 </nav>
 
-                                <div style={{ marginTop: 'auto', paddingTop: '15px', borderTop: '1px solid #2c2c3e', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                    <div style={{ width: '35px', height: '35px', borderRadius: '50%', background: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', flexShrink: 0 }}>
+                                <button
+                                    type="button"
+                                    className="profile-summary-button"
+                                    onClick={() => openAccountModal('account')}
+                                >
+                                    <div className="profile-summary-avatar">
                                         {profileInitials}
                                     </div>
-                                    <span style={{ fontWeight: 'bold' }}>{`${profileFirstName} ${profileLastName}`}</span>
-                                </div>
+                                    <div className="profile-summary-copy">
+                                        <span className="profile-summary-name">{`${profileFirstName} ${profileLastName}`}</span>
+                                        <span className="profile-summary-email">{accountSettings?.email || ''}</span>
+                                    </div>
+                                </button>
                                 <div className="logout-container">
                                     <button onClick={logout} className="logout-btn">
                                         Logout
@@ -467,6 +640,7 @@ function App() {
                                 onSessionRefresh={updateToken}
                                 refreshKey={calendarRefreshKey}
                                 modalIntent={calendarModalIntent}
+                                reminderDefaults={accountSettings?.reminderDefaults}
                             />
                         </div>
                     </div>
@@ -615,8 +789,169 @@ function App() {
                                 )}
                             </div>
                         )}
+                        </div>
                     </div>
-                </div>
+                    {accountModalOpen && (
+                        <div className="account-modal-overlay" onClick={() => setAccountModalOpen(false)}>
+                            <div className="account-modal" onClick={(event) => event.stopPropagation()}>
+                            <div className="account-modal-header">
+                                <div>
+                                    <div className="account-modal-kicker">Account</div>
+                                    <h2>Account & Settings</h2>
+                                </div>
+                                <button type="button" className="account-close-btn" onClick={() => setAccountModalOpen(false)}>
+                                    Close
+                                </button>
+                            </div>
+
+                            <div className="account-modal-tabs">
+                                <button
+                                    type="button"
+                                    className={`account-tab-btn ${accountTab === 'account' ? 'active' : ''}`}
+                                    onClick={() => setAccountTab('account')}
+                                >
+                                    Account
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`account-tab-btn ${accountTab === 'settings' ? 'active' : ''}`}
+                                    onClick={() => setAccountTab('settings')}
+                                >
+                                    Settings
+                                </button>
+                            </div>
+
+                            <div className="account-modal-body">
+                                <div className="account-hero">
+                                    <div className="account-avatar-shell">
+                                        <div className="account-avatar">{profileInitials}</div>
+                                        <button type="button" className="account-avatar-btn" disabled>
+                                            Avatar soon
+                                        </button>
+                                    </div>
+                                    <div className="account-hero-copy">
+                                        <h3>{`${profileFirstName} ${profileLastName}`}</h3>
+                                        <p>{accountSettings?.email || 'Loading email...'}</p>
+                                        {accountSettings?.pendingEmail && (
+                                            <div className="account-pending-badge">
+                                                Pending email: {accountSettings.pendingEmail}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {accountLoading ? (
+                                    <div className="account-feedback-panel">Loading account details...</div>
+                                ) : (
+                                    <>
+                                        {accountTab === 'account' ? (
+                                            <div className="account-section-stack">
+                                                <div className="account-section-card">
+                                                    <h3>Profile</h3>
+                                                    <div className="account-field-row">
+                                                        <label className="account-field">
+                                                            <span>First name</span>
+                                                            <input
+                                                                value={accountDraft.firstName || ''}
+                                                                onChange={(event) => setAccountDraft((prev) => ({ ...prev, firstName: event.target.value }))}
+                                                            />
+                                                        </label>
+                                                        <label className="account-field">
+                                                            <span>Last name</span>
+                                                            <input
+                                                                value={accountDraft.lastName || ''}
+                                                                onChange={(event) => setAccountDraft((prev) => ({ ...prev, lastName: event.target.value }))}
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                </div>
+
+                                                <div className="account-section-card">
+                                                    <h3>Email</h3>
+                                                    <label className="account-field">
+                                                        <span>Current email</span>
+                                                        <input value={accountSettings?.email || ''} disabled />
+                                                    </label>
+                                                    <label className="account-field">
+                                                        <span>New email</span>
+                                                        <input
+                                                            value={emailDraft}
+                                                            onChange={(event) => setEmailDraft(event.target.value)}
+                                                            placeholder="name@example.com"
+                                                        />
+                                                    </label>
+                                                    <div className="account-inline-actions">
+                                                        <button type="button" className="account-primary-btn" onClick={requestEmailChange} disabled={accountSaving || !emailDraft.trim()}>
+                                                            {accountSaving ? 'Sending...' : 'Verify new email'}
+                                                        </button>
+                                                    </div>
+                                                    {emailFeedback && <div className="account-feedback-panel">{emailFeedback}</div>}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="account-section-stack">
+                                                <div className="account-section-card">
+                                                    <h3>Reminder defaults</h3>
+                                                    <label className="account-check-row">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={accountDraft.reminderDefaults?.reminderEnabled === true}
+                                                            onChange={(event) => setAccountDraft((prev) => ({
+                                                                ...prev,
+                                                                reminderDefaults: {
+                                                                    ...prev.reminderDefaults,
+                                                                    reminderEnabled: event.target.checked,
+                                                                },
+                                                            }))}
+                                                        />
+                                                        <span>Enable reminders by default for new items</span>
+                                                    </label>
+                                                    <label className="account-field">
+                                                        <span>Default reminder timing</span>
+                                                        <select
+                                                            value={Number(accountDraft.reminderDefaults?.reminderMinutesBefore || 30)}
+                                                            disabled={accountDraft.reminderDefaults?.reminderEnabled !== true}
+                                                            onChange={(event) => setAccountDraft((prev) => ({
+                                                                ...prev,
+                                                                reminderDefaults: {
+                                                                    ...prev.reminderDefaults,
+                                                                    reminderMinutesBefore: Number(event.target.value),
+                                                                },
+                                                            }))}
+                                                        >
+                                                            {REMINDER_OPTIONS.map((option) => (
+                                                                <option key={option.value} value={option.value}>{option.label}</option>
+                                                            ))}
+                                                        </select>
+                                                    </label>
+                                                </div>
+
+                                                <div className="account-section-card">
+                                                    <h3>Calendar data</h3>
+                                                    <p className="account-section-copy">
+                                                        Import and connected calendar tools stay in the calendar import modal. iCal export can come next if you want it.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {accountFeedback && <div className="account-feedback-panel">{accountFeedback}</div>}
+                                    </>
+                                )}
+                            </div>
+
+                            <div className="account-modal-actions">
+                                <button type="button" className="account-secondary-btn" onClick={() => setAccountModalOpen(false)}>
+                                    Close
+                                </button>
+                                <button type="button" className="account-primary-btn" onClick={saveAccountSettings} disabled={accountSaving || accountLoading}>
+                                    {accountSaving ? 'Saving...' : 'Save changes'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    )}
+                </>
             ) : (
                 <Login setIsAuthenticated={setIsAuthenticated} />
             )}

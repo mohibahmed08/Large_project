@@ -479,6 +479,51 @@
     padding: 0 5px;
 }
 
+.profile-summary-button {
+    margin-top: auto;
+    padding: 15px 0 0 0;
+    border-top: 1px solid #2c2c3e;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: transparent;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    color: #e5e7eb;
+    text-align: left;
+    cursor: pointer;
+}
+
+.profile-summary-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(180deg, rgba(96, 165, 250, 0.92), rgba(59, 130, 246, 0.82));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.profile-summary-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.profile-summary-name {
+    font-weight: 700;
+}
+
+.profile-summary-email {
+    color: #9ca3af;
+    font-size: 0.8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .logout-btn {
     width: 100%;
     display: flex;
@@ -503,4 +548,275 @@
 
 .logout-btn .nav-icon {
     font-size: 18px;
+}
+
+.account-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 8, 20, 0.58);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 50;
+}
+
+.account-modal {
+  width: min(780px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(29, 39, 63, 0.84), rgba(16, 22, 39, 0.74)),
+    rgba(17, 24, 39, 0.74);
+  backdrop-filter: blur(26px) saturate(145%);
+  -webkit-backdrop-filter: blur(26px) saturate(145%);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  box-shadow:
+    0 26px 64px rgba(0, 0, 0, 0.46),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  color: #e5e7eb;
+}
+
+.account-modal-header,
+.account-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px;
+}
+
+.account-modal-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.account-modal-header h2 {
+  margin: 4px 0 0 0;
+}
+
+.account-modal-kicker {
+  color: #9fbef5;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.account-close-btn,
+.account-secondary-btn,
+.account-primary-btn,
+.account-avatar-btn,
+.account-tab-btn {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #e5e7eb;
+  cursor: pointer;
+}
+
+.account-primary-btn {
+  background: linear-gradient(180deg, rgba(96, 165, 250, 0.92), rgba(59, 130, 246, 0.82));
+  color: #0f172a;
+  border-color: rgba(147, 197, 253, 0.3);
+  font-weight: 700;
+}
+
+.account-avatar-btn:disabled,
+.account-primary-btn:disabled,
+.account-secondary-btn:disabled,
+.account-close-btn:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.account-modal-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 12px 20px 0 20px;
+}
+
+.account-tab-btn.active {
+  background: rgba(96, 165, 250, 0.14);
+  color: #dbeafe;
+  border-color: rgba(96, 165, 250, 0.3);
+}
+
+.account-modal-body {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.account-hero {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 18px;
+  border-radius: 12px;
+  background: rgba(9, 14, 28, 0.38);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.account-avatar-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.account-avatar {
+  width: 82px;
+  height: 82px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.35rem;
+  font-weight: 700;
+  background: linear-gradient(180deg, rgba(96, 165, 250, 0.94), rgba(59, 130, 246, 0.82));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.account-hero-copy h3 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.account-hero-copy p {
+  margin: 6px 0 0 0;
+  color: #cbd5e1;
+}
+
+.account-pending-badge {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.12);
+  color: #bfdbfe;
+  font-size: 0.8rem;
+}
+
+.account-section-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.account-section-card {
+  padding: 18px;
+  border-radius: 12px;
+  background: rgba(9, 14, 28, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.account-section-card h3 {
+  margin: 0;
+}
+
+.account-section-copy {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.5;
+}
+
+.account-field-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.account-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.account-field input,
+.account-field select {
+  width: 100%;
+  border-radius: 8px;
+  padding: 11px 12px;
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(8, 13, 26, 0.44);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.account-field input:disabled,
+.account-field select:disabled {
+  opacity: 0.7;
+}
+
+.account-check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.account-check-row input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1px solid rgba(191, 219, 254, 0.35);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.account-check-row input[type="checkbox"]:checked {
+  background: linear-gradient(180deg, rgba(96, 165, 250, 0.8), rgba(59, 130, 246, 0.72));
+  border-color: rgba(147, 197, 253, 0.7);
+}
+
+.account-check-row input[type="checkbox"]::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 4px;
+  height: 8px;
+  border: solid rgba(239, 246, 255, 0.95);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  opacity: 0;
+}
+
+.account-check-row input[type="checkbox"]:checked::after {
+  opacity: 1;
+}
+
+.account-inline-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.account-feedback-panel {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(96, 165, 250, 0.1);
+  border: 1px solid rgba(96, 165, 250, 0.16);
+  color: #dbeafe;
+}
+
+@media (max-width: 820px) {
+  .account-field-row {
+    grid-template-columns: 1fr;
+  }
+
+  .account-hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }

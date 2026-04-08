@@ -27,15 +27,25 @@
 
 .calendar-task-modal {
   width: min(480px, 100%);
-  background: #161d31;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(27, 36, 58, 0.82), rgba(15, 22, 38, 0.72)),
+    rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
   overflow: hidden;
 }
 
 .calendar-import-modal {
   width: min(720px, 100%);
+}
+
+.calendar-day-modal {
+  width: min(980px, 100%);
 }
 
 .calendar-item-modal.plan {
@@ -107,8 +117,10 @@
 .calendar-task-reminder-row select {
   width: 100%;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(11, 16, 29, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(9, 13, 24, 0.48);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   color: #f8fafc;
   padding: 10px 12px;
 }
@@ -128,6 +140,42 @@
 .calendar-task-checkbox {
   flex-direction: row;
   align-items: center;
+}
+
+.calendar-task-checkbox input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1px solid rgba(191, 219, 254, 0.35);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.calendar-task-checkbox input[type="checkbox"]:checked {
+  background: linear-gradient(180deg, rgba(96, 165, 250, 0.8), rgba(59, 130, 246, 0.72));
+  border-color: rgba(147, 197, 253, 0.7);
+}
+
+.calendar-task-checkbox input[type="checkbox"]::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 4px;
+  height: 8px;
+  border: solid rgba(239, 246, 255, 0.95);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  opacity: 0;
+}
+
+.calendar-task-checkbox input[type="checkbox"]:checked::after {
+  opacity: 1;
 }
 
 .calendar-task-checkbox-standalone {
@@ -197,6 +245,168 @@
 
 .calendar-import-feedback {
   color: #bfdbfe;
+}
+
+.calendar-day-modal-header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.calendar-day-weather-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(94px, 1fr));
+  gap: 10px;
+  padding: 18px 18px 0 18px;
+}
+
+.calendar-day-weather-card {
+  padding: 12px 10px;
+  border-radius: 12px;
+  background: rgba(11, 16, 29, 0.56);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: #e2e8f0;
+  cursor: pointer;
+}
+
+.calendar-day-weather-card.active {
+  border-color: rgba(96, 165, 250, 0.6);
+  background: rgba(96, 165, 250, 0.14);
+}
+
+.calendar-day-weather-weekday {
+  font-weight: 700;
+}
+
+.calendar-day-weather-icon {
+  font-size: 1.9rem;
+  line-height: 1;
+}
+
+.calendar-day-weather-range {
+  display: flex;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.calendar-day-weather-label,
+.calendar-day-weather-empty {
+  color: #cbd5e1;
+  font-size: 0.8rem;
+}
+
+.calendar-day-weather-empty {
+  grid-column: 1 / -1;
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(11, 16, 29, 0.56);
+}
+
+.calendar-day-modal-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 18px;
+}
+
+.calendar-day-column {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.calendar-day-column-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.calendar-day-column-header h3 {
+  margin: 0;
+}
+
+.calendar-day-column-header span {
+  color: #94a3b8;
+  font-size: 0.82rem;
+}
+
+.calendar-day-list {
+  min-height: 340px;
+  max-height: 420px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 4px;
+}
+
+.calendar-day-card {
+  width: 100%;
+  text-align: left;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(11, 16, 29, 0.56);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+}
+
+.calendar-day-card.plan {
+  border-color: rgba(168, 85, 247, 0.22);
+}
+
+.calendar-day-card.task {
+  border-color: rgba(34, 197, 94, 0.22);
+}
+
+.calendar-day-card.event,
+.calendar-day-card.suggestion {
+  border-color: rgba(96, 165, 250, 0.22);
+}
+
+.calendar-day-card-time {
+  color: #93c5fd;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.calendar-day-card-title {
+  margin-top: 4px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.calendar-day-card-copy {
+  margin-top: 6px;
+  color: #cbd5e1;
+  line-height: 1.45;
+  font-size: 0.86rem;
+}
+
+.calendar-day-empty {
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(11, 16, 29, 0.56);
+  color: #cbd5e1;
+}
+
+.calendar-day-add-btn {
+  margin-top: 10px;
+  margin-left: 0;
+}
+
+.calendar-day-feedback {
+  margin: 0 18px 18px 18px;
+}
+
+@media (max-width: 900px) {
+  .calendar-day-modal-body {
+    grid-template-columns: 1fr;
+  }
 }
 
 .calendar-import-subscription-list {

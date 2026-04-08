@@ -8,7 +8,7 @@ import Weather from './Weather.jsx';
 import { useState, useEffect, useMemo, cloneElement } from 'react';
 
 //MAIN CONSTRUCTOR FOR CALENDAR MONTH
-function CalendarMonth({monthsFromNow, setBackgroundWeather, singleMonth, tasks = [], onSelectDay, onSelectTask}){
+function CalendarMonth({monthsFromNow, setBackgroundWeather, singleMonth, tasks = [], onSelectDay, onSelectTask, selectedDate}){
 
     //HOLDS THE CURRENT WEATHER STATE FOR EXTENDED TIME
     const [weather, setWeather] = useState(null);
@@ -125,6 +125,7 @@ function CalendarMonth({monthsFromNow, setBackgroundWeather, singleMonth, tasks 
                             tasks: targetTasks,
                             onSelectDay,
                             onSelectTask,
+                            selectedDate,
                         });
                     })}
                 </div>

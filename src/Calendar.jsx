@@ -77,6 +77,15 @@ function formatTimeValue(dateValue) {
     return `${dateValue.getHours().toString().padStart(2, '0')}:${dateValue.getMinutes().toString().padStart(2, '0')}`;
 }
 
+function formatTaskTime(dateValue) {
+    const date = new Date(dateValue);
+    if (Number.isNaN(date.getTime())) {
+        return 'No time';
+    }
+
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
 function getWeatherImg(currentWeather){
     const hour = new Date().getHours();
     let timeOfDay = 'night';
@@ -103,6 +112,45 @@ function getWeatherImg(currentWeather){
     }
 }
 
+function normalizeDateKey(dateValue) {
+    const date = new Date(dateValue);
+    date.setHours(0, 0, 0, 0);
+    return date.toISOString();
+}
+
+function weatherCodeToEmoji(code) {
+    if ([0, 1].includes(code)) return '☀️';
+    if ([2, 3].includes(code)) return '⛅';
+    if ([45, 48].includes(code)) return '🌫️';
+    if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return '🌧️';
+    if ([71, 73, 75, 77, 85, 86].includes(code)) return '❄️';
+    if ([95, 96, 99].includes(code)) return '⛈️';
+    return '•';
+}
+
+function weatherCodeToLabel(code) {
+    if ([0].includes(code)) return 'Clear';
+    if ([1].includes(code)) return 'Mostly clear';
+    if ([2].includes(code)) return 'Partly cloudy';
+    if ([3].includes(code)) return 'Overcast';
+    if ([45, 48].includes(code)) return 'Fog';
+    if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return 'Rain';
+    if ([71, 73, 75, 77, 85, 86].includes(code)) return 'Snow';
+    if ([95, 96, 99].includes(code)) return 'Storm';
+    return 'Weather';
+}
+
+function dayWeatherRange(selectedDate) {
+    const start = new Date(selectedDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    return {
+        startDate: start.toISOString().slice(0, 10),
+        endDate: end.toISOString().slice(0, 10),
+    };
+}
+
 function currentTimeContext() {
     const now = new Date();
     return {
@@ -119,6 +167,7 @@ function Calendar({
     onSessionRefresh,
     refreshKey,
     modalIntent,
+    reminderDefaults,
 }) {
     const [date] = useState(() => new Date());
     const baseMonth = date.getMonth();
@@ -133,6 +182,19 @@ function Calendar({
     const [isSavingItem, setIsSavingItem] = useState(false);
     const [lastModalType, setLastModalType] = useState('event');
     const [editorState, setEditorState] = useState(null);
+    const [selectedDate, setSelectedDate] = useState(() => {
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        return now;
+    });
+    const [dayModalState, setDayModalState] = useState({
+        open: false,
+        suggestions: [],
+        suggestionsLoading: false,
+        weather: [],
+        weatherLoading: false,
+        feedback: '',
+    });
     const [importState, setImportState] = useState({
         open: false,
         icsUrl: '',
@@ -197,6 +259,11 @@ function Calendar({
         setCalendarReloadTick((prev) => prev + 1);
     };
 
+    const selectedDayTasks = useMemo(() => {
+        const selectedKey = normalizeDateKey(selectedDate);
+        return calendarTasks.filter((task) => task?.dueDate && normalizeDateKey(task.dueDate) === selectedKey);
+    }, [calendarTasks, selectedDate]);
+
     useEffect(() => {
         if (!session?.userId || !session?.jwtToken || !apiRoot) {
             setCalendarTasks([]);
@@ -244,6 +311,12 @@ function Calendar({
     const buildDraft = (type, targetDay, task = null) => {
         const normalizedType = type || normalizeItemType(task);
         const meta = ITEM_TYPE_META[normalizedType] || ITEM_TYPE_META.event;
+        const defaultReminderEnabled = reminderDefaults?.reminderEnabled === true
+            ? true
+            : meta.reminderDefault;
+        const defaultReminderMinutes = Number.isFinite(Number(reminderDefaults?.reminderMinutesBefore))
+            ? Number(reminderDefaults.reminderMinutesBefore)
+            : 30;
         const dueDate = task?.dueDate
             ? new Date(task.dueDate)
             : new Date(targetDay.getFullYear(), targetDay.getMonth(), targetDay.getDate(), meta.defaultHour, 0, 0, 0);
@@ -261,8 +334,10 @@ function Calendar({
             location: task?.location || '',
             startTime: formatTimeValue(dueDate),
             endTime: formatTimeValue(endDate),
-            reminderEnabled: task?.reminderEnabled === true || (!task && meta.reminderDefault),
-            reminderMinutesBefore: Number.isFinite(Number(task?.reminderMinutesBefore)) ? Number(task.reminderMinutesBefore) : 30,
+            reminderEnabled: task?.reminderEnabled === true || (!task && defaultReminderEnabled),
+            reminderMinutesBefore: Number.isFinite(Number(task?.reminderMinutesBefore))
+                ? Number(task.reminderMinutesBefore)
+                : defaultReminderMinutes,
             isCompleted: task?.isCompleted === true,
             source: task?.source || meta.saveSource,
         };
@@ -280,6 +355,17 @@ function Calendar({
         setEditorState(buildDraft(normalizedType, targetDay, task));
     };
 
+    const openDayModal = (targetDay) => {
+        const normalizedDate = new Date(targetDay);
+        normalizedDate.setHours(0, 0, 0, 0);
+        setSelectedDate(normalizedDate);
+        setDayModalState((prev) => ({
+            ...prev,
+            open: true,
+            feedback: '',
+        }));
+    };
+
     useEffect(() => {
         if (!modalIntent?.kind) {
             return;
@@ -294,6 +380,121 @@ function Calendar({
             openCreateModal(modalIntent.kind, modalIntent.date ? new Date(modalIntent.date) : new Date());
         }
     }, [modalIntent]);
+
+    useEffect(() => {
+        if (!dayModalState.open) {
+            return;
+        }
+
+        let ignore = false;
+        const { startDate, endDate } = dayWeatherRange(selectedDate);
+
+        const loadWeather = async () => {
+            if (!navigator.geolocation) {
+                setDayModalState((prev) => ({
+                    ...prev,
+                    weather: [],
+                    weatherLoading: false,
+                }));
+                return;
+            }
+
+            setDayModalState((prev) => ({ ...prev, weatherLoading: true }));
+
+            try {
+                const coords = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(
+                        ({ coords: nextCoords }) => resolve(nextCoords),
+                        reject,
+                        { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
+                    );
+                });
+
+                const response = await fetch(
+                    `https://api.open-meteo.com/v1/forecast?latitude=${coords.latitude}&longitude=${coords.longitude}&daily=weathercode,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&start_date=${startDate}&end_date=${endDate}`
+                );
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error('Could not load weather.');
+                }
+
+                if (!ignore) {
+                    const days = (data.daily?.time || []).map((day, index) => ({
+                        date: day,
+                        code: data.daily.weathercode?.[index],
+                        max: data.daily.temperature_2m_max?.[index],
+                        min: data.daily.temperature_2m_min?.[index],
+                    }));
+                    setDayModalState((prev) => ({
+                        ...prev,
+                        weather: days,
+                        weatherLoading: false,
+                    }));
+                }
+            } catch {
+                if (!ignore) {
+                    setDayModalState((prev) => ({
+                        ...prev,
+                        weather: [],
+                        weatherLoading: false,
+                    }));
+                }
+            }
+        };
+
+        const loadSuggestions = async () => {
+            if (!session?.userId || !session?.jwtToken || !apiRoot) {
+                return;
+            }
+
+            setDayModalState((prev) => ({ ...prev, suggestionsLoading: true }));
+
+            try {
+                const response = await fetch(`${apiRoot}/suggestevents`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userId: session.userId,
+                        jwtToken: session.jwtToken,
+                        date: selectedDate.toISOString(),
+                        localNow: new Date().toISOString(),
+                        preferences: '',
+                        ...currentTimeContext(),
+                    }),
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Could not load suggestions.');
+                }
+
+                if (!ignore) {
+                    onSessionRefresh?.(data.jwtToken);
+                    setDayModalState((prev) => ({
+                        ...prev,
+                        suggestions: Array.isArray(data.suggestions) ? data.suggestions : [],
+                        suggestionsLoading: false,
+                    }));
+                }
+            } catch (error) {
+                if (!ignore) {
+                    setDayModalState((prev) => ({
+                        ...prev,
+                        suggestions: [],
+                        suggestionsLoading: false,
+                        feedback: error.message,
+                    }));
+                }
+            }
+        };
+
+        loadWeather();
+        loadSuggestions();
+
+        return () => {
+            ignore = true;
+        };
+    }, [dayModalState.open, selectedDate, apiRoot, session?.userId, session?.jwtToken, onSessionRefresh]);
 
     const updateDraft = (key, value) => {
         setEditorState((prev) => ({ ...prev, [key]: value }));
@@ -617,6 +818,55 @@ function Calendar({
         }
     };
 
+    const saveDaySuggestion = async (suggestion) => {
+        if (!session?.userId || !session?.jwtToken) {
+            return;
+        }
+
+        setIsSavingItem(true);
+        try {
+            const suggestedTime = String(suggestion?.suggestedTime || '12:00');
+            const [hour, minute] = suggestedTime.split(':').map(Number);
+            const startDate = new Date(
+                selectedDate.getFullYear(),
+                selectedDate.getMonth(),
+                selectedDate.getDate(),
+                Number.isFinite(hour) ? hour : 12,
+                Number.isFinite(minute) ? minute : 0,
+                0,
+                0,
+            );
+            const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+
+            const response = await fetch(`${apiRoot}/savecalendar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: session.userId,
+                    jwtToken: session.jwtToken,
+                    title: suggestion?.title || 'Suggested event',
+                    description: suggestion?.description || '',
+                    dueDate: startDate.toISOString(),
+                    endDate: endDate.toISOString(),
+                    source: 'event',
+                    ...currentTimeContext(),
+                }),
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Could not save suggestion.');
+            }
+
+            onSessionRefresh?.(data.jwtToken);
+            refreshCalendar();
+        } catch (error) {
+            setDayModalState((prev) => ({ ...prev, feedback: error.message }));
+        } finally {
+            setIsSavingItem(false);
+        }
+    };
+
     const editorMeta = editorState ? ITEM_TYPE_META[editorState.itemType] || ITEM_TYPE_META.event : null;
 
     return (
@@ -640,8 +890,9 @@ function Calendar({
                         setBackgroundWeather={setBackgroundWeather}
                         singleMonth={singleMonth}
                         tasks={calendarTasks}
-                        onSelectDay={(selectedDate) => openCreateModal(lastModalType || 'event', selectedDate)}
+                        onSelectDay={openDayModal}
                         onSelectTask={openEditModal}
+                        selectedDate={selectedDate}
                     />
                 </div>
             ) : (
@@ -653,12 +904,110 @@ function Calendar({
                                 setBackgroundWeather={setBackgroundWeather}
                                 singleMonth={singleMonth}
                                 tasks={calendarTasks}
-                                onSelectDay={(selectedDate) => openCreateModal(lastModalType || 'event', selectedDate)}
+                                onSelectDay={openDayModal}
                                 onSelectTask={openEditModal}
+                                selectedDate={selectedDate}
                                 ref={i === renderedMonths - 1 ? lastMonthRef : null}
                             />
                         </div>
                     ))}
+                </div>
+            )}
+
+            {dayModalState.open && (
+                <div className="calendar-task-modal-overlay" onClick={() => setDayModalState((prev) => ({ ...prev, open: false }))}>
+                    <div className="calendar-task-modal calendar-day-modal" onClick={(event) => event.stopPropagation()}>
+                        <div className="calendar-task-modal-header">
+                            <div>
+                                <div className="calendar-item-type-chip">day</div>
+                                <h2>{selectedDate.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}</h2>
+                            </div>
+                            <div className="calendar-day-modal-header-actions">
+                                <button type="button" className="calendar-task-close-btn" onClick={() => openCreateModal(lastModalType || 'event', selectedDate)}>
+                                    Add item
+                                </button>
+                                <button type="button" className="calendar-task-close-btn" onClick={() => setDayModalState((prev) => ({ ...prev, open: false }))}>
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                        <div className="calendar-day-weather-strip">
+                            {dayModalState.weatherLoading ? (
+                                <div className="calendar-day-weather-empty">Loading weather...</div>
+                            ) : dayModalState.weather.length > 0 ? (
+                                dayModalState.weather.map((entry) => (
+                                    <div
+                                        key={entry.date}
+                                        className={`calendar-day-weather-card ${entry.date === selectedDate.toISOString().slice(0, 10) ? 'active' : ''}`}
+                                        onClick={() => {
+                                            const nextDate = new Date(`${entry.date}T00:00:00`);
+                                            nextDate.setHours(0, 0, 0, 0);
+                                            setSelectedDate(nextDate);
+                                        }}
+                                    >
+                                        <div className="calendar-day-weather-weekday">
+                                            {new Date(`${entry.date}T00:00:00`).toLocaleDateString([], { weekday: 'short' })}
+                                        </div>
+                                        <div className="calendar-day-weather-icon">{weatherCodeToEmoji(entry.code)}</div>
+                                        <div className="calendar-day-weather-range">
+                                            <span>{Math.round(Number(entry.max || 0))}°</span>
+                                            <span>{Math.round(Number(entry.min || 0))}°</span>
+                                        </div>
+                                        <div className="calendar-day-weather-label">{weatherCodeToLabel(entry.code)}</div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="calendar-day-weather-empty">Weather unavailable for this date.</div>
+                            )}
+                        </div>
+                        <div className="calendar-day-modal-body">
+                            <div className="calendar-day-column">
+                                <div className="calendar-day-column-header">
+                                    <h3>Tasks for the day</h3>
+                                    <span>{selectedDayTasks.length} scheduled</span>
+                                </div>
+                                <div className="calendar-day-list">
+                                    {selectedDayTasks.length > 0 ? selectedDayTasks.map((task) => (
+                                        <button
+                                            key={task._id || `${task.title}-${task.dueDate}`}
+                                            type="button"
+                                            className={`calendar-day-card ${normalizeItemType(task)}`}
+                                            onClick={() => openEditModal(task, selectedDate)}
+                                        >
+                                            <div className="calendar-day-card-time">{formatTaskTime(task.dueDate)}</div>
+                                            <div className="calendar-day-card-title">{task.title || 'Untitled'}</div>
+                                            {task.description && <div className="calendar-day-card-copy">{task.description}</div>}
+                                        </button>
+                                    )) : (
+                                        <div className="calendar-day-empty">Nothing scheduled yet. Add an item or pull suggestions.</div>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="calendar-day-column">
+                                <div className="calendar-day-column-header">
+                                    <h3>Suggestions</h3>
+                                    <span>{dayModalState.suggestions.length} ready</span>
+                                </div>
+                                <div className="calendar-day-list">
+                                    {dayModalState.suggestionsLoading ? (
+                                        <div className="calendar-day-empty">Finding ideas...</div>
+                                    ) : dayModalState.suggestions.length > 0 ? dayModalState.suggestions.map((suggestion, index) => (
+                                        <div key={`${suggestion.title}-${index}`} className="calendar-day-card suggestion">
+                                            <div className="calendar-day-card-time">{suggestion.suggestedTime || 'Flexible'}</div>
+                                            <div className="calendar-day-card-title">{suggestion.title}</div>
+                                            <div className="calendar-day-card-copy">{suggestion.description}</div>
+                                            <button type="button" className="calendar-task-save-btn calendar-day-add-btn" onClick={() => saveDaySuggestion(suggestion)} disabled={isSavingItem}>
+                                                Add
+                                            </button>
+                                        </div>
+                                    )) : (
+                                        <div className="calendar-day-empty">No suggestions yet for this day.</div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                        {dayModalState.feedback && <div className="calendar-import-feedback calendar-day-feedback">{dayModalState.feedback}</div>}
+                    </div>
                 </div>
             )}
 
