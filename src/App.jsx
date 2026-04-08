@@ -94,10 +94,16 @@ function normalizeSuggestions(rawSuggestions) {
     return items;
 }
 
+function normalizeAssistantMarkdown(text) {
+    return String(text || '')
+        .replace(/\r\n?/g, '\n')
+        .replace(/\]\s*\n\s*\(/g, '](');
+}
+
 function renderInlineMarkdown(text) {
-    const source = String(text || '');
+    const source = normalizeAssistantMarkdown(text);
     const nodes = [];
-    const pattern = /(\*\*[^*]+\*\*|\[[^\]]+\]\s*\((https?:\/\/[^\s)]+)\))/g;
+    const pattern = /(\*\*[^*]+\*\*|__[^_]+__|(?<!\*)\*[^*\n]+\*(?!\*)|(?<!_)_[^_\n]+_(?!_)|`[^`\n]+`|\[[^\]]+\]\s*\((https?:\/\/[^\s)]+)\))/g;
     let lastIndex = 0;
     let match;
 
@@ -107,8 +113,20 @@ function renderInlineMarkdown(text) {
         }
 
         const token = match[0];
-        if (token.startsWith('**') && token.endsWith('**') && token.length > 4) {
+        if (
+            ((token.startsWith('**') && token.endsWith('**')) ||
+             (token.startsWith('__') && token.endsWith('__'))) &&
+            token.length > 4
+        ) {
             nodes.push(<strong key={`bold-${match.index}`}>{token.slice(2, -2)}</strong>);
+        } else if (
+            ((token.startsWith('*') && token.endsWith('*')) ||
+             (token.startsWith('_') && token.endsWith('_'))) &&
+            token.length > 2
+        ) {
+            nodes.push(<em key={`italic-${match.index}`}>{token.slice(1, -1)}</em>);
+        } else if (token.startsWith('`') && token.endsWith('`') && token.length > 2) {
+            nodes.push(<code key={`code-${match.index}`} className="ai-inline-code">{token.slice(1, -1)}</code>);
         } else {
             const linkMatch = /^\[([^\]]+)\]\s*\((https?:\/\/[^\s)]+)\)$/.exec(token);
             if (linkMatch) {
@@ -138,7 +156,8 @@ function renderInlineMarkdown(text) {
 }
 
 function renderAssistantMessage(text) {
-    const lines = String(text || '').split('\n');
+    const normalizedText = normalizeAssistantMarkdown(text);
+    const lines = normalizedText.split('\n');
     const blocks = [];
     let listItems = [];
 
@@ -181,7 +200,7 @@ function renderAssistantMessage(text) {
 
     flushList();
 
-    return blocks.length > 0 ? blocks : text;
+    return blocks.length > 0 ? blocks : normalizedText;
 }
 
 function SparklesIcon() {
