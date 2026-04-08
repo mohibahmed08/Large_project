@@ -7,6 +7,8 @@ class TaskEditorResult {
     required this.location,
     required this.startDate,
     required this.endDate,
+    required this.reminderEnabled,
+    required this.reminderMinutesBefore,
   });
 
   final String title;
@@ -14,6 +16,8 @@ class TaskEditorResult {
   final String location;
   final DateTime startDate;
   final DateTime endDate;
+  final bool reminderEnabled;
+  final int reminderMinutesBefore;
 }
 
 class TaskEditorScreen extends StatefulWidget {
@@ -24,6 +28,8 @@ class TaskEditorScreen extends StatefulWidget {
     required this.initialLocation,
     required this.initialStartDate,
     required this.initialEndDate,
+    required this.initialReminderEnabled,
+    required this.initialReminderMinutesBefore,
     required this.isEditing,
   });
 
@@ -32,6 +38,8 @@ class TaskEditorScreen extends StatefulWidget {
   final String initialLocation;
   final DateTime initialStartDate;
   final DateTime initialEndDate;
+  final bool initialReminderEnabled;
+  final int initialReminderMinutesBefore;
   final bool isEditing;
 
   @override
@@ -44,6 +52,9 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
   late final TextEditingController _locationController;
   late DateTime _startDate;
   late DateTime _endDate;
+  late bool _reminderEnabled;
+  late int _reminderMinutesBefore;
+  static const List<int> _reminderOptions = [0, 5, 10, 15, 30, 60, 120, 1440];
 
   @override
   void initState() {
@@ -56,6 +67,8 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
     _endDate = widget.initialEndDate.isBefore(widget.initialStartDate)
         ? widget.initialStartDate
         : widget.initialEndDate;
+    _reminderEnabled = widget.initialReminderEnabled;
+    _reminderMinutesBefore = widget.initialReminderMinutesBefore;
   }
 
   @override
@@ -154,8 +167,26 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
         location: _locationController.text.trim(),
         startDate: _startDate,
         endDate: _endDate,
+        reminderEnabled: _reminderEnabled,
+        reminderMinutesBefore: _reminderMinutesBefore,
       ),
     );
+  }
+
+  String _reminderLabel(int minutes) {
+    if (minutes == 0) {
+      return 'At time of event';
+    }
+    if (minutes == 60) {
+      return '1 hour before';
+    }
+    if (minutes == 1440) {
+      return '1 day before';
+    }
+    if (minutes > 60 && minutes % 60 == 0) {
+      return '${minutes ~/ 60} hours before';
+    }
+    return '$minutes minutes before';
   }
 
   String _formatDate(DateTime value) {
@@ -243,6 +274,45 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 20),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Email reminder'),
+              subtitle: const Text('Send a reminder email before this task.'),
+              value: _reminderEnabled,
+              onChanged: (value) {
+                setState(() {
+                  _reminderEnabled = value;
+                });
+              },
+            ),
+            if (_reminderEnabled) ...[
+              const SizedBox(height: 8),
+              DropdownButtonFormField<int>(
+                value: _reminderOptions.contains(_reminderMinutesBefore)
+                    ? _reminderMinutesBefore
+                    : 30,
+                decoration: const InputDecoration(
+                  labelText: 'Reminder timing',
+                ),
+                items: _reminderOptions
+                    .map(
+                      (minutes) => DropdownMenuItem<int>(
+                        value: minutes,
+                        child: Text(_reminderLabel(minutes)),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null) {
+                    return;
+                  }
+                  setState(() {
+                    _reminderMinutesBefore = value;
+                  });
+                },
+              ),
+            ],
             const SizedBox(height: 20),
             FilledButton(
               onPressed: _save,

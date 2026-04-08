@@ -77,6 +77,8 @@ class CalendarService {
     String location = '',
     String source = 'manual',
     bool isCompleted = false,
+    bool reminderEnabled = false,
+    int reminderMinutesBefore = 30,
   }) async {
     final json = await _post(
       'savecalendar',
@@ -90,7 +92,22 @@ class CalendarService {
         'location': location,
         'source': source,
         'isCompleted': isCompleted,
+        'reminderEnabled': reminderEnabled,
+        'reminderMinutesBefore': reminderMinutesBefore,
       },
+    );
+
+    return _updatedSession(session, json);
+  }
+
+  Future<UserSession> deleteTask({
+    required UserSession session,
+    required String taskId,
+  }) async {
+    final json = await _post(
+      'deletecalendar',
+      session,
+      {'taskId': taskId},
     );
 
     return _updatedSession(session, json);

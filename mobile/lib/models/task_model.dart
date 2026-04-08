@@ -8,6 +8,8 @@ class CalendarTask {
     required this.endDate,
     required this.isCompleted,
     required this.source,
+    required this.reminderEnabled,
+    required this.reminderMinutesBefore,
   });
 
   final String id;
@@ -18,6 +20,8 @@ class CalendarTask {
   final DateTime? endDate;
   final bool isCompleted;
   final String source;
+  final bool reminderEnabled;
+  final int reminderMinutesBefore;
 
   factory CalendarTask.fromJson(Map<String, dynamic> json) {
     return CalendarTask(
@@ -29,6 +33,8 @@ class CalendarTask {
       endDate: _parseDate(json['endDate']),
       isCompleted: json['isCompleted'] == true,
       source: (json['source'] ?? 'manual').toString(),
+      reminderEnabled: json['reminderEnabled'] == true,
+      reminderMinutesBefore: (json['reminderMinutesBefore'] as num?)?.toInt() ?? 0,
     );
   }
 

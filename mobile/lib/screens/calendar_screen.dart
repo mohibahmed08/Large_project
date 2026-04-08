@@ -176,6 +176,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
           initialLocation: task?.location ?? '',
           initialStartDate: baseDate,
           initialEndDate: initialEndDate,
+          initialReminderEnabled: task?.reminderEnabled ?? false,
+          initialReminderMinutesBefore: task?.reminderMinutesBefore ?? 30,
           isEditing: task != null,
         ),
       ),
@@ -196,6 +198,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
         location: result.location,
         source: task?.source ?? 'manual',
         isCompleted: task?.isCompleted ?? false,
+        reminderEnabled: result.reminderEnabled,
+        reminderMinutesBefore: result.reminderMinutesBefore,
       );
 
       await _loadMonth();
@@ -228,6 +232,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
         location: task.location,
         source: task.source,
         isCompleted: value,
+        reminderEnabled: task.reminderEnabled,
+        reminderMinutesBefore: task.reminderMinutesBefore,
       );
       await _loadMonth();
     } catch (error) {
@@ -436,6 +442,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
               title: title,
               description: description,
               startDate: startDate,
+              reminderEnabled: false,
+              reminderMinutesBefore: 30,
             );
             await _loadMonth();
           },
@@ -461,6 +469,50 @@ class _CalendarScreenState extends State<CalendarScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );
+  }
+
+  Future<void> _deleteTask(CalendarTask task) async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Delete task'),
+            content: Text(
+              'Delete "${task.title.isEmpty ? '(Untitled)' : task.title}"?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      _session = await _calendarService.deleteTask(
+        session: _session,
+        taskId: task.id,
+      );
+      await _loadMonth();
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar('Task deleted.');
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
+    }
   }
 
   DateTime _dateWithTime(DateTime base, String suggestedTime) {
@@ -750,6 +802,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                         'Starts ${task.startDate!.hour.toString().padLeft(2, '0')}:${task.startDate!.minute.toString().padLeft(2, '0')}',
                                       if (task.endDate != null)
                                         'Ends ${task.endDate!.hour.toString().padLeft(2, '0')}:${task.endDate!.minute.toString().padLeft(2, '0')}',
+                                      if (task.reminderEnabled)
+                                        'Email reminder ${task.reminderMinutesBefore == 0 ? 'at time of event' : '${task.reminderMinutesBefore} min before'}',
                                       if (task.location.isNotEmpty) task.location,
                                     ].join('\n'),
                                     style: const TextStyle(
@@ -758,6 +812,25 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                     ),
                                   ),
                                   isThreeLine: true,
+                                  trailing: PopupMenuButton<String>(
+                                    onSelected: (value) {
+                                      if (value == 'edit') {
+                                        _openTaskDialog(task: task);
+                                      } else if (value == 'delete') {
+                                        _deleteTask(task);
+                                      }
+                                    },
+                                    itemBuilder: (context) => const [
+                                      PopupMenuItem<String>(
+                                        value: 'edit',
+                                        child: Text('Edit'),
+                                      ),
+                                      PopupMenuItem<String>(
+                                        value: 'delete',
+                                        child: Text('Delete'),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
