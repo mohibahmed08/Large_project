@@ -1,50 +1,67 @@
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:http/http.dart' as http;
 
-class AuthService {
-  final String baseUrl = "http://calendarplusplus.xyz/api";
+import '../models/user_model.dart';
+import 'api_config.dart';
 
-  Future<Map<String, dynamic>> login(String email, String password) async {
-    final response = await http.post(
+class AuthService {
+  AuthService({String? baseUrl}) : baseUrl = baseUrl ?? ApiConfig.baseUrl;
+
+  final String baseUrl;
+
+  Future<UserSession> login(String email, String password) async {
+    final response = await _post(
       Uri.parse('$baseUrl/login'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email, 'password': password}),
+      {'login': email, 'password': password},
     );
 
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    } else {
-      throw Exception('Failed to login: ${response.body}');
-    }
+    return UserSession.fromLoginResponse(response);
   }
 
-  Future<void> register(String firstName, String lastName, String email, String password) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/signup'), 
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'firstName': firstName,
-          'lastName': lastName,
-          'email': email,
-          'password': password
-        }),
-      ).timeout(const Duration(seconds: 10));
+  Future<void> signup({
+    required String firstName,
+    required String lastName,
+    required String email,
+    required String password,
+  }) async {
+    await _post(
+      Uri.parse('$baseUrl/signup'),
+      {
+        'firstName': firstName,
+        'lastName': lastName,
+        'email': email,
+        'password': password,
+      },
+    );
+  }
 
-      if (response.statusCode == 201) {
-        // success
-        return; 
-      } else if (response.statusCode == 409) {
-        throw Exception('An account with that email already exists.');
-      } else {
-        final errorData = jsonDecode(response.body);
-        throw Exception(errorData['error'] ?? 'Registration failed.');
-      }
-    } on TimeoutException {
-      throw Exception('Connection timed out.');
-    } catch (e) {
-      throw Exception('Network error: $e');
+  Future<Map<String, dynamic>> _post(Uri uri, Map<String, dynamic> body) async {
+    final response = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+
+    final json = _decodeBody(response.body);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return json;
     }
+
+    throw Exception(json['error']?.toString() ?? 'Request failed.');
+  }
+
+  Map<String, dynamic> _decodeBody(String body) {
+    if (body.isEmpty) {
+      return {};
+    }
+
+    final decoded = jsonDecode(body);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+
+    return {};
   }
 }

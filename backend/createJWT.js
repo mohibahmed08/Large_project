@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-require('dotenv').config();
+require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
 
 exports.createToken = function ( fn, ln, id )
 {
