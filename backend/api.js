@@ -409,12 +409,39 @@ function refreshJwtToken(tokenUtils, accessToken)
     return refreshedToken.error ? '' : refreshedToken.accessToken;
 }
 
+function generateCalendarFeedToken()
+{
+    return crypto.randomBytes(32).toString('hex');
+}
+
+function buildCalendarFeedUrls(user)
+{
+    const feedToken = String(user?.calendarFeedToken || '').trim();
+    if(!feedToken)
+    {
+        return {
+            calendarFeedUrl: '',
+            calendarFeedWebcalUrl: '',
+        };
+    }
+
+    const serverUrl = String(process.env.SERVER_URL || 'http://localhost:5000').trim().replace(/\/+$/, '');
+    const calendarFeedUrl = `${serverUrl}/api/calendarfeed/${feedToken}`;
+    const calendarFeedWebcalUrl = calendarFeedUrl.replace(/^https?/, 'webcal');
+
+    return {
+        calendarFeedUrl,
+        calendarFeedWebcalUrl,
+    };
+}
+
 function buildSettingsPayload(user)
 {
     const reminderDefaults = normalizeReminderSettings(user?.reminderDefaults || {}, {
         reminderEnabled: false,
         reminderMinutesBefore: 30,
     });
+    const feedUrls = buildCalendarFeedUrls(user);
 
     return {
         firstName: String(user?.firstName || ''),
@@ -422,6 +449,7 @@ function buildSettingsPayload(user)
         email: String(user?.email || ''),
         pendingEmail: String(user?.pendingEmail || ''),
         reminderDefaults,
+        ...feedUrls,
     };
 }
 
@@ -1753,6 +1781,45 @@ exports.setApp = function(app, client)
         }
     });
 
+    app.get('/api/calendarfeed/:feedToken', async (req, res) =>
+    {
+        const feedToken = String(req.params.feedToken || '').trim();
+
+        if(!feedToken)
+        {
+            res.status(400).send('Missing calendar feed token');
+            return;
+        }
+
+        try
+        {
+            const db = getDatabase(client);
+            const user = await db.collection('users').findOne(
+                { calendarFeedToken: feedToken },
+                { projection: { _id: 1 } }
+            );
+
+            if(!user)
+            {
+                res.status(404).send('Calendar feed not found');
+                return;
+            }
+
+            const tasks = await db.collection('tasks')
+                .find({ user_id: user._id })
+                .sort({ dueDate: 1 })
+                .toArray();
+
+            res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+            res.setHeader('Content-Disposition', 'inline; filename="calendar-plus-plus.ics"');
+            res.status(200).send(buildCalendarExport(tasks));
+        }
+        catch(error)
+        {
+            res.status(500).send(error.toString());
+        }
+    });
+
     app.post('/api/getaccountsettings', async (req, res) =>
     {
         const { userId, jwtToken } = req.body;
@@ -1765,6 +1832,18 @@ exports.setApp = function(app, client)
         try
         {
             const db = getDatabase(client);
+            await db.collection('users').updateOne(
+                {
+                    _id: new ObjectId(userId),
+                    $or: [
+                        { calendarFeedToken: { $exists: false } },
+                        { calendarFeedToken: '' },
+                    ],
+                },
+                {
+                    $set: { calendarFeedToken: generateCalendarFeedToken() },
+                }
+            );
             const user = await db.collection('users').findOne(
                 { _id: new ObjectId(userId) },
                 {
@@ -1774,6 +1853,7 @@ exports.setApp = function(app, client)
                         email: 1,
                         pendingEmail: 1,
                         reminderDefaults: 1,
+                        calendarFeedToken: 1,
                     },
                 }
             );
@@ -1841,6 +1921,7 @@ exports.setApp = function(app, client)
                         email: 1,
                         pendingEmail: 1,
                         reminderDefaults: 1,
+                        calendarFeedToken: 1,
                     },
                 }
             );
@@ -1855,6 +1936,51 @@ exports.setApp = function(app, client)
                 settings: buildSettingsPayload(refreshedUser),
                 error: '',
                 jwtToken: refreshedToken.error ? '' : refreshedToken.accessToken,
+            });
+        }
+        catch(error)
+        {
+            res.status(500).json({ settings: null, error: error.toString(), jwtToken: '' });
+        }
+    });
+
+    app.post('/api/regeneratecalendarfeed', async (req, res) =>
+    {
+        const { userId, jwtToken } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        try
+        {
+            const db = getDatabase(client);
+            const nextFeedToken = generateCalendarFeedToken();
+
+            await db.collection('users').updateOne(
+                { _id: new ObjectId(userId) },
+                { $set: { calendarFeedToken: nextFeedToken } }
+            );
+
+            const user = await db.collection('users').findOne(
+                { _id: new ObjectId(userId) },
+                {
+                    projection: {
+                        firstName: 1,
+                        lastName: 1,
+                        email: 1,
+                        pendingEmail: 1,
+                        reminderDefaults: 1,
+                        calendarFeedToken: 1,
+                    },
+                }
+            );
+
+            res.status(200).json({
+                settings: buildSettingsPayload(user),
+                error: '',
+                jwtToken: refreshJwtToken(token, jwtToken),
             });
         }
         catch(error)
