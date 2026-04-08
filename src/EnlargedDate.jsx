@@ -70,22 +70,20 @@ function EnlargedDate({setSelectedCalendarDate, selectedCalendarDate, selectedCa
                 <h2 className = 'enlarged-date-top-title-text'>{selectedCalendarDate?.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' , year: 'numeric'}) || 'INVALID DATE'}</h2>
             </div>
             {/* HOLDS THE HOURLY WEATHER FOR THE CURRENT DATE SELECTED IF APPLICABLE */}
-            {selectedCalendarDateWeather != null && <div className = "enlarged-date-hourly-weather-wrapper">
-                <div className="enlarged-date-hourly-weather-wrapper">
-                    {hourlyWeatherArr.map((hour, index) => {
-                        const hourTime = new Date(hour.fullDate).getTime();
-                        const nextHourTime = hourTime + 60 * 60 * 1000; // add 1 hour in ms
-                        const isActive = date.getTime() >= hourTime && date.getTime() < nextHourTime;
+            {hourlyWeatherArr?.length > 0 && <div className = "enlarged-date-hourly-weather-wrapper">
+                {hourlyWeatherArr.map((hour, index) => {
+                    const hourTime = new Date(hour.fullDate).getTime();
+                    const nextHourTime = hourTime + 60 * 60 * 1000; // add 1 hour in ms
+                    const isActive = date.getTime() >= hourTime && date.getTime() < nextHourTime;
 
-                        return (
-                            <div key={index} className={`hourly-item ${isActive ? "active" : ""}`}>
-                                <div className="hourly-time">{hour.time}</div>
-                                <div className="hourly-icon">{hour.icon}</div>
-                                <div className="hourly-temp">{hour.temp}°</div>
-                            </div>
-                        );
-                    })}                    
-                </div>
+                    return (
+                        <div key={index} className={`hourly-item ${isActive ? "active" : ""}`}>
+                            <div className="hourly-time">{hour.time}</div>
+                            <div className="hourly-icon">{hour.icon}</div>
+                            <div className="hourly-temp">{hour.temp}°</div>
+                        </div>
+                    );
+                })}                    
             </div>}
             {/* HOLDS THE SUGGESTED CONTENT FOR THE CURRENT DAY */}
             <div className = "enlarged-date-suggested-content-wrapper">
