@@ -440,6 +440,42 @@
   color: #cbd5e1;
 }
 
+.calendar-day-add-schedule-card {
+  width: 100%;
+  text-align: left;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  background:
+    linear-gradient(180deg, rgba(96, 165, 250, 0.18), rgba(37, 99, 235, 0.12)),
+    rgba(11, 16, 29, 0.58);
+  color: #eff6ff;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.calendar-day-add-schedule-kicker {
+  color: #93c5fd;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.calendar-day-add-schedule-title {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.calendar-day-add-schedule-copy {
+  color: #dbeafe;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
 .calendar-day-add-icon {
   position: absolute;
   top: 14px;

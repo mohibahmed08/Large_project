@@ -124,6 +124,8 @@ function LocationIcon() {
 }
 
 function App() {
+    const initialSelectedDate = new Date();
+    initialSelectedDate.setHours(0, 0, 0, 0);
     const [isAuthenticated, setIsAuthenticated] = useState(Boolean(localStorage.getItem('jwtToken')));
     const [leftOpen, setLeftOpen] = useState(true);
     const [rightOpen, setRightOpen] = useState(true);
@@ -142,6 +144,7 @@ function App() {
     ]);
     const [calendarRefreshKey, setCalendarRefreshKey] = useState(0);
     const [calendarModalIntent, setCalendarModalIntent] = useState(null);
+    const [selectedDate, setSelectedDate] = useState(initialSelectedDate);
     const [accountModalOpen, setAccountModalOpen] = useState(false);
     const [accountTab, setAccountTab] = useState('account');
     const [accountSettings, setAccountSettings] = useState(null);
@@ -162,8 +165,11 @@ function App() {
     const [emailFeedback, setEmailFeedback] = useState('');
 
     const currentDate = new Date();
-    const verticalDateString = currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const fullDateString = currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    const verticalDateString = selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const fullDateString = selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    const todayDate = new Date();
+    todayDate.setHours(0, 0, 0, 0);
+    const isSelectedToday = selectedDate.getTime() === todayDate.getTime();
 
     const logout = () => {
         localStorage.removeItem('jwtToken');
@@ -628,7 +634,7 @@ function App() {
                         {leftOpen ? (
                             <div className="sidebar-content">
                                 <div style={{ marginBottom: '20px' }}>
-                                    <h2 style={{ margin: '0 0 5px 0' }}>Today</h2>
+                                    <h2 style={{ margin: '0 0 5px 0' }}>{isSelectedToday ? 'Today' : 'Selected Day'}</h2>
                                     <p style={{ margin: 0, color: '#60a5fa', fontWeight: 'bold' }}>{fullDateString}</p>
                                 </div>
 
@@ -678,6 +684,7 @@ function App() {
                                 refreshKey={calendarRefreshKey}
                                 modalIntent={calendarModalIntent}
                                 reminderDefaults={accountSettings?.reminderDefaults}
+                                onSelectedDateChange={setSelectedDate}
                             />
                         </div>
                     </div>

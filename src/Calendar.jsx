@@ -219,6 +219,7 @@ function Calendar({
     refreshKey,
     modalIntent,
     reminderDefaults,
+    onSelectedDateChange,
 }) {
     const [date] = useState(() => new Date());
     const baseMonth = date.getMonth();
@@ -315,6 +316,10 @@ function Calendar({
         const selectedKey = normalizeDateKey(selectedDate);
         return calendarTasks.filter((task) => task?.dueDate && normalizeDateKey(task.dueDate) === selectedKey);
     }, [calendarTasks, selectedDate]);
+
+    useEffect(() => {
+        onSelectedDateChange?.(selectedDate);
+    }, [selectedDate, onSelectedDateChange]);
 
     useEffect(() => {
         if (!session?.userId || !session?.jwtToken || !apiRoot) {
@@ -1110,6 +1115,15 @@ function Calendar({
                                     )) : (
                                         <div className="calendar-day-empty">Nothing scheduled yet. Add an item or pull suggestions.</div>
                                     )}
+                                    <button
+                                        type="button"
+                                        className="calendar-day-add-schedule-card"
+                                        onClick={() => openCreateModal(lastModalType || 'event', selectedDate)}
+                                    >
+                                        <span className="calendar-day-add-schedule-kicker">Quick add</span>
+                                        <span className="calendar-day-add-schedule-title">Add to Schedule</span>
+                                        <span className="calendar-day-add-schedule-copy">Create a plan, event, or task for this day.</span>
+                                    </button>
                                 </div>
                             </div>
                             <div className="calendar-day-column">
