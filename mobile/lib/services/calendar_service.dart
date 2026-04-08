@@ -134,6 +134,8 @@ class CalendarService {
     String? icsUrl,
     String? icsContent,
   }) async {
+    final timeZone = await _timeZone();
+    final localNow = DateTime.now();
     final json = await _post(
       'readcalendar',
       session,
@@ -141,6 +143,8 @@ class CalendarService {
         if (icsUrl != null && icsUrl.trim().isNotEmpty) 'icsUrl': icsUrl.trim(),
         if (icsContent != null && icsContent.trim().isNotEmpty)
           'icsContent': icsContent.trim(),
+        'timeZone': timeZone,
+        'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
       },
     );
 

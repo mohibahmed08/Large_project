@@ -463,10 +463,78 @@ function buildExternalEventId(subscriptionId, entry)
     return `${String(subscriptionId)}:${baseId}:${recurrenceId}`;
 }
 
-function buildIcsTaskSignature(entry)
+function isExactMidnight(date)
 {
-    const dueDate = entry?.start ? new Date(entry.start) : null;
-    const endDate = entry?.end ? new Date(entry.end) : dueDate;
+    if(!(date instanceof Date) || !Number.isFinite(date.getTime()))
+    {
+        return false;
+    }
+
+    return date.getUTCHours() === 0 &&
+           date.getUTCMinutes() === 0 &&
+           date.getUTCSeconds() === 0 &&
+           date.getUTCMilliseconds() === 0;
+}
+
+function isDateOnlyIcsEntry(entry)
+{
+    if(!entry)
+    {
+        return false;
+    }
+
+    if(String(entry.datetype || '').toLowerCase() === 'date')
+    {
+        return true;
+    }
+
+    if(entry.start?.dateOnly === true || entry.end?.dateOnly === true)
+    {
+        return true;
+    }
+
+    const startValueType = String(entry.start?.params?.VALUE || entry.start?.params?.value || '').toUpperCase();
+    const endValueType = String(entry.end?.params?.VALUE || entry.end?.params?.value || '').toUpperCase();
+    return startValueType === 'DATE' || endValueType === 'DATE';
+}
+
+function endOfDayInZoneFromIcsDate(value, options = {})
+{
+    const zone = normalizeTimeZone(options.timeZone) || 'America/New_York';
+    const baseDate = value instanceof Date ? value : new Date(value);
+
+    if(!Number.isFinite(baseDate.getTime()))
+    {
+        return null;
+    }
+
+    return DateTime.fromObject(
+    {
+        year: baseDate.getUTCFullYear(),
+        month: baseDate.getUTCMonth() + 1,
+        day: baseDate.getUTCDate(),
+        hour: 23,
+        minute: 59,
+        second: 0,
+        millisecond: 0,
+    }, { zone }).toUTC().toJSDate();
+}
+
+function buildIcsTaskSignature(entry, options = {})
+{
+    let dueDate = entry?.start ? new Date(entry.start) : null;
+    let endDate = entry?.end ? new Date(entry.end) : dueDate;
+
+    const shouldUseDefaultDueTime =
+        dueDate &&
+        !entry?.end &&
+        (isDateOnlyIcsEntry(entry) || isExactMidnight(dueDate));
+
+    if(shouldUseDefaultDueTime)
+    {
+        dueDate = endOfDayInZoneFromIcsDate(dueDate, options);
+        endDate = dueDate;
+    }
 
     return {
         title: entry?.summary || '(No title)',
@@ -477,9 +545,9 @@ function buildIcsTaskSignature(entry)
     };
 }
 
-function buildTaskFromIcsEntry(userId, subscriptionId, entry)
+function buildTaskFromIcsEntry(userId, subscriptionId, entry, options = {})
 {
-    const signature = buildIcsTaskSignature(entry);
+    const signature = buildIcsTaskSignature(entry, options);
 
     return {
         user_id:        new ObjectId(userId),
@@ -525,7 +593,7 @@ async function syncCalendarSubscription(db, userId, subscription, options = {})
         if(entry?.type !== 'VEVENT') continue;
         if(!entry.summary || !entry.start) continue;
 
-        const task = buildTaskFromIcsEntry(userId, subscription._id, entry);
+        const task = buildTaskFromIcsEntry(userId, subscription._id, entry, options);
         activeExternalIds.push(task.externalEventId);
 
         const updateResult = await db.collection('tasks').updateOne(
@@ -571,7 +639,7 @@ async function syncCalendarSubscription(db, userId, subscription, options = {})
     };
 }
 
-async function syncStoredCalendarSubscriptions(db, userId)
+async function syncStoredCalendarSubscriptions(db, userId, options = {})
 {
     const subscriptions = await getUserCalendarSubscriptions(db, userId);
 
@@ -579,7 +647,7 @@ async function syncStoredCalendarSubscriptions(db, userId)
     {
         try
         {
-            await syncCalendarSubscription(db, userId, subscription);
+            await syncCalendarSubscription(db, userId, subscription, options);
         }
         catch(error)
         {
@@ -1533,7 +1601,7 @@ exports.setApp = function(app, client)
         try
         {
             const db = getDatabase(client);
-            await syncStoredCalendarSubscriptions(db, userId);
+            await syncStoredCalendarSubscriptions(db, userId, { timeZone, utcOffsetMinutes });
             const query = { user_id: new ObjectId(userId) };
             const dateRangeFilter = buildDueDateRangeFilter(startDate, endDate, { timeZone, utcOffsetMinutes });
 
@@ -1715,7 +1783,7 @@ exports.setApp = function(app, client)
 
     app.post('/api/readcalendar', async (req, res) =>
     {
-        const { userId, jwtToken, icsContent, icsUrl } = req.body;
+        const { userId, jwtToken, icsContent, icsUrl, timeZone, utcOffsetMinutes } = req.body;
 
         if(!validateJwtOrRespond(token, res, jwtToken))
         {
@@ -1759,7 +1827,11 @@ exports.setApp = function(app, client)
                     lastSyncError: '',
                 });
 
-                await syncCalendarSubscription(db, userId, subscription, { force: true });
+                await syncCalendarSubscription(db, userId, subscription, {
+                    force: true,
+                    timeZone,
+                    utcOffsetMinutes,
+                });
 
                 const duplicateFilters = [];
                 for(const key of Object.keys(parsed))
@@ -1768,7 +1840,7 @@ exports.setApp = function(app, client)
                     if(entry.type !== 'VEVENT') continue;
                     if(!entry.summary || !entry.start) continue;
 
-                    const signature = buildIcsTaskSignature(entry);
+                    const signature = buildIcsTaskSignature(entry, { timeZone, utcOffsetMinutes });
                     duplicateFilters.push({
                         user_id: new ObjectId(userId),
                         source: 'ical',
@@ -1810,7 +1882,7 @@ exports.setApp = function(app, client)
                 if(entry.type !== 'VEVENT') continue;
                 if(!entry.summary || !entry.start) continue;
 
-                const signature = buildIcsTaskSignature(entry);
+                const signature = buildIcsTaskSignature(entry, { timeZone, utcOffsetMinutes });
                 toInsert.push(
                 {
                     user_id:     new ObjectId(userId),
@@ -1909,7 +1981,7 @@ exports.setApp = function(app, client)
 
     app.post('/api/synccalendarsubscription', async (req, res) =>
     {
-        const { userId, jwtToken, subscriptionId } = req.body;
+        const { userId, jwtToken, subscriptionId, timeZone, utcOffsetMinutes } = req.body;
 
         if(!validateJwtOrRespond(token, res, jwtToken))
         {
@@ -1934,7 +2006,11 @@ exports.setApp = function(app, client)
                 return;
             }
 
-            await syncCalendarSubscription(db, userId, subscription, { force: true });
+            await syncCalendarSubscription(db, userId, subscription, {
+                force: true,
+                timeZone,
+                utcOffsetMinutes,
+            });
             const refreshed = await getUserCalendarSubscriptions(db, userId);
             const updated = refreshed.find((item) => String(item._id) === String(subscriptionId));
 

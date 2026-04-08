@@ -442,12 +442,14 @@ function Calendar({
     }, [importState.open]);
 
     const importCalendarPayload = async ({ icsUrl = '', icsContent = '' }) => {
+        const timeContext = currentTimeContext();
         const response = await fetch(`${apiRoot}/readcalendar`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 userId: session.userId,
                 jwtToken: session.jwtToken,
+                ...timeContext,
                 ...(icsUrl ? { icsUrl } : {}),
                 ...(icsContent ? { icsContent } : {}),
             }),
@@ -544,6 +546,7 @@ function Calendar({
     };
 
     const syncSubscription = async (subscriptionId) => {
+        const timeContext = currentTimeContext();
         setImportState((prev) => ({ ...prev, isSyncingSubscriptionId: subscriptionId, feedback: '' }));
         try {
             const response = await fetch(`${apiRoot}/synccalendarsubscription`, {
@@ -553,6 +556,7 @@ function Calendar({
                     userId: session.userId,
                     jwtToken: session.jwtToken,
                     subscriptionId,
+                    ...timeContext,
                 }),
             });
 
