@@ -349,6 +349,8 @@ function verifyEmailTransporter()
     console.error('Email delivery is disabled: RESEND_API_KEY is missing');
 }
 
+let reminderIntervalHandle = null;
+
 function getDatabase(client)
 {
     return client.db('largeProject');
@@ -602,6 +604,70 @@ function buildDueDateRangeFilter(startDate, endDate)
     return { dueDate: range };
 }
 
+function hasExplicitTimezone(value)
+{
+    return /(?:Z|[+-]\d{2}:\d{2})$/i.test(String(value || '').trim());
+}
+
+function parseDateTimeWithOffset(value, utcOffsetMinutes)
+{
+    if(value === undefined || value === null || value === '')
+    {
+        return null;
+    }
+
+    if(value instanceof Date)
+    {
+        return new Date(value);
+    }
+
+    const text = String(value).trim();
+    if(!text)
+    {
+        return null;
+    }
+
+    if(hasExplicitTimezone(text))
+    {
+        return new Date(text);
+    }
+
+    const match = text.match(
+        /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(\.\d{1,3})?)?)?$/
+    );
+
+    if(match && Number.isFinite(utcOffsetMinutes))
+    {
+        const [
+            ,
+            yearText,
+            monthText,
+            dayText,
+            hourText = '00',
+            minuteText = '00',
+            secondText = '00',
+            fractionText = '',
+        ] = match;
+
+        const milliseconds = fractionText
+            ? Number(fractionText.slice(1).padEnd(3, '0'))
+            : 0;
+        const utcMillis = Date.UTC(
+            Number(yearText),
+            Number(monthText) - 1,
+            Number(dayText),
+            Number(hourText),
+            Number(minuteText),
+            Number(secondText),
+            milliseconds
+        ) - (Number(utcOffsetMinutes) * 60 * 1000);
+
+        return new Date(utcMillis);
+    }
+
+    return new Date(text);
+}
+
 function getTaskStartDate(task)
 {
     return task.dueDate || task.startDate || null;
@@ -780,10 +846,11 @@ function buildCalendarAssistantTools()
     ];
 }
 
-async function executeCalendarAssistantTool(db, userId, toolCall)
+async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
 {
     const toolName = toolCall.name;
     const args = JSON.parse(toolCall.arguments || '{}');
+    const utcOffsetMinutes = options.utcOffsetMinutes;
 
     if(toolName === 'search_calendar_tasks')
     {
@@ -802,8 +869,8 @@ async function executeCalendarAssistantTool(db, userId, toolCall)
         if(args.startDate || args.endDate)
         {
             query.dueDate = {};
-            if(args.startDate) query.dueDate.$gte = new Date(args.startDate);
-            if(args.endDate) query.dueDate.$lte = new Date(args.endDate);
+            if(args.startDate) query.dueDate.$gte = parseDateTimeWithOffset(args.startDate, utcOffsetMinutes);
+            if(args.endDate) query.dueDate.$lte = parseDateTimeWithOffset(args.endDate, utcOffsetMinutes);
         }
 
         const limit = Math.max(1, Math.min(Number(args.limit) || 5, 10));
@@ -821,13 +888,15 @@ async function executeCalendarAssistantTool(db, userId, toolCall)
 
     if(toolName === 'create_calendar_task')
     {
-        const dueDate = args.dueDate ? new Date(args.dueDate) : null;
+        const dueDate = parseDateTimeWithOffset(args.dueDate, utcOffsetMinutes);
         if(!dueDate || Number.isNaN(dueDate.getTime()))
         {
             throw new Error('create_calendar_task requires a valid dueDate');
         }
 
-        const endDate = args.endDate ? new Date(args.endDate) : dueDate;
+        const endDate = args.endDate
+            ? parseDateTimeWithOffset(args.endDate, utcOffsetMinutes)
+            : dueDate;
         const document = {
             user_id: new ObjectId(userId),
             title: String(args.title || '').trim(),
@@ -870,13 +939,13 @@ async function executeCalendarAssistantTool(db, userId, toolCall)
         if(args.location !== undefined) updates.location = String(args.location || '').trim();
         if(args.dueDate !== undefined)
         {
-            const dueDate = new Date(args.dueDate);
+            const dueDate = parseDateTimeWithOffset(args.dueDate, utcOffsetMinutes);
             if(Number.isNaN(dueDate.getTime())) throw new Error('dueDate must be a valid ISO datetime');
             updates.dueDate = dueDate;
         }
         if(args.endDate !== undefined)
         {
-            const endDate = new Date(args.endDate);
+            const endDate = parseDateTimeWithOffset(args.endDate, utcOffsetMinutes);
             if(Number.isNaN(endDate.getTime())) throw new Error('endDate must be a valid ISO datetime');
             updates.endDate = endDate;
         }
@@ -976,7 +1045,12 @@ Do not call more tools unless the user asks for a new action.`,
 
         for(const toolCall of functionCalls)
         {
-            const output = await executeCalendarAssistantTool(db, userId, toolCall);
+            const output = await executeCalendarAssistantTool(
+                db,
+                userId,
+                toolCall,
+                { utcOffsetMinutes: context.utcOffsetMinutes }
+            );
             if(toolCall.name === 'create_calendar_task' || toolCall.name === 'update_calendar_task')
             {
                 calendarChanged = true;
@@ -1429,8 +1503,8 @@ exports.setApp = function(app, client)
         try
         {
             const db          = getDatabase(client);
-            const targetDate  = date ? new Date(date) : new Date();
-            const localNowDate = localNow ? new Date(localNow) : new Date();
+            const targetDate  = date ? parseDateTimeWithOffset(date, utcOffsetMinutes) : new Date();
+            const localNowDate = localNow ? parseDateTimeWithOffset(localNow, utcOffsetMinutes) : new Date();
             const dayStart    = new Date(targetDate); dayStart.setHours(0, 0, 0, 0);
             const dayEnd      = new Date(targetDate); dayEnd.setHours(23, 59, 59, 999);
 
@@ -1481,7 +1555,7 @@ exports.setApp = function(app, client)
                 `You are a helpful personal assistant that suggests calendar events for a user's day.
                  You may use live web search when current or local information would improve your answer.
                  Respond ONLY with a valid JSON array of objects.
-                 Each object must have: "title" (string), "description" (string), "suggestedTime" (HH:MM 24-hour).
+                 Each object must have: "title" (string), "description" (string), "suggestedTime" (HH:MM 24-hour local time).
                  Suggest 3-5 events. Do not include any explanation or text outside the JSON array.`;
 
             const locationContext = latitude != null && longitude != null
@@ -1555,7 +1629,7 @@ Suggest practical, realistic calendar events that complement the existing tasks 
         try
         {
             const db   = getDatabase(client);
-            const now  = localNow ? new Date(localNow) : new Date();
+            const now  = localNow ? parseDateTimeWithOffset(localNow, utcOffsetMinutes) : new Date();
             const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
             const dayEnd   = new Date(now); dayEnd.setHours(23, 59, 59, 999);
 
@@ -1625,6 +1699,8 @@ Suggest practical, realistic calendar events that complement the existing tasks 
                  You may use live web search when the user asks about current, nearby, or time-sensitive things.
                  Do not claim you lack real-time access if web search would help; use it instead.
                  When the user asks to create, edit, move, reschedule, or complete calendar tasks, use the available calendar tools.
+                 Treat times mentioned by the user as local to the user unless they say otherwise.
+                 When calling calendar tools, provide ISO datetimes. If you only know a local wall-clock time, include the user's local offset if possible.
 
 Today is ${now.toDateString()}.
 ${localTimeLine}
@@ -1652,6 +1728,7 @@ Help the user manage their schedule, suggest events, answer questions about thei
                 {
                     systemPrompt,
                     prefixMessages: [{ role: 'user', content: locationContext }],
+                    utcOffsetMinutes,
                 }
             );
 
@@ -1691,7 +1768,7 @@ Help the user manage their schedule, suggest events, answer questions about thei
         try
         {
             const db   = getDatabase(client);
-            const now  = localNow ? new Date(localNow) : new Date();
+            const now  = localNow ? parseDateTimeWithOffset(localNow, utcOffsetMinutes) : new Date();
             const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
             const dayEnd   = new Date(now); dayEnd.setHours(23, 59, 59, 999);
 
@@ -1755,6 +1832,8 @@ Help the user manage their schedule, suggest events, answer questions about thei
                  You may use live web search when the user asks about current, nearby, or time-sensitive things.
                  Do not claim you lack real-time access if web search would help; use it instead.
                  When the user asks to create, edit, move, reschedule, or complete calendar tasks, use the available calendar tools.
+                 Treat times mentioned by the user as local to the user unless they say otherwise.
+                 When calling calendar tools, provide ISO datetimes. If you only know a local wall-clock time, include the user's local offset if possible.
 
 Today is ${now.toDateString()}.
 ${localTimeLine}
@@ -1793,6 +1872,7 @@ Help the user manage their schedule, suggest events, answer questions about thei
                 {
                     systemPrompt,
                     prefixMessages: [{ role: 'user', content: locationContext }],
+                    utcOffsetMinutes,
                 }
             );
 

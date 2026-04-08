@@ -77,7 +77,7 @@ class AiService {
       session,
       {
         'messages': messages,
-        'localNow': localNow.toIso8601String(),
+        'localNow': _toOffsetIsoString(localNow),
         'timeZone': localNow.timeZoneName,
         'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
         if (latitude != null) 'latitude': latitude,
@@ -111,7 +111,7 @@ class AiService {
         'userId': session.userId,
         'jwtToken': session.accessToken,
         'messages': messages,
-        'localNow': localNow.toIso8601String(),
+        'localNow': _toOffsetIsoString(localNow),
         'timeZone': localNow.timeZoneName,
         'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
         if (latitude != null) 'latitude': latitude,
@@ -169,8 +169,8 @@ class AiService {
       'suggestevents',
       session,
       {
-        'date': date.toIso8601String(),
-        'localNow': localNow.toIso8601String(),
+        'date': _toOffsetIsoString(date),
+        'localNow': _toOffsetIsoString(localNow),
         'timeZone': localNow.timeZoneName,
         'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
         if (latitude != null) 'latitude': latitude,
@@ -290,5 +290,19 @@ class AiService {
       return session;
     }
     return session.copyWith(accessToken: refreshed);
+  }
+
+  String _toOffsetIsoString(DateTime value) {
+    final local = value.toLocal();
+    final offset = local.timeZoneOffset;
+    final sign = offset.isNegative ? '-' : '+';
+    final totalMinutes = offset.inMinutes.abs();
+    final hours = (totalMinutes ~/ 60).toString().padLeft(2, '0');
+    final minutes = (totalMinutes % 60).toString().padLeft(2, '0');
+    final base = local
+        .toIso8601String()
+        .split(RegExp(r'Z|[+-]\d{2}:\d{2}$'))
+        .first;
+    return '$base$sign$hours:$minutes';
   }
 }
