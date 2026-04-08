@@ -174,6 +174,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
           initialTitle: task?.title ?? '',
           initialDescription: task?.description ?? '',
           initialLocation: task?.location ?? '',
+          initialColor: task?.color ?? '',
+          initialGroup: task?.group ?? '',
           initialStartDate: baseDate,
           initialEndDate: initialEndDate,
           initialReminderEnabled: task?.reminderEnabled ?? false,
@@ -197,6 +199,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
         endDate: result.endDate,
         location: result.location,
         source: task?.source ?? 'manual',
+        color: result.color,
+        group: result.group,
         isCompleted: task?.isCompleted ?? false,
         reminderEnabled: result.reminderEnabled,
         reminderMinutesBefore: result.reminderMinutesBefore,
@@ -231,6 +235,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
         endDate: task.endDate,
         location: task.location,
         source: task.source,
+        color: task.color,
+        group: task.group,
         isCompleted: value,
         reminderEnabled: task.reminderEnabled,
         reminderMinutesBefore: task.reminderMinutesBefore,
@@ -442,6 +448,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
               title: title,
               description: description,
               startDate: startDate,
+              color: '',
+              group: '',
               reminderEnabled: false,
               reminderMinutesBefore: 30,
             );
@@ -544,9 +552,60 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ..sort((a, b) => (a.startDate ?? _selectedDate).compareTo(b.startDate ?? _selectedDate));
   }
 
-  int _taskCountForDay(int day) {
+  List<CalendarTask> _tasksForDay(int day) {
     final date = DateTime(_currentDate.year, _currentDate.month, day);
-    return _tasks.where((task) => DateUtils.isSameDay(task.startDate, date)).length;
+    return _tasks
+        .where((task) => DateUtils.isSameDay(task.startDate, date))
+        .toList()
+      ..sort(
+        (a, b) => (a.startDate ?? date).compareTo(b.startDate ?? date),
+      );
+  }
+
+  String _taskGroupLabel(CalendarTask task) {
+    final explicitGroup = task.group.trim();
+    if (explicitGroup.isNotEmpty) {
+      return explicitGroup;
+    }
+
+    switch (task.source.toLowerCase()) {
+      case 'ical':
+        return 'Imported';
+      case 'manual':
+        return 'Manual';
+      default:
+        return task.source.isEmpty ? 'Other' : task.source;
+    }
+  }
+
+  Color _taskColor(CalendarTask task) {
+    final parsed = _parseColor(task.color);
+    if (parsed != null) {
+      return parsed;
+    }
+
+    switch (task.source.toLowerCase()) {
+      case 'ical':
+        return const Color(0xFF94A3B8);
+      default:
+        return AppTheme.accent;
+    }
+  }
+
+  Color? _parseColor(String value) {
+    final normalized = value.trim().replaceFirst('#', '');
+    if (normalized.length != 6 && normalized.length != 8) {
+      return null;
+    }
+
+    final parsed = int.tryParse(normalized, radix: 16);
+    if (parsed == null) {
+      return null;
+    }
+
+    return Color(
+      normalized.length == 6 ? 0xFF000000 | parsed : parsed,
+    );
   }
 
   @override
@@ -731,7 +790,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                   _selectedDate,
                                 ),
                                 weatherData: _weatherData,
-                                taskCount: _taskCountForDay(day),
+                                tasks: _tasksForDay(day),
                                 onDayTap: (selectedDay) {
                                   setState(() {
                                     _selectedDate = DateTime(
@@ -777,63 +836,107 @@ class _CalendarScreenState extends State<CalendarScreen> {
                               style: TextStyle(color: AppTheme.textMuted),
                             )
                           else
-                            ..._tasksForSelectedDay.map(
-                              (task) => Card(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                color: AppTheme.surfaceAlt.withValues(alpha: 0.6),
-                                child: ListTile(
-                                  onTap: () => _openTaskDialog(task: task),
-                                  leading: Checkbox(
-                                    value: task.isCompleted,
-                                    onChanged: (value) {
-                                      if (value != null) {
-                                        _toggleTask(task, value);
-                                      }
-                                    },
-                                  ),
-                                  title: Text(
-                                    task.title.isEmpty ? '(Untitled)' : task.title,
-                                  ),
-                                  subtitle: Text(
-                                    [
-                                      if (task.description.isNotEmpty)
-                                        task.description,
-                                      if (task.startDate != null)
-                                        'Starts ${task.startDate!.hour.toString().padLeft(2, '0')}:${task.startDate!.minute.toString().padLeft(2, '0')}',
-                                      if (task.endDate != null)
-                                        'Ends ${task.endDate!.hour.toString().padLeft(2, '0')}:${task.endDate!.minute.toString().padLeft(2, '0')}',
-                                      if (task.reminderEnabled)
-                                        'Email reminder ${task.reminderMinutesBefore == 0 ? 'at time of event' : '${task.reminderMinutesBefore} min before'}',
-                                      if (task.location.isNotEmpty) task.location,
-                                    ].join('\n'),
-                                    style: const TextStyle(
-                                      color: AppTheme.textMuted,
-                                      height: 1.35,
-                                    ),
-                                  ),
-                                  isThreeLine: true,
-                                  trailing: PopupMenuButton<String>(
-                                    onSelected: (value) {
-                                      if (value == 'edit') {
-                                        _openTaskDialog(task: task);
-                                      } else if (value == 'delete') {
-                                        _deleteTask(task);
-                                      }
-                                    },
-                                    itemBuilder: (context) => const [
-                                      PopupMenuItem<String>(
-                                        value: 'edit',
-                                        child: Text('Edit'),
+                            ...(() {
+                              final groupedTasks = <String, List<CalendarTask>>{};
+                              for (final task in _tasksForSelectedDay) {
+                                final key = _taskGroupLabel(task);
+                                groupedTasks.putIfAbsent(key, () => []).add(task);
+                              }
+
+                              return groupedTasks.entries.expand((entry) sync* {
+                                yield Padding(
+                                  padding: const EdgeInsets.only(top: 8, bottom: 10),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 10,
+                                        height: 10,
+                                        decoration: BoxDecoration(
+                                          color: _taskColor(entry.value.first),
+                                          shape: BoxShape.circle,
+                                        ),
                                       ),
-                                      PopupMenuItem<String>(
-                                        value: 'delete',
-                                        child: Text('Delete'),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        '${entry.key} - ${entry.value.length}',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelLarge
+                                            ?.copyWith(
+                                              color: AppTheme.textMuted,
+                                              fontWeight: FontWeight.w700,
+                                            ),
                                       ),
                                     ],
                                   ),
-                                ),
-                              ),
-                            ),
+                                );
+
+                                for (final task in entry.value) {
+                                  yield Card(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    color: _taskColor(task).withValues(alpha: 0.18),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(20),
+                                      side: BorderSide(
+                                        color: _taskColor(task).withValues(alpha: 0.65),
+                                      ),
+                                    ),
+                                    child: ListTile(
+                                      onTap: () => _openTaskDialog(task: task),
+                                      leading: Checkbox(
+                                        value: task.isCompleted,
+                                        activeColor: _taskColor(task),
+                                        onChanged: (value) {
+                                          if (value != null) {
+                                            _toggleTask(task, value);
+                                          }
+                                        },
+                                      ),
+                                      title: Text(
+                                        task.title.isEmpty ? '(Untitled)' : task.title,
+                                      ),
+                                      subtitle: Text(
+                                        [
+                                          if (task.description.isNotEmpty)
+                                            task.description,
+                                          if (task.startDate != null)
+                                            'Starts ${task.startDate!.hour.toString().padLeft(2, '0')}:${task.startDate!.minute.toString().padLeft(2, '0')}',
+                                          if (task.endDate != null)
+                                            'Ends ${task.endDate!.hour.toString().padLeft(2, '0')}:${task.endDate!.minute.toString().padLeft(2, '0')}',
+                                          if (task.reminderEnabled)
+                                            'Email reminder ${task.reminderMinutesBefore == 0 ? 'at time of event' : '${task.reminderMinutesBefore} min before'}',
+                                          if (task.location.isNotEmpty) task.location,
+                                        ].join('\n'),
+                                        style: const TextStyle(
+                                          color: AppTheme.textMuted,
+                                          height: 1.35,
+                                        ),
+                                      ),
+                                      isThreeLine: true,
+                                      trailing: PopupMenuButton<String>(
+                                        onSelected: (value) {
+                                          if (value == 'edit') {
+                                            _openTaskDialog(task: task);
+                                          } else if (value == 'delete') {
+                                            _deleteTask(task);
+                                          }
+                                        },
+                                        itemBuilder: (context) => const [
+                                          PopupMenuItem<String>(
+                                            value: 'edit',
+                                            child: Text('Edit'),
+                                          ),
+                                          PopupMenuItem<String>(
+                                            value: 'delete',
+                                            child: Text('Delete'),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }
+                              }).toList();
+                            })(),
                         ],
                       ),
                     ),

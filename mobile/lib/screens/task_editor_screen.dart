@@ -5,6 +5,8 @@ class TaskEditorResult {
     required this.title,
     required this.description,
     required this.location,
+    required this.color,
+    required this.group,
     required this.startDate,
     required this.endDate,
     required this.reminderEnabled,
@@ -14,6 +16,8 @@ class TaskEditorResult {
   final String title;
   final String description;
   final String location;
+  final String color;
+  final String group;
   final DateTime startDate;
   final DateTime endDate;
   final bool reminderEnabled;
@@ -26,6 +30,8 @@ class TaskEditorScreen extends StatefulWidget {
     required this.initialTitle,
     required this.initialDescription,
     required this.initialLocation,
+    required this.initialColor,
+    required this.initialGroup,
     required this.initialStartDate,
     required this.initialEndDate,
     required this.initialReminderEnabled,
@@ -36,6 +42,8 @@ class TaskEditorScreen extends StatefulWidget {
   final String initialTitle;
   final String initialDescription;
   final String initialLocation;
+  final String initialColor;
+  final String initialGroup;
   final DateTime initialStartDate;
   final DateTime initialEndDate;
   final bool initialReminderEnabled;
@@ -50,11 +58,23 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
   late final TextEditingController _titleController;
   late final TextEditingController _descriptionController;
   late final TextEditingController _locationController;
+  late final TextEditingController _groupController;
   late DateTime _startDate;
   late DateTime _endDate;
   late bool _reminderEnabled;
   late int _reminderMinutesBefore;
   static const List<int> _reminderOptions = [0, 5, 10, 15, 30, 60, 120, 1440];
+  static const List<String> _colorOptions = [
+    '',
+    '#60A5FA',
+    '#F97316',
+    '#22C55E',
+    '#EAB308',
+    '#A855F7',
+    '#EF4444',
+    '#14B8A6',
+  ];
+  late String _selectedColor;
 
   @override
   void initState() {
@@ -63,12 +83,16 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
     _descriptionController =
         TextEditingController(text: widget.initialDescription);
     _locationController = TextEditingController(text: widget.initialLocation);
+    _groupController = TextEditingController(text: widget.initialGroup);
     _startDate = widget.initialStartDate;
     _endDate = widget.initialEndDate.isBefore(widget.initialStartDate)
         ? widget.initialStartDate
         : widget.initialEndDate;
     _reminderEnabled = widget.initialReminderEnabled;
     _reminderMinutesBefore = widget.initialReminderMinutesBefore;
+    _selectedColor = _colorOptions.contains(widget.initialColor.toUpperCase())
+        ? widget.initialColor.toUpperCase()
+        : '';
   }
 
   @override
@@ -76,6 +100,7 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
     _titleController.dispose();
     _descriptionController.dispose();
     _locationController.dispose();
+    _groupController.dispose();
     super.dispose();
   }
 
@@ -165,6 +190,8 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
         title: title,
         description: _descriptionController.text.trim(),
         location: _locationController.text.trim(),
+        color: _selectedColor,
+        group: _groupController.text.trim(),
         startDate: _startDate,
         endDate: _endDate,
         reminderEnabled: _reminderEnabled,
@@ -200,6 +227,20 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
     return '$hour:$minute $suffix';
   }
 
+  Color _chipColor(String hex) {
+    if (hex.isEmpty) {
+      return const Color(0xFF334155);
+    }
+
+    final normalized = hex.replaceFirst('#', '');
+    final value = int.tryParse(normalized, radix: 16);
+    if (value == null) {
+      return const Color(0xFF334155);
+    }
+
+    return Color(normalized.length == 6 ? 0xFF000000 | value : value);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -227,6 +268,56 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
               controller: _locationController,
               decoration: const InputDecoration(labelText: 'Location'),
               textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _groupController,
+              decoration: const InputDecoration(
+                labelText: 'Group',
+                hintText: 'School, Work, Personal...',
+              ),
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Task color',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: _colorOptions.map((option) {
+                final isSelected = _selectedColor == option;
+                final fill = _chipColor(option);
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedColor = option;
+                    });
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: fill,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isSelected
+                            ? Colors.white
+                            : Colors.white.withValues(alpha: 0.18),
+                        width: isSelected ? 2.4 : 1.2,
+                      ),
+                    ),
+                    child: option.isEmpty
+                        ? const Icon(Icons.block, color: Colors.white70, size: 18)
+                        : isSelected
+                            ? const Icon(Icons.check, color: Colors.white, size: 18)
+                            : null,
+                  ),
+                );
+              }).toList(),
             ),
             const SizedBox(height: 20),
             Text(

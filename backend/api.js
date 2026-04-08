@@ -99,7 +99,7 @@ function extractResponseText(responseBody)
 async function createOpenAIResponse(apiKey, input, options = {})
 {
     const {
-        model = 'gpt-4o',
+        model = process.env.OPENAI_MODEL || 'gpt-4.1-mini',
         instructions = '',
         useWebSearch = false,
         tools = [],
@@ -165,7 +165,7 @@ async function callOpenAI(apiKey, input, options = {})
 async function streamOpenAI(apiKey, input, options = {}, handlers = {})
 {
     const {
-        model = 'gpt-4o',
+        model = process.env.OPENAI_MODEL || 'gpt-4.1-mini',
         instructions = '',
         useWebSearch = false,
     } = options;
@@ -938,6 +938,186 @@ function parseDateTimeWithOffset(value, utcOffsetMinutes, timeZone)
     return parseDateTimeInUserZone(value, { utcOffsetMinutes, timeZone });
 }
 
+function normalizeTaskColor(value)
+{
+    const color = String(value || '').trim();
+    if(!color) return '';
+    if(/^#[0-9a-fA-F]{6}$/.test(color) || /^#[0-9a-fA-F]{8}$/.test(color))
+    {
+        return color.toUpperCase();
+    }
+
+    return '';
+}
+
+function normalizeTaskGroup(value, fallback = '')
+{
+    const group = String(value || fallback || '').trim();
+    return group.slice(0, 60);
+}
+
+function weekDayNumberToCode(dayNumber)
+{
+    return ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][dayNumber] || '';
+}
+
+function normalizeRecurrenceDays(days)
+{
+    const values = Array.isArray(days) ? days : [];
+    const normalized = values
+        .map((day) => String(day || '').trim().toUpperCase())
+        .filter((day) => ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'].includes(day));
+
+    return [...new Set(normalized)];
+}
+
+function buildRecurringTaskDocuments(userId, args, options = {})
+{
+    const utcOffsetMinutes = options.utcOffsetMinutes;
+    const timeZone = options.timeZone;
+    const startDate = parseDateTimeWithOffset(args.startDate || args.dueDate, utcOffsetMinutes, timeZone);
+    if(!startDate || Number.isNaN(startDate.getTime()))
+    {
+        throw new Error('create_recurring_calendar_tasks requires a valid startDate');
+    }
+
+    const parsedEndDate = args.endDate
+        ? parseDateTimeWithOffset(args.endDate, utcOffsetMinutes, timeZone)
+        : null;
+    const endDate = parsedEndDate && !Number.isNaN(parsedEndDate.getTime()) ? parsedEndDate : startDate;
+    const durationMs = Math.max(0, endDate.getTime() - startDate.getTime());
+    const recurrenceDays = normalizeRecurrenceDays(args.daysOfWeek);
+
+    if(recurrenceDays.length === 0)
+    {
+        throw new Error('create_recurring_calendar_tasks requires at least one valid day in daysOfWeek');
+    }
+
+    const untilDate = parseDateTimeWithOffset(args.untilDate, utcOffsetMinutes, timeZone);
+    if(!untilDate || Number.isNaN(untilDate.getTime()))
+    {
+        throw new Error('create_recurring_calendar_tasks requires a valid untilDate');
+    }
+
+    const intervalWeeks = Math.max(1, Math.min(Number(args.intervalWeeks) || 1, 8));
+    const maxOccurrences = Math.max(1, Math.min(Number(args.maxOccurrences) || 120, 240));
+    const startWeekAnchor = new Date(startDate);
+    startWeekAnchor.setHours(0, 0, 0, 0);
+    startWeekAnchor.setDate(startWeekAnchor.getDate() - startWeekAnchor.getDay());
+
+    const documents = [];
+    for(let cursor = new Date(startDate); cursor <= untilDate; cursor.setDate(cursor.getDate() + 1))
+    {
+        const weekdayCode = weekDayNumberToCode(cursor.getDay());
+        if(!recurrenceDays.includes(weekdayCode))
+        {
+            continue;
+        }
+
+        const cursorWeekAnchor = new Date(cursor);
+        cursorWeekAnchor.setHours(0, 0, 0, 0);
+        cursorWeekAnchor.setDate(cursorWeekAnchor.getDate() - cursorWeekAnchor.getDay());
+        const weekDiff = Math.floor((cursorWeekAnchor.getTime() - startWeekAnchor.getTime()) / (7 * 24 * 60 * 60 * 1000));
+        if(weekDiff < 0 || weekDiff % intervalWeeks !== 0)
+        {
+            continue;
+        }
+
+        const dueDate = new Date(
+            cursor.getFullYear(),
+            cursor.getMonth(),
+            cursor.getDate(),
+            startDate.getHours(),
+            startDate.getMinutes(),
+            startDate.getSeconds(),
+            startDate.getMilliseconds()
+        );
+
+        if(dueDate < startDate || dueDate > untilDate)
+        {
+            continue;
+        }
+
+        const document = {
+            user_id: new ObjectId(userId),
+            title: String(args.title || '').trim(),
+            description: String(args.description || '').trim(),
+            location: String(args.location || '').trim(),
+            dueDate,
+            endDate: new Date(dueDate.getTime() + durationMs),
+            isCompleted: false,
+            source: 'manual',
+            color: normalizeTaskColor(args.color),
+            group: normalizeTaskGroup(args.group),
+        };
+        Object.assign(document, buildReminderFields(document, {
+            reminderEnabled: args.reminderEnabled,
+            reminderMinutesBefore: args.reminderMinutesBefore,
+        }));
+        documents.push(document);
+
+        if(documents.length >= maxOccurrences)
+        {
+            break;
+        }
+    }
+
+    if(!String(args.title || '').trim())
+    {
+        throw new Error('create_recurring_calendar_tasks requires a title');
+    }
+
+    if(documents.length === 0)
+    {
+        throw new Error('No recurring tasks matched the provided schedule.');
+    }
+
+    return documents;
+}
+
+function shouldUseAssistantWebSearch(messages = [])
+{
+    const combinedText = messages
+        .map((message) => typeof message?.content === 'string' ? message.content : '')
+        .join(' ')
+        .toLowerCase();
+
+    if(!combinedText)
+    {
+        return false;
+    }
+
+    return [
+        'nearby',
+        'closest',
+        'open now',
+        'hours',
+        'weather',
+        'restaurant',
+        'store',
+        'venue',
+        'today',
+        'tonight',
+        'current',
+        'latest',
+        'news',
+        'this week',
+        'this weekend',
+        'tomorrow',
+        'recommend',
+        'recommendation',
+        'best',
+        'available',
+        'happening',
+        'event',
+        'traffic',
+        'temperature',
+        'forecast',
+        'campus',
+        'local',
+    ].some((phrase) => combinedText.includes(phrase));
+}
+
 function getTaskStartDate(task)
 {
     return task.dueDate || task.startDate || null;
@@ -1260,6 +1440,8 @@ function normalizeTaskForTool(task)
         endDate: task.endDate ? new Date(task.endDate).toISOString() : null,
         isCompleted: task.isCompleted === true,
         source: task.source || 'manual',
+        color: normalizeTaskColor(task.color),
+        group: normalizeTaskGroup(task.group, task.source || 'manual'),
         reminderEnabled: task.reminderEnabled === true,
         reminderMinutesBefore: Number.isFinite(Number(task.reminderMinutesBefore))
             ? Number(task.reminderMinutesBefore)
@@ -1316,6 +1498,8 @@ function buildCalendarAssistantTools()
                     location: { type: 'string' },
                     dueDate: { type: 'string', description: 'ISO datetime for the event start.' },
                     endDate: { type: 'string', description: 'Optional ISO datetime for the event end.' },
+                    color: { type: 'string', description: 'Optional hex color such as #60A5FA.' },
+                    group: { type: 'string', description: 'Optional user-facing group label such as School or Work.' },
                     reminderEnabled: { type: 'boolean', description: 'Whether to send an email reminder.' },
                     reminderMinutesBefore: { type: 'number', description: 'Minutes before the task to send the reminder email.' },
                 },
@@ -1336,11 +1520,42 @@ function buildCalendarAssistantTools()
                     location: { type: 'string' },
                     dueDate: { type: 'string', description: 'Optional ISO datetime for the new start.' },
                     endDate: { type: 'string', description: 'Optional ISO datetime for the new end.' },
+                    color: { type: 'string', description: 'Optional hex color such as #60A5FA.' },
+                    group: { type: 'string', description: 'Optional user-facing group label such as School or Work.' },
                     isCompleted: { type: 'boolean' },
                     reminderEnabled: { type: 'boolean', description: 'Whether email reminders are enabled.' },
                     reminderMinutesBefore: { type: 'number', description: 'Minutes before the task to send the reminder email.' },
                 },
                 required: ['taskId'],
+                additionalProperties: false,
+            },
+        },
+        {
+            type: 'function',
+            name: 'create_recurring_calendar_tasks',
+            description: 'Create a recurring series of calendar tasks for the current user, such as every Monday and Wednesday until a given date.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    title: { type: 'string' },
+                    description: { type: 'string' },
+                    location: { type: 'string' },
+                    startDate: { type: 'string', description: 'ISO datetime for the first event start time.' },
+                    endDate: { type: 'string', description: 'Optional ISO datetime for the first event end time.' },
+                    daysOfWeek: {
+                        type: 'array',
+                        description: 'Recurring weekday codes using SU, MO, TU, WE, TH, FR, SA.',
+                        items: { type: 'string' },
+                    },
+                    untilDate: { type: 'string', description: 'ISO datetime cutoff for the final allowed occurrence.' },
+                    intervalWeeks: { type: 'number', description: 'Optional number of weeks between repeats. Defaults to 1.' },
+                    maxOccurrences: { type: 'number', description: 'Optional safety cap on created events. Defaults to 120.' },
+                    color: { type: 'string', description: 'Optional hex color such as #60A5FA.' },
+                    group: { type: 'string', description: 'Optional user-facing group label such as School or Work.' },
+                    reminderEnabled: { type: 'boolean', description: 'Whether to send an email reminder.' },
+                    reminderMinutesBefore: { type: 'number', description: 'Minutes before each task to send the reminder email.' },
+                },
+                required: ['title', 'startDate', 'daysOfWeek', 'untilDate'],
                 additionalProperties: false,
             },
         },
@@ -1378,6 +1593,7 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
                 { title: { $regex: trimmedQuery, $options: 'i' } },
                 { description: { $regex: trimmedQuery, $options: 'i' } },
                 { location: { $regex: trimmedQuery, $options: 'i' } },
+                { group: { $regex: trimmedQuery, $options: 'i' } },
             ];
         }
 
@@ -1459,6 +1675,8 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
             endDate: Number.isNaN(endDate.getTime()) ? dueDate : endDate,
             isCompleted: false,
             source: 'manual',
+            color: normalizeTaskColor(args.color),
+            group: normalizeTaskGroup(args.group),
         };
         Object.assign(document, buildReminderFields(document, {
             reminderEnabled: args.reminderEnabled,
@@ -1487,6 +1705,8 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
         if(args.title !== undefined) updates.title = String(args.title || '').trim();
         if(args.description !== undefined) updates.description = String(args.description || '').trim();
         if(args.location !== undefined) updates.location = String(args.location || '').trim();
+        if(args.color !== undefined) updates.color = normalizeTaskColor(args.color);
+        if(args.group !== undefined) updates.group = normalizeTaskGroup(args.group);
         if(args.dueDate !== undefined)
         {
             const dueDate = parseDateTimeWithOffset(args.dueDate, utcOffsetMinutes, timeZone);
@@ -1541,6 +1761,27 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
         };
     }
 
+    if(toolName === 'create_recurring_calendar_tasks')
+    {
+        const documents = buildRecurringTaskDocuments(userId, args, {
+            utcOffsetMinutes,
+            timeZone,
+        });
+
+        const insertResult = await db.collection('tasks').insertMany(documents, { ordered: true });
+        const insertedIds = Object.values(insertResult.insertedIds || {});
+        const createdTasks = documents.map((document, index) => normalizeTaskForTool({
+            ...document,
+            _id: insertedIds[index],
+        }));
+
+        return {
+            created: true,
+            count: createdTasks.length,
+            tasks: createdTasks,
+        };
+    }
+
     if(toolName === 'delete_calendar_task')
     {
         const existing = await resolveAssistantTaskReference(db, userId, args.taskId);
@@ -1566,15 +1807,16 @@ async function runCalendarAssistant(apiKey, db, userId, messages, context)
     let input = [...context.prefixMessages, ...messages];
     let calendarChanged = false;
     const seenToolCalls = new Set();
+    const useWebSearch = shouldUseAssistantWebSearch(messages);
 
-    for(let iteration = 0; iteration < 4; iteration += 1)
+    for(let iteration = 0; iteration < 6; iteration += 1)
     {
         const response = await createOpenAIResponse(
             apiKey,
             input,
             {
                 instructions: context.systemPrompt,
-                useWebSearch: true,
+                useWebSearch,
                 tools,
             }
         );
@@ -1613,7 +1855,7 @@ async function runCalendarAssistant(apiKey, db, userId, messages, context)
 
 Use the existing tool results already in the conversation and answer the user directly now.
 Do not call more tools unless the user asks for a new action.`,
-                    useWebSearch: true,
+                    useWebSearch,
                 }
             );
 
@@ -1642,6 +1884,7 @@ Do not call more tools unless the user asks for a new action.`,
                 if(
                     (
                         toolCall.name === 'create_calendar_task' ||
+                        toolCall.name === 'create_recurring_calendar_tasks' ||
                         toolCall.name === 'update_calendar_task' ||
                         toolCall.name === 'delete_calendar_task'
                     ) &&
@@ -1679,7 +1922,7 @@ Do not call more tools unless the user asks for a new action.`,
 
 Answer the user directly using the tool results already gathered.
 Do not call any more tools in this response.`,
-            useWebSearch: true,
+            useWebSearch,
         }
     );
 
@@ -2219,6 +2462,7 @@ exports.setApp = function(app, client)
                     { title:       { $regex: trimmedSearch + '.*', $options: 'i' } },
                     { description: { $regex: trimmedSearch + '.*', $options: 'i' } },
                     { location:    { $regex: trimmedSearch + '.*', $options: 'i' } },
+                    { group:       { $regex: trimmedSearch + '.*', $options: 'i' } },
                 ]
             })
             .sort({ dueDate: 1 })
@@ -2280,6 +2524,8 @@ exports.setApp = function(app, client)
             endDate,
             location,
             source,
+            color,
+            group,
             isCompleted,
             reminderEnabled,
             reminderMinutesBefore,
@@ -2324,6 +2570,8 @@ exports.setApp = function(app, client)
                     : null;
                 if(location    !== undefined) updates.location    = location;
                 if(source      !== undefined) updates.source      = source;
+                if(color       !== undefined) updates.color       = normalizeTaskColor(color);
+                if(group       !== undefined) updates.group       = normalizeTaskGroup(group);
                 if(isCompleted !== undefined) updates.isCompleted = isCompleted;
                 if(
                     nextDueDate !== undefined ||
@@ -2362,6 +2610,8 @@ exports.setApp = function(app, client)
                     endDate:     nextEndDate,
                     isCompleted: isCompleted || false,
                     source:      source || 'manual',
+                    color:       normalizeTaskColor(color),
+                    group:       normalizeTaskGroup(group),
                 };
                 Object.assign(newTask, buildReminderFields(newTask, {
                     reminderEnabled,
@@ -2845,15 +3095,18 @@ Suggest practical, realistic calendar events that complement the existing tasks 
             const systemPrompt =
                 `You are a knowledgeable personal calendar assistant.
                  You have access to the user's current schedule and preferences.
-                 You may use live web search when the user asks about current, nearby, or time-sensitive things.
+                 You should proactively use live web search when the user asks about current, nearby, local, recommended, or otherwise time-sensitive things.
                  Do not claim you lack real-time access if web search would help; use it instead.
                  Questions about store, restaurant, venue, or campus building hours are not calendar-edit requests. Use web search for those unless the user clearly refers to one of their scheduled items.
                  When the user asks to create, edit, move, reschedule, complete, or delete calendar tasks, use the available calendar tools.
+                 When the user asks for repeating tasks like "every Monday and Wednesday until June", use the recurring calendar tool instead of many one-off creates.
                  Think carefully before editing or deleting. If the exact task id is not already known from tool results, search or list first and then copy the id exactly. Do not invent or paraphrase task ids.
                  You can also enable email reminders when the user asks for a reminder before a task.
+                 Respect task color or grouping requests when the user mentions them.
                  Treat times mentioned by the user as local to the user unless they say otherwise.
                  When calling calendar tools, provide ISO datetimes. If you only know a local wall-clock time, include the user's local offset if possible.
                  The schedule shown in this prompt is only a summary. If the user asks about future events or anything beyond the visible summary, use the calendar tools to search broader ranges before answering.
+                 Your final reply should sound conversational, warm, and natural rather than robotic. Keep it concise, but talk like a helpful person.
 
 Today is ${now.toDateString()}.
 ${localTimeLine}
@@ -2867,7 +3120,7 @@ ${comingWeek}
 
 Recently completed tasks (interests): ${recentTitles}
 
-Help the user manage their schedule, suggest events, answer questions about their day, and offer practical advice. Be concise but conversational and relatable.`;
+Help the user manage their schedule, suggest events, answer questions about their day, and offer practical advice. Be concise, conversational, and relatable.`;
 
             const locationContext = latitude != null && longitude != null
                 ? `Approximate user coordinates: latitude ${latitude}, longitude ${longitude}.`
@@ -3015,15 +3268,18 @@ Help the user manage their schedule, suggest events, answer questions about thei
             const systemPrompt =
                 `You are a knowledgeable personal calendar assistant.
                  You have access to the user's current schedule and preferences.
-                 You may use live web search when the user asks about current, nearby, or time-sensitive things.
+                 You should proactively use live web search when the user asks about current, nearby, local, recommended, or otherwise time-sensitive things.
                  Do not claim you lack real-time access if web search would help; use it instead.
                  Questions about store, restaurant, venue, or campus building hours are not calendar-edit requests. Use web search for those unless the user clearly refers to one of their scheduled items.
                  When the user asks to create, edit, move, reschedule, complete, or delete calendar tasks, use the available calendar tools.
+                 When the user asks for repeating tasks like "every Monday and Wednesday until June", use the recurring calendar tool instead of many one-off creates.
                  Think carefully before editing or deleting. If the exact task id is not already known from tool results, search or list first and then copy the id exactly. Do not invent or paraphrase task ids.
                  You can also enable email reminders when the user asks for a reminder before a task.
+                 Respect task color or grouping requests when the user mentions them.
                  Treat times mentioned by the user as local to the user unless they say otherwise.
                  When calling calendar tools, provide ISO datetimes. If you only know a local wall-clock time, include the user's local offset if possible.
                  The schedule shown in this prompt is only a summary. If the user asks about future events or anything beyond the visible summary, use the calendar tools to search broader ranges before answering.
+                 Your final reply should sound conversational, warm, and natural rather than robotic. Keep it concise, but talk like a helpful person.
 
 Today is ${now.toDateString()}.
 ${localTimeLine}
@@ -3037,7 +3293,7 @@ ${comingWeek}
 
 Recently completed tasks (interests): ${recentTitles}
 
-Help the user manage their schedule, suggest events, answer questions about their day, and offer practical advice. Be concise but conversational and relatable.`;
+Help the user manage their schedule, suggest events, answer questions about their day, and offer practical advice. Be concise, conversational, and relatable.`;
 
             const locationContext = latitude != null && longitude != null
                 ? `Approximate user coordinates: latitude ${latitude}, longitude ${longitude}.`

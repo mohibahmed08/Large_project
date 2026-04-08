@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../models/task_model.dart';
+
 class DayGrid extends StatelessWidget {
   const DayGrid({
     super.key,
@@ -8,7 +10,7 @@ class DayGrid extends StatelessWidget {
     required this.isSelected,
     required this.month,
     required this.year,
-    required this.taskCount,
+    required this.tasks,
     required this.onDayTap,
     this.weatherData,
   });
@@ -18,9 +20,11 @@ class DayGrid extends StatelessWidget {
   final bool isSelected;
   final int month;
   final int year;
-  final int taskCount;
+  final List<CalendarTask> tasks;
   final Map<String, dynamic>? weatherData;
   final ValueChanged<int> onDayTap;
+
+  int get taskCount => tasks.length;
 
   String getWeatherText() {
     if (weatherData == null) {
@@ -80,9 +84,35 @@ class DayGrid extends StatelessWidget {
     }
   }
 
+  Color _taskColor(CalendarTask task) {
+    final normalized = task.color.trim().replaceFirst('#', '');
+    final parsed = int.tryParse(normalized, radix: 16);
+    if (parsed != null && (normalized.length == 6 || normalized.length == 8)) {
+      return Color(normalized.length == 6 ? 0xFF000000 | parsed : parsed);
+    }
+
+    switch (task.source.toLowerCase()) {
+      case 'ical':
+        return const Color(0xFF94A3B8);
+      default:
+        return const Color(0xFF64B5F6);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final weatherText = getWeatherText();
+    final previewColors = <Color>[];
+    for (final task in tasks) {
+      final color = _taskColor(task);
+      if (previewColors.any((existing) => existing.value == color.value)) {
+        continue;
+      }
+      previewColors.add(color);
+      if (previewColors.length == 3) {
+        break;
+      }
+    }
 
     return GestureDetector(
       onTap: () => onDayTap(day),
@@ -125,23 +155,52 @@ class DayGrid extends StatelessWidget {
               Positioned(
                 bottom: 6,
                 left: 8,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF64B5F6),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '$taskCount',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF64B5F6),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '$taskCount',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 4),
+                    ...previewColors.take(3).map(
+                      (color) => Container(
+                        width: 8,
+                        height: 8,
+                        margin: const EdgeInsets.only(right: 3),
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (taskCount > 0)
+              Positioned(
+                bottom: 6,
+                right: 8,
+                child: Text(
+                  tasks.first.group.isNotEmpty
+                      ? tasks.first.group
+                      : tasks.first.source.toUpperCase(),
+                  style: const TextStyle(fontSize: 8, color: Colors.white54),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
           ],
