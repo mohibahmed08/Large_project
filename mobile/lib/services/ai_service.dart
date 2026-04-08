@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/ai_models.dart';
@@ -64,6 +65,13 @@ class AiService {
   AiService({String? baseUrl}) : baseUrl = baseUrl ?? ApiConfig.baseUrl;
 
   final String baseUrl;
+  static Future<String>? _cachedTimeZone;
+
+  Future<String> _timeZone() {
+    _cachedTimeZone ??= FlutterTimezone.getLocalTimezone()
+        .catchError((_) => DateTime.now().timeZoneName);
+    return _cachedTimeZone!;
+  }
 
   Future<AiChatResult> chat({
     required UserSession session,
@@ -72,13 +80,14 @@ class AiService {
     double? longitude,
   }) async {
     final localNow = DateTime.now();
+    final timeZone = await _timeZone();
     final json = await _post(
       'chat',
       session,
       {
         'messages': messages,
         'localNow': _toOffsetIsoString(localNow),
-        'timeZone': localNow.timeZoneName,
+        'timeZone': timeZone,
         'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
         if (latitude != null) 'latitude': latitude,
         if (longitude != null) 'longitude': longitude,
@@ -99,6 +108,7 @@ class AiService {
     double? longitude,
   }) async* {
     final localNow = DateTime.now();
+    final timeZone = await _timeZone();
     final client = http.Client();
 
     try {
@@ -112,7 +122,7 @@ class AiService {
         'jwtToken': session.accessToken,
         'messages': messages,
         'localNow': _toOffsetIsoString(localNow),
-        'timeZone': localNow.timeZoneName,
+        'timeZone': timeZone,
         'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
         if (latitude != null) 'latitude': latitude,
         if (longitude != null) 'longitude': longitude,
@@ -165,13 +175,14 @@ class AiService {
     double? longitude,
   }) async {
     final localNow = DateTime.now();
+    final timeZone = await _timeZone();
     final json = await _post(
       'suggestevents',
       session,
       {
         'date': _toOffsetIsoString(date),
         'localNow': _toOffsetIsoString(localNow),
-        'timeZone': localNow.timeZoneName,
+        'timeZone': timeZone,
         'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
         if (latitude != null) 'latitude': latitude,
         if (longitude != null) 'longitude': longitude,

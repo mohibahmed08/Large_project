@@ -407,6 +407,9 @@ function App() {
     };
 
     const currentSession = isAuthenticated ? getSession() : null;
+    const profileFirstName = currentSession?.firstName || 'John';
+    const profileLastName = currentSession?.lastName || 'Doe';
+    const profileInitials = `${profileFirstName.charAt(0)}${profileLastName.charAt(0)}`.toUpperCase();
 
     return (
         <>
@@ -435,9 +438,9 @@ function App() {
 
                                 <div style={{ marginTop: 'auto', paddingTop: '15px', borderTop: '1px solid #2c2c3e', display: 'flex', alignItems: 'center', gap: '12px' }}>
                                     <div style={{ width: '35px', height: '35px', borderRadius: '50%', background: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', flexShrink: 0 }}>
-                                        JD
+                                        {profileInitials}
                                     </div>
-                                    <span style={{ fontWeight: 'bold' }}>John Doe</span>
+                                    <span style={{ fontWeight: 'bold' }}>{`${profileFirstName} ${profileLastName}`}</span>
                                 </div>
                                 <div className="logout-container">
                                     <button onClick={logout} className="logout-btn">

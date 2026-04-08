@@ -1,6 +1,7 @@
 const crypto     = require('crypto');
 const https      = require('https');
 const { ObjectId } = require('mongodb');
+const { DateTime, IANAZone } = require('luxon');
 
 // Make an HTTPS request and resolve
 function httpsRequest(options, body)
@@ -590,27 +591,21 @@ async function syncStoredCalendarSubscriptions(db, userId)
     }
 }
 
-function buildDueDateRangeFilter(startDate, endDate)
+function normalizeTimeZone(timeZone)
 {
-    if(!startDate && !endDate)
+    const text = String(timeZone || '').trim();
+    if(!text)
     {
-        return null;
+        return '';
     }
 
-    const range = {};
-    if(startDate) range.$gte = new Date(startDate);
-    if(endDate)   range.$lte = new Date(endDate);
-
-    return { dueDate: range };
+    return IANAZone.isValidZone(text) ? text : '';
 }
 
-function hasExplicitTimezone(value)
+function parseDateTimeInUserZone(value, options = {})
 {
-    return /(?:Z|[+-]\d{2}:\d{2})$/i.test(String(value || '').trim());
-}
+    const { timeZone, utcOffsetMinutes } = options;
 
-function parseDateTimeWithOffset(value, utcOffsetMinutes)
-{
     if(value === undefined || value === null || value === '')
     {
         return null;
@@ -629,7 +624,18 @@ function parseDateTimeWithOffset(value, utcOffsetMinutes)
 
     if(hasExplicitTimezone(text))
     {
-        return new Date(text);
+        const explicit = DateTime.fromISO(text, { setZone: true });
+        return explicit.isValid ? explicit.toUTC().toJSDate() : new Date(text);
+    }
+
+    const zone = normalizeTimeZone(timeZone);
+    if(zone)
+    {
+        const zoned = DateTime.fromISO(text, { zone, setZone: true });
+        if(zoned.isValid)
+        {
+            return zoned.toUTC().toJSDate();
+        }
     }
 
     const match = text.match(
@@ -666,6 +672,30 @@ function parseDateTimeWithOffset(value, utcOffsetMinutes)
     }
 
     return new Date(text);
+}
+
+function buildDueDateRangeFilter(startDate, endDate, options = {})
+{
+    if(!startDate && !endDate)
+    {
+        return null;
+    }
+
+    const range = {};
+    if(startDate) range.$gte = parseDateTimeInUserZone(startDate, options);
+    if(endDate)   range.$lte = parseDateTimeInUserZone(endDate, options);
+
+    return { dueDate: range };
+}
+
+function hasExplicitTimezone(value)
+{
+    return /(?:Z|[+-]\d{2}:\d{2})$/i.test(String(value || '').trim());
+}
+
+function parseDateTimeWithOffset(value, utcOffsetMinutes, timeZone)
+{
+    return parseDateTimeInUserZone(value, { utcOffsetMinutes, timeZone });
 }
 
 function getTaskStartDate(task)
@@ -1041,6 +1071,7 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
     const toolName = toolCall.name;
     const args = JSON.parse(toolCall.arguments || '{}');
     const utcOffsetMinutes = options.utcOffsetMinutes;
+    const timeZone = options.timeZone;
 
     if(toolName === 'search_calendar_tasks')
     {
@@ -1059,8 +1090,8 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
         if(args.startDate || args.endDate)
         {
             query.dueDate = {};
-            if(args.startDate) query.dueDate.$gte = parseDateTimeWithOffset(args.startDate, utcOffsetMinutes);
-            if(args.endDate) query.dueDate.$lte = parseDateTimeWithOffset(args.endDate, utcOffsetMinutes);
+            if(args.startDate) query.dueDate.$gte = parseDateTimeWithOffset(args.startDate, utcOffsetMinutes, timeZone);
+            if(args.endDate) query.dueDate.$lte = parseDateTimeWithOffset(args.endDate, utcOffsetMinutes, timeZone);
         }
 
         const limit = Math.max(1, Math.min(Number(args.limit) || 20, 100));
@@ -1084,8 +1115,8 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
 
     if(toolName === 'list_calendar_tasks_in_range')
     {
-        const startDate = parseDateTimeWithOffset(args.startDate, utcOffsetMinutes);
-        const endDate = parseDateTimeWithOffset(args.endDate, utcOffsetMinutes);
+        const startDate = parseDateTimeWithOffset(args.startDate, utcOffsetMinutes, timeZone);
+        const endDate = parseDateTimeWithOffset(args.endDate, utcOffsetMinutes, timeZone);
         if(!startDate || Number.isNaN(startDate.getTime()) || !endDate || Number.isNaN(endDate.getTime()))
         {
             throw new Error('list_calendar_tasks_in_range requires valid startDate and endDate');
@@ -1116,14 +1147,14 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
 
     if(toolName === 'create_calendar_task')
     {
-        const dueDate = parseDateTimeWithOffset(args.dueDate, utcOffsetMinutes);
+        const dueDate = parseDateTimeWithOffset(args.dueDate, utcOffsetMinutes, timeZone);
         if(!dueDate || Number.isNaN(dueDate.getTime()))
         {
             throw new Error('create_calendar_task requires a valid dueDate');
         }
 
         const endDate = args.endDate
-            ? parseDateTimeWithOffset(args.endDate, utcOffsetMinutes)
+            ? parseDateTimeWithOffset(args.endDate, utcOffsetMinutes, timeZone)
             : dueDate;
         const document = {
             user_id: new ObjectId(userId),
@@ -1171,13 +1202,13 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
         if(args.location !== undefined) updates.location = String(args.location || '').trim();
         if(args.dueDate !== undefined)
         {
-            const dueDate = parseDateTimeWithOffset(args.dueDate, utcOffsetMinutes);
+            const dueDate = parseDateTimeWithOffset(args.dueDate, utcOffsetMinutes, timeZone);
             if(Number.isNaN(dueDate.getTime())) throw new Error('dueDate must be a valid ISO datetime');
             updates.dueDate = dueDate;
         }
         if(args.endDate !== undefined)
         {
-            const endDate = parseDateTimeWithOffset(args.endDate, utcOffsetMinutes);
+            const endDate = parseDateTimeWithOffset(args.endDate, utcOffsetMinutes, timeZone);
             if(Number.isNaN(endDate.getTime())) throw new Error('endDate must be a valid ISO datetime');
             updates.endDate = endDate;
         }
@@ -1321,7 +1352,10 @@ Do not call more tools unless the user asks for a new action.`,
                 db,
                 userId,
                 toolCall,
-                { utcOffsetMinutes: context.utcOffsetMinutes }
+                {
+                    utcOffsetMinutes: context.utcOffsetMinutes,
+                    timeZone: context.timeZone,
+                }
             );
             if(
                 toolCall.name === 'create_calendar_task' ||
@@ -1489,7 +1523,7 @@ exports.setApp = function(app, client)
 
     app.post('/api/loadcalendar', async (req, res) =>
     {
-        const { userId, jwtToken, startDate, endDate } = req.body;
+        const { userId, jwtToken, startDate, endDate, timeZone, utcOffsetMinutes } = req.body;
 
         if(!validateJwtOrRespond(token, res, jwtToken))
         {
@@ -1501,7 +1535,7 @@ exports.setApp = function(app, client)
             const db = getDatabase(client);
             await syncStoredCalendarSubscriptions(db, userId);
             const query = { user_id: new ObjectId(userId) };
-            const dateRangeFilter = buildDueDateRangeFilter(startDate, endDate);
+            const dateRangeFilter = buildDueDateRangeFilter(startDate, endDate, { timeZone, utcOffsetMinutes });
 
             if(dateRangeFilter)
             {
@@ -1582,6 +1616,8 @@ exports.setApp = function(app, client)
             isCompleted,
             reminderEnabled,
             reminderMinutesBefore,
+            timeZone,
+            utcOffsetMinutes,
         } = req.body;
 
         if(!validateJwtOrRespond(token, res, jwtToken))
@@ -1612,9 +1648,13 @@ exports.setApp = function(app, client)
                 if(description !== undefined) updates.description = description;
                 if(nextDueDate !== undefined)
                 {
-                    updates.dueDate = nextDueDate ? new Date(nextDueDate) : null;
+                    updates.dueDate = nextDueDate
+                        ? parseDateTimeInUserZone(nextDueDate, { timeZone, utcOffsetMinutes })
+                        : null;
                 }
-                if(endDate     !== undefined) updates.endDate     = endDate ? new Date(endDate) : null;
+                if(endDate     !== undefined) updates.endDate     = endDate
+                    ? parseDateTimeInUserZone(endDate, { timeZone, utcOffsetMinutes })
+                    : null;
                 if(location    !== undefined) updates.location    = location;
                 if(source      !== undefined) updates.source      = source;
                 if(isCompleted !== undefined) updates.isCompleted = isCompleted;
@@ -1644,14 +1684,14 @@ exports.setApp = function(app, client)
             {
                 const nextDueDate = dueDate !== undefined ? dueDate : startDate;
                 const nextEndDate = endDate !== undefined
-                    ? (endDate ? new Date(endDate) : null)
-                    : (nextDueDate ? new Date(nextDueDate) : null);
+                    ? (endDate ? parseDateTimeInUserZone(endDate, { timeZone, utcOffsetMinutes }) : null)
+                    : (nextDueDate ? parseDateTimeInUserZone(nextDueDate, { timeZone, utcOffsetMinutes }) : null);
                 const newTask = {
                     user_id:     new ObjectId(userId),
                     title:       title || '',
                     description: description || '',
                     location:    location || '',
-                    dueDate:     nextDueDate ? new Date(nextDueDate) : null,
+                    dueDate:     nextDueDate ? parseDateTimeInUserZone(nextDueDate, { timeZone, utcOffsetMinutes }) : null,
                     endDate:     nextEndDate,
                     isCompleted: isCompleted || false,
                     source:      source || 'manual',
@@ -1937,8 +1977,8 @@ exports.setApp = function(app, client)
         try
         {
             const db          = getDatabase(client);
-            const targetDate  = date ? parseDateTimeWithOffset(date, utcOffsetMinutes) : new Date();
-            const localNowDate = localNow ? parseDateTimeWithOffset(localNow, utcOffsetMinutes) : new Date();
+            const targetDate  = date ? parseDateTimeWithOffset(date, utcOffsetMinutes, timeZone) : new Date();
+            const localNowDate = localNow ? parseDateTimeWithOffset(localNow, utcOffsetMinutes, timeZone) : new Date();
             const dayStart    = new Date(targetDate); dayStart.setHours(0, 0, 0, 0);
             const dayEnd      = new Date(targetDate); dayEnd.setHours(23, 59, 59, 999);
 
@@ -2063,7 +2103,7 @@ Suggest practical, realistic calendar events that complement the existing tasks 
         try
         {
             const db   = getDatabase(client);
-            const now  = localNow ? parseDateTimeWithOffset(localNow, utcOffsetMinutes) : new Date();
+            const now  = localNow ? parseDateTimeWithOffset(localNow, utcOffsetMinutes, timeZone) : new Date();
             const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
             const dayEnd   = new Date(now); dayEnd.setHours(23, 59, 59, 999);
 
@@ -2165,6 +2205,7 @@ Help the user manage their schedule, suggest events, answer questions about thei
                     systemPrompt,
                     prefixMessages: [{ role: 'user', content: locationContext }],
                     utcOffsetMinutes,
+                    timeZone,
                 }
             );
 
@@ -2236,7 +2277,7 @@ Help the user manage their schedule, suggest events, answer questions about thei
         try
         {
             const db   = getDatabase(client);
-            const now  = localNow ? parseDateTimeWithOffset(localNow, utcOffsetMinutes) : new Date();
+            const now  = localNow ? parseDateTimeWithOffset(localNow, utcOffsetMinutes, timeZone) : new Date();
             const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
             const dayEnd   = new Date(now); dayEnd.setHours(23, 59, 59, 999);
 
@@ -2343,6 +2384,7 @@ Help the user manage their schedule, suggest events, answer questions about thei
                     systemPrompt,
                     prefixMessages: [{ role: 'user', content: locationContext }],
                     utcOffsetMinutes,
+                    timeZone,
                 }
             );
 

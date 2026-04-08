@@ -103,6 +103,14 @@ function getWeatherImg(currentWeather){
     }
 }
 
+function currentTimeContext() {
+    const now = new Date();
+    return {
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        utcOffsetMinutes: -now.getTimezoneOffset(),
+    };
+}
+
 function Calendar({
     singleMonth,
     setBackground,
@@ -207,6 +215,7 @@ function Calendar({
                         jwtToken: session.jwtToken,
                         startDate: visibleRange.start.toISOString(),
                         endDate: visibleRange.end.toISOString(),
+                        ...currentTimeContext(),
                     }),
                 });
 
@@ -339,6 +348,7 @@ function Calendar({
                     isCompleted: editorState.itemType === 'task' ? editorState.isCompleted : false,
                     reminderEnabled: editorState.reminderEnabled,
                     reminderMinutesBefore: Number(editorState.reminderMinutesBefore),
+                    ...currentTimeContext(),
                 }),
             });
 
