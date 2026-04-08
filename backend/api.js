@@ -1627,22 +1627,36 @@ Do not call more tools unless the user asks for a new action.`,
 
         for(const toolCall of functionCalls)
         {
-            const output = await executeCalendarAssistantTool(
-                db,
-                userId,
-                toolCall,
-                {
-                    utcOffsetMinutes: context.utcOffsetMinutes,
-                    timeZone: context.timeZone,
-                }
-            );
-            if(
-                toolCall.name === 'create_calendar_task' ||
-                toolCall.name === 'update_calendar_task' ||
-                toolCall.name === 'delete_calendar_task'
-            )
+            let output;
+            try
             {
-                calendarChanged = true;
+                output = await executeCalendarAssistantTool(
+                    db,
+                    userId,
+                    toolCall,
+                    {
+                        utcOffsetMinutes: context.utcOffsetMinutes,
+                        timeZone: context.timeZone,
+                    }
+                );
+                if(
+                    (
+                        toolCall.name === 'create_calendar_task' ||
+                        toolCall.name === 'update_calendar_task' ||
+                        toolCall.name === 'delete_calendar_task'
+                    ) &&
+                    !output?.error
+                )
+                {
+                    calendarChanged = true;
+                }
+            }
+            catch(error)
+            {
+                output = {
+                    error: String(error?.message || error || 'Tool call failed'),
+                    ok: false,
+                };
             }
             input.push({
                 type: 'function_call_output',
@@ -1653,7 +1667,7 @@ Do not call more tools unless the user asks for a new action.`,
 
         input.push({
             role: 'system',
-            content: 'Use the tool results above to answer the user directly. Do not repeat the same tool call with the same arguments.',
+            content: 'Use the tool results above to answer the user directly. If a tool returned an error, recover gracefully: either use web search, ask a brief clarification question, or explain that you could not identify the exact calendar item. Do not repeat the same tool call with the same arguments.',
         });
     }
 
@@ -2833,6 +2847,7 @@ Suggest practical, realistic calendar events that complement the existing tasks 
                  You have access to the user's current schedule and preferences.
                  You may use live web search when the user asks about current, nearby, or time-sensitive things.
                  Do not claim you lack real-time access if web search would help; use it instead.
+                 Questions about store, restaurant, venue, or campus building hours are not calendar-edit requests. Use web search for those unless the user clearly refers to one of their scheduled items.
                  When the user asks to create, edit, move, reschedule, complete, or delete calendar tasks, use the available calendar tools.
                  Think carefully before editing or deleting. If the exact task id is not already known from tool results, search or list first and then copy the id exactly. Do not invent or paraphrase task ids.
                  You can also enable email reminders when the user asks for a reminder before a task.
@@ -3002,6 +3017,7 @@ Help the user manage their schedule, suggest events, answer questions about thei
                  You have access to the user's current schedule and preferences.
                  You may use live web search when the user asks about current, nearby, or time-sensitive things.
                  Do not claim you lack real-time access if web search would help; use it instead.
+                 Questions about store, restaurant, venue, or campus building hours are not calendar-edit requests. Use web search for those unless the user clearly refers to one of their scheduled items.
                  When the user asks to create, edit, move, reschedule, complete, or delete calendar tasks, use the available calendar tools.
                  Think carefully before editing or deleting. If the exact task id is not already known from tool results, search or list first and then copy the id exactly. Do not invent or paraphrase task ids.
                  You can also enable email reminders when the user asks for a reminder before a task.
