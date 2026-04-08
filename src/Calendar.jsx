@@ -194,8 +194,9 @@ function weatherCodeBadge(code) {
 function dayWeatherRange(selectedDate) {
     const start = new Date(selectedDate);
     start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - 7);
     const end = new Date(start);
-    end.setDate(end.getDate() + 6);
+    end.setDate(end.getDate() + 21);
     return {
         startDate: start.toISOString().slice(0, 10),
         endDate: end.toISOString().slice(0, 10),
@@ -228,6 +229,7 @@ function Calendar({
     const [currentMonthIndex, setCurrentMonthIndex] = useState(0);
     const containerRef = useRef(null);
     const lastMonthRef = useRef();
+    const weatherStripRef = useRef(null);
 
     const [calendarTasks, setCalendarTasks] = useState([]);
     const [calendarReloadTick, setCalendarReloadTick] = useState(0);
@@ -553,6 +555,24 @@ function Calendar({
             ignore = true;
         };
     }, [dayModalState.open, selectedDate, apiRoot, session?.userId, session?.jwtToken, onSessionRefresh]);
+
+    useEffect(() => {
+        if (!dayModalState.open || !weatherStripRef.current || dayModalState.weather.length === 0) {
+            return;
+        }
+
+        const strip = weatherStripRef.current;
+        const selectedIndex = dayModalState.weather.findIndex((entry) => entry.date === selectedDate.toISOString().slice(0, 10));
+        const targetIndex = selectedIndex > 0 ? selectedIndex - 1 : selectedIndex;
+        const targetCard = strip.children[targetIndex];
+
+        if (!targetCard) {
+            return;
+        }
+
+        const nextLeft = Math.max(0, targetCard.offsetLeft - 8);
+        strip.scrollTo({ left: nextLeft, behavior: 'smooth' });
+    }, [dayModalState.open, dayModalState.weather, selectedDate]);
 
     const updateDraft = (key, value) => {
         setEditorState((prev) => ({ ...prev, [key]: value }));
@@ -1054,9 +1074,9 @@ function Calendar({
                         </div>
                         <div className="calendar-day-weather-strip-shell">
                             <button type="button" className="calendar-day-weather-nav" onClick={() => shiftSelectedDay(-1)}>
-                                <img src={UpArrow} alt="Previous day" className="calendar-day-weather-nav-icon calendar-day-weather-nav-icon-left" />
+                                <span className="calendar-day-weather-nav-glyph" aria-hidden="true">&#8249;</span>
                             </button>
-                            <div className="calendar-day-weather-strip">
+                            <div ref={weatherStripRef} className="calendar-day-weather-strip">
                             {dayModalState.weatherLoading ? (
                                 <div className="calendar-day-weather-empty">Loading weather...</div>
                             ) : dayModalState.weather.length > 0 ? (
@@ -1091,7 +1111,7 @@ function Calendar({
                             )}
                             </div>
                             <button type="button" className="calendar-day-weather-nav" onClick={() => shiftSelectedDay(1)}>
-                                <img src={DownArrow} alt="Next day" className="calendar-day-weather-nav-icon" />
+                                <span className="calendar-day-weather-nav-glyph" aria-hidden="true">&#8250;</span>
                             </button>
                         </div>
                         <div className="calendar-day-modal-body">

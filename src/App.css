@@ -802,6 +802,11 @@
   justify-content: flex-start;
 }
 
+.account-inline-actions-wrap {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .account-feedback-panel {
   padding: 12px 14px;
   border-radius: 10px;

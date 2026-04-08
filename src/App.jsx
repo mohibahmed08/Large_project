@@ -153,6 +153,8 @@ function App() {
         lastName: '',
         email: '',
         pendingEmail: '',
+        calendarFeedUrl: '',
+        calendarFeedWebcalUrl: '',
         reminderDefaults: {
             reminderEnabled: false,
             reminderMinutesBefore: 30,
@@ -227,6 +229,8 @@ function App() {
                 lastName: session.lastName || '',
                 email: '',
                 pendingEmail: '',
+                calendarFeedUrl: '',
+                calendarFeedWebcalUrl: '',
                 reminderDefaults: {
                     reminderEnabled: false,
                     reminderMinutesBefore: 30,
@@ -384,6 +388,58 @@ function App() {
             setAccountFeedback('Calendar exported.');
         } catch (error) {
             setAccountFeedback(error.message);
+        }
+    };
+
+    const copyCalendarFeed = async (useWebcal = false) => {
+        const nextLink = useWebcal
+            ? accountSettings?.calendarFeedWebcalUrl
+            : accountSettings?.calendarFeedUrl;
+
+        if (!nextLink) {
+            setAccountFeedback('Calendar feed link is not ready yet.');
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(nextLink);
+            setAccountFeedback(useWebcal ? 'Subscription link copied.' : 'Feed URL copied.');
+        } catch {
+            setAccountFeedback(nextLink);
+        }
+    };
+
+    const regenerateCalendarFeed = async () => {
+        const session = getSession();
+        if (!session) {
+            return;
+        }
+
+        setAccountSaving(true);
+        setAccountFeedback('');
+        try {
+            const response = await fetch(`${API_ROOT}/regeneratecalendarfeed`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: session.userId,
+                    jwtToken: session.jwtToken,
+                }),
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Could not regenerate calendar feed.');
+            }
+
+            updateToken(data.jwtToken);
+            setAccountSettings(data.settings);
+            setAccountDraft(data.settings);
+            setAccountFeedback('Subscription link regenerated. Old links no longer work.');
+        } catch (error) {
+            setAccountFeedback(error.message);
+        } finally {
+            setAccountSaving(false);
         }
     };
 
@@ -634,7 +690,7 @@ function App() {
                         {leftOpen ? (
                             <div className="sidebar-content">
                                 <div style={{ marginBottom: '20px' }}>
-                                    <h2 style={{ margin: '0 0 5px 0' }}>{isSelectedToday ? 'Today' : 'Selected Day'}</h2>
+                                    <h2 style={{ margin: '0 0 5px 0' }}>{isSelectedToday ? 'Today' : 'Plan'}</h2>
                                     <p style={{ margin: 0, color: '#60a5fa', fontWeight: 'bold' }}>{fullDateString}</p>
                                 </div>
 
@@ -975,6 +1031,21 @@ function App() {
                                                     <p className="account-section-copy">
                                                         Import and connected calendar tools stay in the calendar import modal. You can also export your current calendar as an iCal file here.
                                                     </p>
+                                                    <label className="account-field">
+                                                        <span>Subscription feed URL</span>
+                                                        <input value={accountSettings?.calendarFeedUrl || ''} readOnly />
+                                                    </label>
+                                                    <div className="account-inline-actions account-inline-actions-wrap">
+                                                        <button type="button" className="account-secondary-btn" onClick={() => copyCalendarFeed(false)}>
+                                                            Copy feed URL
+                                                        </button>
+                                                        <button type="button" className="account-secondary-btn" onClick={() => copyCalendarFeed(true)}>
+                                                            Copy webcal link
+                                                        </button>
+                                                        <button type="button" className="account-secondary-btn" onClick={regenerateCalendarFeed} disabled={accountSaving}>
+                                                            Regenerate link
+                                                        </button>
+                                                    </div>
                                                     <div className="account-inline-actions">
                                                         <button type="button" className="account-primary-btn" onClick={exportCalendar}>
                                                             Export iCal
