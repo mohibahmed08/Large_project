@@ -673,6 +673,143 @@ function getTaskStartDate(task)
     return task.dueDate || task.startDate || null;
 }
 
+function normalizeReminderSettings(input = {}, fallback = {})
+{
+    const enabledInput = input.reminderEnabled;
+    const minutesInput = input.reminderMinutesBefore;
+    const baseEnabled = fallback.reminderEnabled === true;
+    const enabled = enabledInput === undefined
+        ? baseEnabled
+        : enabledInput === true;
+    const fallbackMinutes = Number.isFinite(Number(fallback.reminderMinutesBefore))
+        ? Math.max(0, Math.round(Number(fallback.reminderMinutesBefore)))
+        : 30;
+    const parsedMinutes = minutesInput === undefined || minutesInput === null || minutesInput === ''
+        ? fallbackMinutes
+        : Math.max(0, Math.round(Number(minutesInput)));
+
+    return {
+        reminderEnabled: enabled,
+        reminderMinutesBefore: enabled ? parsedMinutes : 0,
+    };
+}
+
+function buildReminderFields(taskLike, reminderInput = {}, fallback = {})
+{
+    const startDate = getTaskStartDate(taskLike);
+    const normalized = normalizeReminderSettings(reminderInput, fallback);
+    const reminderAt = normalized.reminderEnabled && startDate
+        ? new Date(startDate.getTime() - (normalized.reminderMinutesBefore * 60 * 1000))
+        : null;
+
+    return {
+        reminderEnabled: normalized.reminderEnabled,
+        reminderMinutesBefore: normalized.reminderMinutesBefore,
+        reminderAt,
+        reminderSentAt: null,
+    };
+}
+
+async function sendTaskReminderEmail(user, task)
+{
+    if(!user?.email || !task?.dueDate)
+    {
+        return false;
+    }
+
+    const startDate = getTaskStartDate(task);
+    const endDate = task.endDate ? new Date(task.endDate) : null;
+    const startText = startDate ? startDate.toLocaleString() : 'an upcoming time';
+    const endText = endDate ? endDate.toLocaleString() : '';
+    const locationLine = task.location ? `<p>Location: ${task.location}</p>` : '';
+    const descriptionLine = task.description ? `<p>${task.description}</p>` : '';
+
+    await sendWithResend(
+        user.email,
+        `Reminder: ${task.title || 'Upcoming task'}`,
+        `<h2>${task.title || 'Upcoming task'}</h2>
+         <p>Starts: ${startText}</p>
+         ${endText ? `<p>Ends: ${endText}</p>` : ''}
+         ${locationLine}
+         ${descriptionLine}`
+    );
+
+    return true;
+}
+
+async function sendPendingTaskReminders(client)
+{
+    if(!process.env.RESEND_API_KEY)
+    {
+        return;
+    }
+
+    const db = getDatabase(client);
+    const now = new Date();
+    const tasks = await db.collection('tasks').find({
+        reminderEnabled: true,
+        reminderSentAt: null,
+        isCompleted: { $ne: true },
+        dueDate: { $ne: null },
+        reminderAt: { $lte: now },
+    })
+    .sort({ reminderAt: 1 })
+    .limit(50)
+    .toArray();
+
+    for(const task of tasks)
+    {
+        try
+        {
+            const user = await db.collection('users').findOne(
+                { _id: task.user_id },
+                { projection: { email: 1, isVerified: 1 } }
+            );
+
+            if(!user?.email || user.isVerified === false)
+            {
+                await db.collection('tasks').updateOne(
+                    { _id: task._id, reminderSentAt: null },
+                    { $set: { reminderSentAt: now } }
+                );
+                continue;
+            }
+
+            const sent = await sendTaskReminderEmail(user, task);
+            if(sent)
+            {
+                await db.collection('tasks').updateOne(
+                    { _id: task._id, reminderSentAt: null },
+                    { $set: { reminderSentAt: new Date() } }
+                );
+            }
+        }
+        catch(error)
+        {
+            console.error(`Failed to send reminder for task ${task._id}:`, error);
+        }
+    }
+}
+
+function startReminderLoop(client)
+{
+    if(reminderIntervalHandle)
+    {
+        return;
+    }
+
+    const tick = () =>
+    {
+        sendPendingTaskReminders(client).catch((error) =>
+        {
+            console.error('Reminder loop failed:', error);
+        });
+    };
+
+    tick();
+    reminderIntervalHandle = setInterval(tick, 60 * 1000);
+}
+
 function safeObjectId(value, fieldName = 'id')
 {
     try
@@ -785,6 +922,11 @@ function normalizeTaskForTool(task)
         endDate: task.endDate ? new Date(task.endDate).toISOString() : null,
         isCompleted: task.isCompleted === true,
         source: task.source || 'manual',
+        reminderEnabled: task.reminderEnabled === true,
+        reminderMinutesBefore: Number.isFinite(Number(task.reminderMinutesBefore))
+            ? Number(task.reminderMinutesBefore)
+            : 0,
+        reminderAt: task.reminderAt ? new Date(task.reminderAt).toISOString() : null,
     };
 }
 
@@ -802,8 +944,25 @@ function buildCalendarAssistantTools()
                     startDate: { type: 'string', description: 'Optional ISO datetime lower bound.' },
                     endDate: { type: 'string', description: 'Optional ISO datetime upper bound.' },
                     limit: { type: 'number', description: 'Maximum number of tasks to return.' },
+                    offset: { type: 'number', description: 'Number of matches to skip for pagination.' },
                 },
                 required: [],
+                additionalProperties: false,
+            },
+        },
+        {
+            type: 'function',
+            name: 'list_calendar_tasks_in_range',
+            description: 'List calendar tasks in a date range, useful for future planning questions.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    startDate: { type: 'string', description: 'ISO datetime lower bound.' },
+                    endDate: { type: 'string', description: 'ISO datetime upper bound.' },
+                    limit: { type: 'number', description: 'Maximum number of tasks to return.' },
+                    offset: { type: 'number', description: 'Number of matches to skip for pagination.' },
+                },
+                required: ['startDate', 'endDate'],
                 additionalProperties: false,
             },
         },
@@ -819,6 +978,8 @@ function buildCalendarAssistantTools()
                     location: { type: 'string' },
                     dueDate: { type: 'string', description: 'ISO datetime for the event start.' },
                     endDate: { type: 'string', description: 'Optional ISO datetime for the event end.' },
+                    reminderEnabled: { type: 'boolean', description: 'Whether to send an email reminder.' },
+                    reminderMinutesBefore: { type: 'number', description: 'Minutes before the task to send the reminder email.' },
                 },
                 required: ['title', 'dueDate'],
                 additionalProperties: false,
@@ -838,6 +999,21 @@ function buildCalendarAssistantTools()
                     dueDate: { type: 'string', description: 'Optional ISO datetime for the new start.' },
                     endDate: { type: 'string', description: 'Optional ISO datetime for the new end.' },
                     isCompleted: { type: 'boolean' },
+                    reminderEnabled: { type: 'boolean', description: 'Whether email reminders are enabled.' },
+                    reminderMinutesBefore: { type: 'number', description: 'Minutes before the task to send the reminder email.' },
+                },
+                required: ['taskId'],
+                additionalProperties: false,
+            },
+        },
+        {
+            type: 'function',
+            name: 'delete_calendar_task',
+            description: 'Delete a calendar task or event for the current user.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    taskId: { type: 'string', description: 'The task id to delete.' },
                 },
                 required: ['taskId'],
                 additionalProperties: false,
@@ -873,15 +1049,53 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
             if(args.endDate) query.dueDate.$lte = parseDateTimeWithOffset(args.endDate, utcOffsetMinutes);
         }
 
-        const limit = Math.max(1, Math.min(Number(args.limit) || 5, 10));
+        const limit = Math.max(1, Math.min(Number(args.limit) || 20, 100));
+        const offset = Math.max(0, Number(args.offset) || 0);
         const tasks = await db.collection('tasks')
             .find(query)
             .sort({ dueDate: 1 })
+            .skip(offset)
             .limit(limit)
             .toArray();
+        const total = await db.collection('tasks').countDocuments(query);
 
         return {
+            total,
             found: tasks.length,
+            offset,
+            hasMore: offset + tasks.length < total,
+            tasks: tasks.map(normalizeTaskForTool),
+        };
+    }
+
+    if(toolName === 'list_calendar_tasks_in_range')
+    {
+        const startDate = parseDateTimeWithOffset(args.startDate, utcOffsetMinutes);
+        const endDate = parseDateTimeWithOffset(args.endDate, utcOffsetMinutes);
+        if(!startDate || Number.isNaN(startDate.getTime()) || !endDate || Number.isNaN(endDate.getTime()))
+        {
+            throw new Error('list_calendar_tasks_in_range requires valid startDate and endDate');
+        }
+
+        const limit = Math.max(1, Math.min(Number(args.limit) || 25, 100));
+        const offset = Math.max(0, Number(args.offset) || 0);
+        const query = {
+            user_id: new ObjectId(userId),
+            dueDate: { $gte: startDate, $lte: endDate },
+        };
+        const tasks = await db.collection('tasks')
+            .find(query)
+            .sort({ dueDate: 1 })
+            .skip(offset)
+            .limit(limit)
+            .toArray();
+        const total = await db.collection('tasks').countDocuments(query);
+
+        return {
+            total,
+            found: tasks.length,
+            offset,
+            hasMore: offset + tasks.length < total,
             tasks: tasks.map(normalizeTaskForTool),
         };
     }
@@ -907,6 +1121,10 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
             isCompleted: false,
             source: 'manual',
         };
+        Object.assign(document, buildReminderFields(document, {
+            reminderEnabled: args.reminderEnabled,
+            reminderMinutesBefore: args.reminderMinutesBefore,
+        }));
 
         if(!document.title)
         {
@@ -950,6 +1168,22 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
             updates.endDate = endDate;
         }
         if(args.isCompleted !== undefined) updates.isCompleted = args.isCompleted === true;
+        if(
+            args.dueDate !== undefined ||
+            args.endDate !== undefined ||
+            args.reminderEnabled !== undefined ||
+            args.reminderMinutesBefore !== undefined
+        )
+        {
+            const mergedTask = {
+                ...existing,
+                ...updates,
+            };
+            Object.assign(updates, buildReminderFields(mergedTask, {
+                reminderEnabled: args.reminderEnabled,
+                reminderMinutesBefore: args.reminderMinutesBefore,
+            }, existing));
+        }
 
         if(Object.keys(updates).length === 0)
         {
@@ -972,6 +1206,30 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
         return {
             updated: true,
             task: normalizeTaskForTool(updatedTask),
+        };
+    }
+
+    if(toolName === 'delete_calendar_task')
+    {
+        const taskId = safeObjectId(args.taskId, 'taskId');
+        const existing = await db.collection('tasks').findOne({
+            _id: taskId,
+            user_id: new ObjectId(userId),
+        });
+
+        if(!existing)
+        {
+            throw new Error('Task not found');
+        }
+
+        await db.collection('tasks').deleteOne({
+            _id: taskId,
+            user_id: new ObjectId(userId),
+        });
+
+        return {
+            deleted: true,
+            task: normalizeTaskForTool(existing),
         };
     }
 
@@ -1051,7 +1309,11 @@ Do not call more tools unless the user asks for a new action.`,
                 toolCall,
                 { utcOffsetMinutes: context.utcOffsetMinutes }
             );
-            if(toolCall.name === 'create_calendar_task' || toolCall.name === 'update_calendar_task')
+            if(
+                toolCall.name === 'create_calendar_task' ||
+                toolCall.name === 'update_calendar_task' ||
+                toolCall.name === 'delete_calendar_task'
+            )
             {
                 calendarChanged = true;
             }
@@ -1292,7 +1554,21 @@ exports.setApp = function(app, client)
 
     app.post('/api/savecalendar', async (req, res) =>
     {
-        const { userId, jwtToken, taskId, title, description, dueDate, startDate, endDate, location, source, isCompleted } = req.body;
+        const {
+            userId,
+            jwtToken,
+            taskId,
+            title,
+            description,
+            dueDate,
+            startDate,
+            endDate,
+            location,
+            source,
+            isCompleted,
+            reminderEnabled,
+            reminderMinutesBefore,
+        } = req.body;
 
         if(!validateJwtOrRespond(token, res, jwtToken))
         {
@@ -1305,6 +1581,17 @@ exports.setApp = function(app, client)
 
             if(taskId)
             {
+                const existingTask = await db.collection('tasks').findOne({
+                    _id: new ObjectId(taskId),
+                    user_id: new ObjectId(userId),
+                });
+
+                if(!existingTask)
+                {
+                    res.status(404).json({ error: 'Task not found', jwtToken: '' });
+                    return;
+                }
+
                 const updates = {};
                 const nextDueDate = dueDate !== undefined ? dueDate : startDate;
                 if(title       !== undefined) updates.title       = title;
@@ -1317,6 +1604,22 @@ exports.setApp = function(app, client)
                 if(location    !== undefined) updates.location    = location;
                 if(source      !== undefined) updates.source      = source;
                 if(isCompleted !== undefined) updates.isCompleted = isCompleted;
+                if(
+                    nextDueDate !== undefined ||
+                    endDate !== undefined ||
+                    reminderEnabled !== undefined ||
+                    reminderMinutesBefore !== undefined
+                )
+                {
+                    const mergedTask = {
+                        ...existingTask,
+                        ...updates,
+                    };
+                    Object.assign(updates, buildReminderFields(mergedTask, {
+                        reminderEnabled,
+                        reminderMinutesBefore,
+                    }, existingTask));
+                }
 
                 await db.collection('tasks').updateOne(
                     { _id: new ObjectId(taskId), user_id: new ObjectId(userId) },
@@ -1339,6 +1642,10 @@ exports.setApp = function(app, client)
                     isCompleted: isCompleted || false,
                     source:      source || 'manual',
                 };
+                Object.assign(newTask, buildReminderFields(newTask, {
+                    reminderEnabled,
+                    reminderMinutesBefore,
+                }));
 
                 await db.collection('tasks').insertOne(newTask);
             }
@@ -1698,9 +2005,11 @@ Suggest practical, realistic calendar events that complement the existing tasks 
                  You have access to the user's current schedule and preferences.
                  You may use live web search when the user asks about current, nearby, or time-sensitive things.
                  Do not claim you lack real-time access if web search would help; use it instead.
-                 When the user asks to create, edit, move, reschedule, or complete calendar tasks, use the available calendar tools.
+                 When the user asks to create, edit, move, reschedule, complete, or delete calendar tasks, use the available calendar tools.
+                 You can also enable email reminders when the user asks for a reminder before a task.
                  Treat times mentioned by the user as local to the user unless they say otherwise.
                  When calling calendar tools, provide ISO datetimes. If you only know a local wall-clock time, include the user's local offset if possible.
+                 The schedule shown in this prompt is only a summary. If the user asks about future events or anything beyond the visible summary, use the calendar tools to search broader ranges before answering.
 
 Today is ${now.toDateString()}.
 ${localTimeLine}
@@ -1742,6 +2051,38 @@ Help the user manage their schedule, suggest events, answer questions about thei
         catch(error)
         {
             res.status(500).json({ reply: '', error: error.toString(), jwtToken: '' });
+        }
+    });
+
+
+    app.post('/api/deletecalendar', async (req, res) =>
+    {
+        const { userId, jwtToken, taskId } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        try
+        {
+            const db = getDatabase(client);
+            const result = await db.collection('tasks').deleteOne({
+                _id: new ObjectId(taskId),
+                user_id: new ObjectId(userId),
+            });
+
+            if(result.deletedCount === 0)
+            {
+                res.status(404).json({ error: 'Task not found', jwtToken: '' });
+                return;
+            }
+
+            res.status(200).json({ error: '', jwtToken: refreshJwtToken(token, jwtToken) });
+        }
+        catch(error)
+        {
+            res.status(500).json({ error: error.toString(), jwtToken: '' });
         }
     });
 
@@ -1831,9 +2172,11 @@ Help the user manage their schedule, suggest events, answer questions about thei
                  You have access to the user's current schedule and preferences.
                  You may use live web search when the user asks about current, nearby, or time-sensitive things.
                  Do not claim you lack real-time access if web search would help; use it instead.
-                 When the user asks to create, edit, move, reschedule, or complete calendar tasks, use the available calendar tools.
+                 When the user asks to create, edit, move, reschedule, complete, or delete calendar tasks, use the available calendar tools.
+                 You can also enable email reminders when the user asks for a reminder before a task.
                  Treat times mentioned by the user as local to the user unless they say otherwise.
                  When calling calendar tools, provide ISO datetimes. If you only know a local wall-clock time, include the user's local offset if possible.
+                 The schedule shown in this prompt is only a summary. If the user asks about future events or anything beyond the visible summary, use the calendar tools to search broader ranges before answering.
 
 Today is ${now.toDateString()}.
 ${localTimeLine}
@@ -1906,3 +2249,4 @@ Help the user manage their schedule, suggest events, answer questions about thei
 };
 
 exports.verifyEmailTransporter = verifyEmailTransporter;
+exports.startReminderLoop = startReminderLoop;
