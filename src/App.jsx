@@ -75,7 +75,11 @@ function App(){
                                     </div>
                                     <span style={{fontWeight: 'bold'}}>John Doe</span>
                                 </div>
-
+                                <div className="logout-container">
+                                    <button onClick={() => setIsAuthenticated(false)} className="logout-btn">
+                                        Logout
+                                    </button>
+                                </div> 
                             </div>
                         ) : (
                             <div className="vertical-date">
