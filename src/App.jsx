@@ -3,9 +3,12 @@ import './App.css';
 import { useState } from 'react';
 
 //IMPORT FOR CALENDAR UI
-import Calendar from './Calendar.jsx';
 import Login from './login.jsx'
-import Weather from './Weather.jsx'
+
+import Calendar from './Calendar.jsx';
+import CreateEvent from './CreateEvent.jsx';
+import TaskList from './TaskList.jsx';
+import Settings from './Settings.jsx';
 
 // IMPORT SIDEBAR ICONS
 import leftOpenIcon from './icons/panel-left-open.svg';
@@ -13,13 +16,22 @@ import leftCloseIcon from './icons/panel-left-close.svg';
 import rightOpenIcon from './icons/panel-right-open.svg';
 import rightCloseIcon from './icons/panel-right-close.svg';
 
+//OPTIONS FOR LEFT SIDEBAR
+const CALENDAR = 0;
+const EVENT = 1;
+const TASKS = 2;
+const SETTINGS = 3;
+
 //MAIN EXPORTED FUNCTION
 function App(){
-    
+
     //SET AUTHENTICATED
     const [isAuthenticated, setIsAuthenticated] = useState(true);
 
-    // SIDEBAR STATES (True = open, False = closed)
+    //HOLDS THE CURRENT STATE OF THE UI
+    const [selectedFocus, setSelectedFocus] = useState(CALENDAR);
+
+    //SIDEBAR STATES (True = open, False = closed)
     const [leftOpen, setLeftOpen] = useState(true);
     const [rightOpen, setRightOpen] = useState(true);
 
@@ -28,8 +40,26 @@ function App(){
     const verticalDateString = currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const fullDateString = currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
+    //HOLDS THE CURRENT USER (ATTEMPT THE FIRST NAME AND LAST NAME FROM LOGIN, IF NOT APPLICABLE, THEN JUST GUEST USER)
+    const [user, setUser] = useState((localStorage.getItem("firstName") || "") + (localStorage.getItem("lastName") || "") || "Guest User");
+
     //BACKGROUND FOR THE GENERAL APPLICATION
     const [background, setBackground] = useState(null);
+
+    //PASS IN A STRING, RETURNS INITALS STRING
+    function getInitials(name){
+        //IF NO NAME, RETURN NOTHING
+        if(!name) return "";
+        //SPLIT THE NAME BY SPACE
+        const parts = name.trim().split(" ");
+        //HOLDS INITALS
+        let initals = "";
+        //THEN JOIN THE FIRST LETTERS
+        for(let x = 0; x < parts.length; x++){
+            initals += parts[x][0].toUpperCase();
+        }
+        return initals;
+    }
 
     //HTML DOM RETURN
     return(
@@ -61,19 +91,19 @@ function App(){
                                 </div>
 
                                 <nav style={{display: 'flex', flexDirection: 'column', gap: '5px'}}>
-                                    <button className="nav-item"><span className="nav-icon">📅</span> Plan</button>
-                                    <button className="nav-item"><span className="nav-icon">✨</span> Event</button>
-                                    <button className="nav-item"><span className="nav-icon">✅</span> Task</button>
+                                    <button className={`nav-item ${selectedFocus === CALENDAR ? "active" : ""}`} onClick={()=>setSelectedFocus(CALENDAR)}><span className="nav-icon">📅</span> Calendar</button>
+                                    <button className={`nav-item ${selectedFocus === EVENT ? "active" : ""}`} onClick={()=>setSelectedFocus(EVENT)}><span className="nav-icon">✨</span> Event</button>
+                                    <button className={`nav-item ${selectedFocus === TASKS ? "active" : ""}`} onClick={()=>setSelectedFocus(TASKS)}><span className="nav-icon">✅</span> Tasks</button>
                                     <hr style={{border: '0', borderTop: '1px solid #2c2c3e', margin: '10px 0'}} />
-                                    <button className="nav-item"><span className="nav-icon">⚙️</span> Settings</button>
+                                    <button className={`nav-item ${selectedFocus === SETTINGS ? "active" : ""}`} onClick={()=>setSelectedFocus(SETTINGS)}><span className="nav-icon">⚙️</span> Settings</button>
                                 </nav>
 
                                 {/* PROFILE ADDED HERE - margin-top: auto pushes it to the bottom */}
                                 <div style={{marginTop: 'auto', paddingTop: '15px', borderTop: '1px solid #2c2c3e', display: 'flex', alignItems: 'center', gap: '12px'}}>
                                     <div style={{width: '35px', height: '35px', borderRadius: '50%', background: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', flexShrink: 0}}>
-                                        JD
+                                        {getInitials(user)}
                                     </div>
-                                    <span style={{fontWeight: 'bold'}}>John Doe</span>
+                                    <span style={{fontWeight: 'bold'}}>{user}</span>
                                 </div>
 
                             </div>
@@ -86,9 +116,11 @@ function App(){
 
                     {/* CENTER CONTENT */}
                     <div className="center-content">
-                        <div className="calendar-wrapper">
-                            <Calendar singleMonth = {true} setBackground = {setBackground}/>
-                        </div>
+                        {/* CHANGE OUT THE CENTER CONTENT FOR CURRENT SIDEBAR STATE */}
+                        {selectedFocus == CALENDAR && <Calendar singleMonth = {false} setBackground = {setBackground}/>}
+                        {selectedFocus == EVENT && <CreateEvent></CreateEvent>}
+                        {selectedFocus == TASKS && <TaskList></TaskList>}
+                        {selectedFocus == SETTINGS && <Settings></Settings>}
                     </div>
 
                     {/* RIGHT SIDEBAR (AI) */}

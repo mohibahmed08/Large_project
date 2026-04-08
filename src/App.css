@@ -75,10 +75,21 @@
   transition: all 0.2s;
 }
 
+.nav-item.active {
+  background: #2563eb;  /* slightly darker, theme-friendly blue */
+  color: #ffffff;       /* white text for contrast */
+}
+
 .nav-item:hover {
   background: rgba(255, 255, 255, 0.1); /* Subtle hover effect */
   color: white;
 }
+
+.nav-item.active:hover {
+  background: #1f56cb;  /* slightly darker, theme-friendly blue */
+  color: #ffffff;       /* white text for contrast */
+}
+
 
 .nav-icon { font-size: 1.2rem; width: 24px; text-align: center; }
 
@@ -89,11 +100,6 @@
   flex-direction: column;
   height: 100vh;      /* Force exact height to stop overflow */
   overflow: hidden; 
-}
-
-.calendar-wrapper {
-  flex: 1;
-  overflow-y: auto;   /* If the calendar is too tall, it scrolls neatly inside its box */
 }
 
 /* Vertical Date */

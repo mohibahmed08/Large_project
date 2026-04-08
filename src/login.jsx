@@ -71,7 +71,6 @@ const Login = ({ setIsAuthenticated }) => {
 
         setSuccessMsg('Logged in successfully!');
         setIsAuthenticated(true);
-        
 
       } else {
         // ── REGISTER ───────────────────────────────────────────
