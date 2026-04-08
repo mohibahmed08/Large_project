@@ -17,7 +17,11 @@
 .calendar-task-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(4, 8, 20, 0.62);
+  background:
+    radial-gradient(circle at top, rgba(96, 165, 250, 0.12), transparent 40%),
+    rgba(4, 8, 20, 0.62);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -46,6 +50,13 @@
 
 .calendar-day-modal {
   width: min(980px, 100%);
+  background:
+    linear-gradient(180deg, rgba(34, 44, 71, 0.78), rgba(14, 20, 38, 0.7)),
+    rgba(15, 23, 42, 0.66);
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.46),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 0 80px rgba(96, 165, 250, 0.05);
 }
 
 .calendar-item-modal.plan {
@@ -252,14 +263,47 @@
   gap: 10px;
 }
 
-.calendar-day-weather-strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(94px, 1fr));
+.calendar-day-weather-strip-shell {
+  display: flex;
+  align-items: center;
   gap: 10px;
   padding: 18px 18px 0 18px;
 }
 
+.calendar-day-weather-strip {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  flex: 1;
+  min-width: 0;
+}
+
+.calendar-day-weather-nav {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(11, 16, 29, 0.5);
+  cursor: pointer;
+}
+
+.calendar-day-weather-nav-icon {
+  width: 16px;
+  height: 16px;
+  filter: invert(1);
+}
+
+.calendar-day-weather-nav-icon-left {
+  transform: rotate(180deg);
+}
+
 .calendar-day-weather-card {
+  min-width: 94px;
   padding: 12px 10px;
   border-radius: 12px;
   background: rgba(11, 16, 29, 0.56);
@@ -270,6 +314,7 @@
   gap: 6px;
   color: #e2e8f0;
   cursor: pointer;
+  scroll-snap-align: start;
 }
 
 .calendar-day-weather-card.active {
@@ -353,6 +398,7 @@
   background: rgba(11, 16, 29, 0.56);
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: #f8fafc;
+  position: relative;
 }
 
 .calendar-day-card.plan {
@@ -394,9 +440,28 @@
   color: #cbd5e1;
 }
 
-.calendar-day-add-btn {
-  margin-top: 10px;
-  margin-left: 0;
+.calendar-day-add-icon {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  background: rgba(96, 165, 250, 0.12);
+  color: #bfdbfe;
+  font-size: 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.calendar-day-add-icon.saved {
+  background: rgba(34, 197, 94, 0.14);
+  border-color: rgba(34, 197, 94, 0.4);
+  color: #86efac;
 }
 
 .calendar-day-feedback {

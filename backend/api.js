@@ -561,6 +561,69 @@ function buildIcsTaskSignature(entry, options = {})
     };
 }
 
+function escapeIcsText(value)
+{
+    return String(value || '')
+        .replace(/\\/g, '\\\\')
+        .replace(/\r?\n/g, '\\n')
+        .replace(/,/g, '\\,')
+        .replace(/;/g, '\\;');
+}
+
+function formatIcsUtcDate(dateValue)
+{
+    const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+    if(!Number.isFinite(date.getTime()))
+    {
+        return '';
+    }
+
+    return DateTime.fromJSDate(date, { zone: 'utc' }).toFormat("yyyyMMdd'T'HHmmss'Z'");
+}
+
+function buildCalendarExport(tasks = [])
+{
+    const lines = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//Calendar++//EN',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH',
+    ];
+
+    for(const task of tasks)
+    {
+        if(!task?.dueDate)
+        {
+            continue;
+        }
+
+        const dtStart = formatIcsUtcDate(task.dueDate);
+        const dtEnd = formatIcsUtcDate(task.endDate || task.dueDate);
+        if(!dtStart || !dtEnd)
+        {
+            continue;
+        }
+
+        lines.push(
+            'BEGIN:VEVENT',
+            `UID:${String(task._id || crypto.randomUUID())}@calendarplusplus.xyz`,
+            `DTSTAMP:${formatIcsUtcDate(new Date())}`,
+            `DTSTART:${dtStart}`,
+            `DTEND:${dtEnd}`,
+            `SUMMARY:${escapeIcsText(task.title || '(No title)')}`,
+            `DESCRIPTION:${escapeIcsText(task.description || '')}`,
+            `LOCATION:${escapeIcsText(task.location || '')}`,
+            `STATUS:${task.isCompleted === true ? 'COMPLETED' : 'CONFIRMED'}`,
+            `CATEGORIES:${escapeIcsText(String(task.source || 'manual').toUpperCase())}`,
+            'END:VEVENT'
+        );
+    }
+
+    lines.push('END:VCALENDAR');
+    return `${lines.join('\r\n')}\r\n`;
+}
+
 function normalizeLegacyIcsTaskForResponse(task, options = {})
 {
     if(task?.source !== 'ical' || !task?.dueDate)
@@ -1957,6 +2020,36 @@ exports.setApp = function(app, client)
         catch(error)
         {
             res.status(500).json({ results: [], error: error.toString(), jwtToken: '' });
+        }
+    });
+
+    app.post('/api/exportcalendar', async (req, res) =>
+    {
+        const { userId, jwtToken } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        try
+        {
+            const db = getDatabase(client);
+            const tasks = await db.collection('tasks')
+                .find({ user_id: new ObjectId(userId) })
+                .sort({ dueDate: 1 })
+                .toArray();
+
+            res.status(200).json({
+                ics: buildCalendarExport(tasks),
+                filename: 'calendar-plus-plus.ics',
+                error: '',
+                jwtToken: refreshJwtToken(token, jwtToken),
+            });
+        }
+        catch(error)
+        {
+            res.status(500).json({ ics: '', filename: '', error: error.toString(), jwtToken: '' });
         }
     });
 

@@ -86,6 +86,47 @@ function formatTaskTime(dateValue) {
     return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+function suggestionKey(suggestion) {
+    return `${suggestion?.title || ''}|${suggestion?.suggestedTime || ''}|${suggestion?.description || ''}`;
+}
+
+function extractJsonArray(text) {
+    const fenceMatch = /```(?:json)?\s*([\s\S]*?)```/m.exec(text);
+    const fenced = fenceMatch?.[1]?.trim();
+    if (fenced && fenced.startsWith('[') && fenced.endsWith(']')) {
+        return fenced;
+    }
+
+    const start = text.indexOf('[');
+    const end = text.lastIndexOf(']');
+    if (start >= 0 && end > start) {
+        return text.slice(start, end + 1).trim();
+    }
+
+    return '';
+}
+
+function normalizeSuggestions(rawSuggestions) {
+    const items = Array.isArray(rawSuggestions) ? rawSuggestions : [];
+    if (
+        items.length === 1 &&
+        items[0]?.title === 'Parse error' &&
+        typeof items[0]?.description === 'string'
+    ) {
+        const cleaned = extractJsonArray(items[0].description);
+        if (cleaned) {
+            try {
+                const decoded = JSON.parse(cleaned);
+                return Array.isArray(decoded) ? decoded : [];
+            } catch {
+                return items;
+            }
+        }
+    }
+
+    return items;
+}
+
 function getWeatherImg(currentWeather){
     const hour = new Date().getHours();
     let timeOfDay = 'night';
@@ -140,6 +181,16 @@ function weatherCodeToLabel(code) {
     return 'Weather';
 }
 
+function weatherCodeBadge(code) {
+    if ([0, 1].includes(code)) return 'Sun';
+    if ([2, 3].includes(code)) return 'Cloud';
+    if ([45, 48].includes(code)) return 'Fog';
+    if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return 'Rain';
+    if ([71, 73, 75, 77, 85, 86].includes(code)) return 'Snow';
+    if ([95, 96, 99].includes(code)) return 'Storm';
+    return 'Now';
+}
+
 function dayWeatherRange(selectedDate) {
     const start = new Date(selectedDate);
     start.setHours(0, 0, 0, 0);
@@ -190,6 +241,7 @@ function Calendar({
     const [dayModalState, setDayModalState] = useState({
         open: false,
         suggestions: [],
+        savedSuggestionKeys: [],
         suggestionsLoading: false,
         weather: [],
         weatherLoading: false,
@@ -363,6 +415,7 @@ function Calendar({
             ...prev,
             open: true,
             feedback: '',
+            savedSuggestionKeys: [],
         }));
     };
 
@@ -472,7 +525,7 @@ function Calendar({
                     onSessionRefresh?.(data.jwtToken);
                     setDayModalState((prev) => ({
                         ...prev,
-                        suggestions: Array.isArray(data.suggestions) ? data.suggestions : [],
+                        suggestions: normalizeSuggestions(data.suggestions),
                         suggestionsLoading: false,
                     }));
                 }
@@ -823,10 +876,17 @@ function Calendar({
             return;
         }
 
+        const key = suggestionKey(suggestion);
+        if (dayModalState.savedSuggestionKeys.includes(key)) {
+            return;
+        }
+
         setIsSavingItem(true);
         try {
             const suggestedTime = String(suggestion?.suggestedTime || '12:00');
-            const [hour, minute] = suggestedTime.split(':').map(Number);
+            const timeParts = suggestedTime.split(':').map(Number);
+            const hour = timeParts[0];
+            const minute = timeParts[1];
             const startDate = new Date(
                 selectedDate.getFullYear(),
                 selectedDate.getMonth(),
@@ -859,11 +919,64 @@ function Calendar({
             }
 
             onSessionRefresh?.(data.jwtToken);
+            setDayModalState((prev) => ({
+                ...prev,
+                savedSuggestionKeys: [...prev.savedSuggestionKeys, key],
+            }));
             refreshCalendar();
         } catch (error) {
             setDayModalState((prev) => ({ ...prev, feedback: error.message }));
         } finally {
             setIsSavingItem(false);
+        }
+    };
+
+    const shiftSelectedDay = (dayDelta) => {
+        setSelectedDate((prev) => {
+            const next = new Date(prev);
+            next.setDate(next.getDate() + dayDelta);
+            next.setHours(0, 0, 0, 0);
+            return next;
+        });
+        setDayModalState((prev) => ({
+            ...prev,
+            feedback: '',
+            savedSuggestionKeys: [],
+        }));
+    };
+
+    const exportCalendar = async () => {
+        if (!session?.userId || !session?.jwtToken) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`${apiRoot}/exportcalendar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: session.userId,
+                    jwtToken: session.jwtToken,
+                }),
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Could not export calendar.');
+            }
+
+            onSessionRefresh?.(data.jwtToken);
+            const blob = new Blob([data.ics || ''], { type: 'text/calendar;charset=utf-8' });
+            const downloadUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = data.filename || 'calendar-plus-plus.ics';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(downloadUrl);
+        } catch (error) {
+            setDayModalState((prev) => ({ ...prev, feedback: error.message }));
         }
     };
 
@@ -923,6 +1036,9 @@ function Calendar({
                                 <h2>{selectedDate.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}</h2>
                             </div>
                             <div className="calendar-day-modal-header-actions">
+                                <button type="button" className="calendar-task-close-btn" onClick={exportCalendar}>
+                                    Export iCal
+                                </button>
                                 <button type="button" className="calendar-task-close-btn" onClick={() => openCreateModal(lastModalType || 'event', selectedDate)}>
                                     Add item
                                 </button>
@@ -931,7 +1047,11 @@ function Calendar({
                                 </button>
                             </div>
                         </div>
-                        <div className="calendar-day-weather-strip">
+                        <div className="calendar-day-weather-strip-shell">
+                            <button type="button" className="calendar-day-weather-nav" onClick={() => shiftSelectedDay(-1)}>
+                                <img src={UpArrow} alt="Previous day" className="calendar-day-weather-nav-icon calendar-day-weather-nav-icon-left" />
+                            </button>
+                            <div className="calendar-day-weather-strip">
                             {dayModalState.weatherLoading ? (
                                 <div className="calendar-day-weather-empty">Loading weather...</div>
                             ) : dayModalState.weather.length > 0 ? (
@@ -943,12 +1063,17 @@ function Calendar({
                                             const nextDate = new Date(`${entry.date}T00:00:00`);
                                             nextDate.setHours(0, 0, 0, 0);
                                             setSelectedDate(nextDate);
+                                            setDayModalState((prev) => ({
+                                                ...prev,
+                                                feedback: '',
+                                                savedSuggestionKeys: [],
+                                            }));
                                         }}
                                     >
                                         <div className="calendar-day-weather-weekday">
                                             {new Date(`${entry.date}T00:00:00`).toLocaleDateString([], { weekday: 'short' })}
                                         </div>
-                                        <div className="calendar-day-weather-icon">{weatherCodeToEmoji(entry.code)}</div>
+                                        <div className="calendar-day-weather-icon">{weatherCodeBadge(entry.code)}</div>
                                         <div className="calendar-day-weather-range">
                                             <span>{Math.round(Number(entry.max || 0))}°</span>
                                             <span>{Math.round(Number(entry.min || 0))}°</span>
@@ -959,6 +1084,10 @@ function Calendar({
                             ) : (
                                 <div className="calendar-day-weather-empty">Weather unavailable for this date.</div>
                             )}
+                            </div>
+                            <button type="button" className="calendar-day-weather-nav" onClick={() => shiftSelectedDay(1)}>
+                                <img src={DownArrow} alt="Next day" className="calendar-day-weather-nav-icon" />
+                            </button>
                         </div>
                         <div className="calendar-day-modal-body">
                             <div className="calendar-day-column">
@@ -991,16 +1120,26 @@ function Calendar({
                                 <div className="calendar-day-list">
                                     {dayModalState.suggestionsLoading ? (
                                         <div className="calendar-day-empty">Finding ideas...</div>
-                                    ) : dayModalState.suggestions.length > 0 ? dayModalState.suggestions.map((suggestion, index) => (
+                                    ) : dayModalState.suggestions.length > 0 ? dayModalState.suggestions.map((suggestion, index) => {
+                                        const key = suggestionKey(suggestion);
+                                        const isSaved = dayModalState.savedSuggestionKeys.includes(key);
+
+                                        return (
                                         <div key={`${suggestion.title}-${index}`} className="calendar-day-card suggestion">
                                             <div className="calendar-day-card-time">{suggestion.suggestedTime || 'Flexible'}</div>
                                             <div className="calendar-day-card-title">{suggestion.title}</div>
                                             <div className="calendar-day-card-copy">{suggestion.description}</div>
-                                            <button type="button" className="calendar-task-save-btn calendar-day-add-btn" onClick={() => saveDaySuggestion(suggestion)} disabled={isSavingItem}>
-                                                Add
+                                            <button
+                                                type="button"
+                                                className={`calendar-day-add-icon ${isSaved ? 'saved' : ''}`}
+                                                onClick={() => saveDaySuggestion(suggestion)}
+                                                disabled={isSaved || isSavingItem}
+                                                aria-label={isSaved ? 'Already added' : 'Add to calendar'}
+                                            >
+                                                {isSaved ? '\u2713' : '+'}
                                             </button>
                                         </div>
-                                    )) : (
+                                    ); }) : (
                                         <div className="calendar-day-empty">No suggestions yet for this day.</div>
                                     )}
                                 </div>

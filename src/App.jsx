@@ -344,6 +344,43 @@ function App() {
         }
     };
 
+    const exportCalendar = async () => {
+        const session = getSession();
+        if (!session) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_ROOT}/exportcalendar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: session.userId,
+                    jwtToken: session.jwtToken,
+                }),
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Could not export calendar.');
+            }
+
+            updateToken(data.jwtToken);
+            const blob = new Blob([data.ics || ''], { type: 'text/calendar;charset=utf-8' });
+            const downloadUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = data.filename || 'calendar-plus-plus.ics';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(downloadUrl);
+            setAccountFeedback('Calendar exported.');
+        } catch (error) {
+            setAccountFeedback(error.message);
+        }
+    };
+
     const ensureLocation = async () => {
         if (location || isLocating || !window.navigator.geolocation) {
             if (!window.navigator.geolocation) {
@@ -929,8 +966,13 @@ function App() {
                                                 <div className="account-section-card">
                                                     <h3>Calendar data</h3>
                                                     <p className="account-section-copy">
-                                                        Import and connected calendar tools stay in the calendar import modal. iCal export can come next if you want it.
+                                                        Import and connected calendar tools stay in the calendar import modal. You can also export your current calendar as an iCal file here.
                                                     </p>
+                                                    <div className="account-inline-actions">
+                                                        <button type="button" className="account-primary-btn" onClick={exportCalendar}>
+                                                            Export iCal
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         )}
