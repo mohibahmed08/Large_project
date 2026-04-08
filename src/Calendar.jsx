@@ -127,6 +127,100 @@ function normalizeSuggestions(rawSuggestions) {
     return items;
 }
 
+function renderCalendarInlineMarkdown(text) {
+    const source = String(text || '');
+    const nodes = [];
+    const pattern = /(\*\*[^*]+\*\*|\[[^\]]+\]\s*\((https?:\/\/[^\s)]+)\))/g;
+    let lastIndex = 0;
+    let match;
+
+    while ((match = pattern.exec(source)) !== null) {
+        if (match.index > lastIndex) {
+            nodes.push(
+                <span key={`text-${lastIndex}`}>
+                    {source.slice(lastIndex, match.index)}
+                </span>
+            );
+        }
+
+        const token = match[0];
+        if (token.startsWith('**') && token.endsWith('**') && token.length > 4) {
+            nodes.push(<strong key={`bold-${match.index}`}>{token.slice(2, -2)}</strong>);
+        } else {
+            const linkMatch = /^\[([^\]]+)\]\s*\((https?:\/\/[^\s)]+)\)$/.exec(token);
+            if (linkMatch) {
+                nodes.push(
+                    <a
+                        key={`link-${match.index}`}
+                        href={linkMatch[2]}
+                        target="_blank"
+                        rel="noreferrer"
+                    >
+                        {linkMatch[1]}
+                    </a>
+                );
+            } else {
+                nodes.push(<span key={`token-${match.index}`}>{token}</span>);
+            }
+        }
+
+        lastIndex = match.index + token.length;
+    }
+
+    if (lastIndex < source.length) {
+        nodes.push(<span key={`text-${lastIndex}`}>{source.slice(lastIndex)}</span>);
+    }
+
+    return nodes.length ? nodes : source;
+}
+
+function renderCalendarMarkdown(text) {
+    const lines = String(text || '').split('\n');
+    const blocks = [];
+    let listItems = [];
+
+    const flushList = () => {
+        if (!listItems.length) {
+            return;
+        }
+
+        blocks.push(
+            <ul key={`list-${blocks.length}`} className="calendar-day-copy-list">
+                {listItems.map((item, index) => (
+                    <li key={`item-${index}`}>{renderCalendarInlineMarkdown(item)}</li>
+                ))}
+            </ul>
+        );
+        listItems = [];
+    };
+
+    lines.forEach((line, index) => {
+        const trimmed = line.trim();
+        const listMatch = /^([-*]|\d+\.)\s+(.*)$/.exec(trimmed);
+
+        if (!trimmed) {
+            flushList();
+            return;
+        }
+
+        if (listMatch) {
+            listItems.push(listMatch[2]);
+            return;
+        }
+
+        flushList();
+        blocks.push(
+            <div key={`line-${index}`} className="calendar-day-copy-line">
+                {renderCalendarInlineMarkdown(trimmed)}
+            </div>
+        );
+    });
+
+    flushList();
+
+    return blocks.length ? blocks : text;
+}
+
 function getWeatherImg(currentWeather){
     const hour = new Date().getHours();
     let timeOfDay = 'night';
@@ -1130,7 +1224,11 @@ function Calendar({
                                         >
                                             <div className="calendar-day-card-time">{formatTaskTime(task.dueDate)}</div>
                                             <div className="calendar-day-card-title">{task.title || 'Untitled'}</div>
-                                            {task.description && <div className="calendar-day-card-copy">{task.description}</div>}
+                                            {task.description && (
+                                                <div className="calendar-day-card-copy">
+                                                    {renderCalendarMarkdown(task.description)}
+                                                </div>
+                                            )}
                                         </button>
                                     )) : (
                                         <div className="calendar-day-empty">Nothing scheduled yet. Add an item or pull suggestions.</div>
@@ -1162,7 +1260,9 @@ function Calendar({
                                         <div key={`${suggestion.title}-${index}`} className="calendar-day-card suggestion">
                                             <div className="calendar-day-card-time">{suggestion.suggestedTime || 'Flexible'}</div>
                                             <div className="calendar-day-card-title">{suggestion.title}</div>
-                                            <div className="calendar-day-card-copy">{suggestion.description}</div>
+                                            <div className="calendar-day-card-copy">
+                                                {renderCalendarMarkdown(suggestion.description)}
+                                            </div>
                                             <button
                                                 type="button"
                                                 className={`calendar-day-add-icon ${isSaved ? 'saved' : ''}`}

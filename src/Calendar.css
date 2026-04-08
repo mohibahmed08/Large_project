@@ -432,10 +432,34 @@
 }
 
 .calendar-day-card-copy {
-  margin-top: 6px;
-  color: #cbd5e1;
-  line-height: 1.45;
-  font-size: 0.86rem;
+    margin-top: 6px;
+    color: #cbd5e1;
+    line-height: 1.45;
+    font-size: 0.86rem;
+}
+
+.calendar-day-card-copy a {
+    color: #93c5fd;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.calendar-day-card-copy strong {
+    color: #f8fafc;
+    font-weight: 700;
+}
+
+.calendar-day-copy-line + .calendar-day-copy-line {
+    margin-top: 4px;
+}
+
+.calendar-day-copy-list {
+    margin: 4px 0 0;
+    padding-left: 18px;
+}
+
+.calendar-day-copy-list li + li {
+    margin-top: 4px;
 }
 
 .calendar-day-empty {
