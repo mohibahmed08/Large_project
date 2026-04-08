@@ -446,12 +446,8 @@ function App() {
                                 <div className="ai-panel-header">
                                     <h2>AI Assistant</h2>
                                 </div>
-
                                 <div className="ai-hero-card">
                                     <h3>Schedule ideas with context</h3>
-                                    <p className="ai-subtitle">
-                                        Use the same assistant style as mobile to ask questions or generate suggestions for the selected day.
-                                    </p>
                                     <div className="ai-location-row">
                                         <span className="ai-location-text">{locationNotice}</span>
                                         <button
@@ -482,87 +478,107 @@ function App() {
                                     </button>
                                 </div>
 
-                                <div className="ai-main-shell">
-                                    {aiMode === 'suggestions' ? (
-                                        <div className="ai-section ai-suggestions active">
-                                            <div className="ai-section-header">
-                                                <h3>Suggestions</h3>
-                                                <span>{suggestions.length} ready</span>
-                                            </div>
-                                            <div className="ai-suggestion-list">
-                                                {suggestions.length > 0 ? (
-                                                    suggestions.map((suggestion, index) => {
-                                                        const key = suggestionKey(suggestion);
-                                                        const isSaved = savedSuggestionKeys.includes(key);
-
-                                                        return (
-                                                            <div
-                                                                key={`${key}-${index}`}
-                                                                className="ai-suggestion-card"
-                                                            >
-                                                                <div className="ai-suggestion-copy">
-                                                                    <div className="ai-suggestion-time">
-                                                                        {suggestion.suggestedTime || 'No time'}
-                                                                    </div>
-                                                                    <div className="ai-suggestion-title">{suggestion.title}</div>
-                                                                    <div className="ai-suggestion-description">{suggestion.description}</div>
-                                                                </div>
-                                                                <button
-                                                                    type="button"
-                                                                    className={`ai-add-btn ${isSaved ? 'saved' : ''}`}
-                                                                    onClick={() => saveSuggestion(suggestion)}
-                                                                    disabled={isSaved || aiLoading}
-                                                                    aria-label={isSaved ? 'Already added' : 'Add to calendar'}
-                                                                >
-                                                                    {isSaved ? '\u2713' : '+'}
-                                                                </button>
-                                                            </div>
-                                                        );
-                                                    })
-                                                ) : (
-                                                    <div className="ai-empty-state">
-                                                        Use the button above and I&apos;ll fill this panel with ideas for today.
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="ai-section ai-chat active">
-                                        <div className="ai-section-header">
-                                            <h3>Chat</h3>
-                                            <span>Latest takes focus</span>
-                                        </div>
-                                        <div className="ai-chat-feed">
-                                            {messages.map((message, index) => (
-                                                <div
-                                                    key={`${message.role}-${index}`}
-                                                    className={`ai-message ${message.role === 'user' ? 'user' : 'assistant'}`}
-                                                >
-                                                    {message.text}
+                                {aiMode === 'suggestions' ? (
+                                    <>
+                                        <div className="ai-main-shell suggestions-mode">
+                                            <div className="ai-section ai-suggestions active">
+                                                <div className="ai-section-header">
+                                                    <h3>Suggestions</h3>
+                                                    <span>{suggestions.length} ready</span>
                                                 </div>
-                                            ))}
+                                                <div className="ai-suggestion-list">
+                                                    {suggestions.length > 0 ? (
+                                                        suggestions.map((suggestion, index) => {
+                                                            const key = suggestionKey(suggestion);
+                                                            const isSaved = savedSuggestionKeys.includes(key);
+
+                                                            return (
+                                                                <div
+                                                                    key={`${key}-${index}`}
+                                                                    className="ai-suggestion-card"
+                                                                >
+                                                                    <div className="ai-suggestion-copy">
+                                                                        <div className="ai-suggestion-time">
+                                                                            {suggestion.suggestedTime || 'No time'}
+                                                                        </div>
+                                                                        <div className="ai-suggestion-title">{suggestion.title}</div>
+                                                                        <div className="ai-suggestion-description">{suggestion.description}</div>
+                                                                    </div>
+                                                                    <button
+                                                                        type="button"
+                                                                        className={`ai-add-btn ${isSaved ? 'saved' : ''}`}
+                                                                        onClick={() => saveSuggestion(suggestion)}
+                                                                        disabled={isSaved || aiLoading}
+                                                                        aria-label={isSaved ? 'Already added' : 'Add to calendar'}
+                                                                    >
+                                                                        {isSaved ? '\u2713' : '+'}
+                                                                    </button>
+                                                                </div>
+                                                            );
+                                                        })
+                                                    ) : (
+                                                        <div className="ai-empty-state">
+                                                            Use the button above and I&apos;ll fill this panel with ideas for today.
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="ai-composer">
+                                            <textarea
+                                                className="ai-input ai-message-input"
+                                                placeholder="Message the assistant..."
+                                                value={aiInput}
+                                                onChange={(event) => setAiInput(event.target.value)}
+                                                onKeyDown={(event) => {
+                                                    if (event.key === 'Enter' && !event.shiftKey) {
+                                                        event.preventDefault();
+                                                        sendChat();
+                                                    }
+                                                }}
+                                            />
+                                            <button className="ai-send-btn ai-composer-send" onClick={sendChat} disabled={aiLoading}>
+                                                {aiLoading && aiMode === 'chat' ? '...' : <SendIcon />}
+                                            </button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="ai-chat-shell">
+                                        <div className="ai-main-shell chat-mode">
+                                            <div className="ai-section ai-chat active">
+                                                <div className="ai-chat-feed">
+                                                    {messages.map((message, index) => (
+                                                        <div
+                                                            key={`${message.role}-${index}`}
+                                                            className={`ai-message ${message.role === 'user' ? 'user' : 'assistant'}`}
+                                                        >
+                                                            {message.text}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="ai-composer ai-composer-inline">
+                                            <textarea
+                                                className="ai-input ai-message-input"
+                                                placeholder="Message the assistant..."
+                                                value={aiInput}
+                                                onChange={(event) => setAiInput(event.target.value)}
+                                                onKeyDown={(event) => {
+                                                    if (event.key === 'Enter' && !event.shiftKey) {
+                                                        event.preventDefault();
+                                                        sendChat();
+                                                    }
+                                                }}
+                                            />
+                                            <button className="ai-send-btn ai-composer-send" onClick={sendChat} disabled={aiLoading}>
+                                                {aiLoading && aiMode === 'chat' ? '...' : <SendIcon />}
+                                            </button>
                                         </div>
                                     </div>
-                                    )}
-                                </div>
-
-                                <div className="ai-composer">
-                                    <textarea
-                                        className="ai-input ai-message-input"
-                                        placeholder="Message the assistant..."
-                                        value={aiInput}
-                                        onChange={(event) => setAiInput(event.target.value)}
-                                        onKeyDown={(event) => {
-                                            if (event.key === 'Enter' && !event.shiftKey) {
-                                                event.preventDefault();
-                                                sendChat();
-                                            }
-                                        }}
-                                    />
-                                    <button className="ai-send-btn ai-composer-send" onClick={sendChat} disabled={aiLoading}>
-                                        {aiLoading && aiMode === 'chat' ? '...' : <SendIcon />}
-                                    </button>
-                                </div>
+                                )}
                             </div>
                         )}
                     </div>
