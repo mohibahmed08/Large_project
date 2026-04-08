@@ -358,6 +358,7 @@
   white-space: pre-wrap;
   position: relative;
   word-break: break-word;
+  font-size: 0.94rem;
 }
 
 .ai-message.assistant {
@@ -371,6 +372,25 @@
   background: linear-gradient(180deg, rgba(96, 165, 250, 0.88), rgba(89, 151, 241, 0.92));
   color: #f8fafc;
   border-bottom-right-radius: 8px;
+}
+
+.ai-message-line + .ai-message-line {
+  margin-top: 6px;
+}
+
+.ai-message-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.ai-message-line + .ai-message-list,
+.ai-message-list + .ai-message-line,
+.ai-message-list + .ai-message-list {
+  margin-top: 8px;
+}
+
+.ai-message-list li + li {
+  margin-top: 4px;
 }
 
 .ai-send-btn {

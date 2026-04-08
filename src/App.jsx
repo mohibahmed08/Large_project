@@ -94,6 +94,66 @@ function normalizeSuggestions(rawSuggestions) {
     return items;
 }
 
+function renderInlineMarkdown(text) {
+    return String(text || '')
+        .split(/(\*\*[^*]+\*\*)/)
+        .filter(Boolean)
+        .map((part, index) => {
+            if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+                return <strong key={`bold-${index}`}>{part.slice(2, -2)}</strong>;
+            }
+
+            return <span key={`text-${index}`}>{part}</span>;
+        });
+}
+
+function renderAssistantMessage(text) {
+    const lines = String(text || '').split('\n');
+    const blocks = [];
+    let listItems = [];
+
+    const flushList = () => {
+        if (!listItems.length) {
+            return;
+        }
+
+        blocks.push(
+            <ul key={`list-${blocks.length}`} className="ai-message-list">
+                {listItems.map((item, index) => (
+                    <li key={`item-${index}`}>{renderInlineMarkdown(item)}</li>
+                ))}
+            </ul>
+        );
+        listItems = [];
+    };
+
+    lines.forEach((line, index) => {
+        const trimmed = line.trim();
+        const listMatch = /^([-*]|\d+\.)\s+(.*)$/.exec(trimmed);
+
+        if (!trimmed) {
+            flushList();
+            return;
+        }
+
+        if (listMatch) {
+            listItems.push(listMatch[2]);
+            return;
+        }
+
+        flushList();
+        blocks.push(
+            <div key={`line-${index}`} className="ai-message-line">
+                {renderInlineMarkdown(trimmed)}
+            </div>
+        );
+    });
+
+    flushList();
+
+    return blocks.length > 0 ? blocks : text;
+}
+
 function SparklesIcon() {
     return (
         <svg viewBox="0 0 24 24" className="ai-inline-icon" aria-hidden="true">
@@ -861,7 +921,9 @@ function App() {
                                                             key={`${message.role}-${index}`}
                                                             className={`ai-message ${message.role === 'user' ? 'user' : 'assistant'}`}
                                                         >
-                                                            {message.text}
+                                                            {message.role === 'assistant'
+                                                                ? renderAssistantMessage(message.text)
+                                                                : message.text}
                                                         </div>
                                                     ))}
                                                 </div>
