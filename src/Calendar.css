@@ -395,6 +395,40 @@
   padding-right: 4px;
 }
 
+.calendar-day-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.calendar-day-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 2px;
+  --group-color: #93c5fd;
+}
+
+.calendar-day-group-title {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--group-color);
+}
+
+.calendar-day-group-count {
+  font-size: 0.76rem;
+  color: #94a3b8;
+}
+
+.calendar-day-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .calendar-day-card {
   width: 100%;
   text-align: left;
@@ -404,6 +438,8 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: #f8fafc;
   position: relative;
+  --task-accent: #60a5fa;
+  box-shadow: inset 3px 0 0 var(--task-accent);
 }
 
 .calendar-day-card.plan {
@@ -420,7 +456,7 @@
 }
 
 .calendar-day-card-time {
-  color: #93c5fd;
+  color: var(--task-accent);
   font-size: 0.78rem;
   font-weight: 700;
 }
@@ -429,6 +465,34 @@
   margin-top: 4px;
   font-size: 1rem;
   font-weight: 700;
+}
+
+.calendar-color-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.calendar-color-swatch {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: var(--swatch-color);
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.calendar-color-swatch.selected {
+  border-color: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 .calendar-day-card-copy {

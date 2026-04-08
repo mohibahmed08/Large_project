@@ -84,7 +84,7 @@ class DayGrid extends StatelessWidget {
     }
   }
 
-  Color _taskColor(CalendarTask task) {
+  Color _taskBaseColor(CalendarTask task) {
     final normalized = task.color.trim().replaceFirst('#', '');
     final parsed = int.tryParse(normalized, radix: 16);
     if (parsed != null && (normalized.length == 6 || normalized.length == 8)) {
@@ -99,12 +99,45 @@ class DayGrid extends StatelessWidget {
     }
   }
 
+  Color _groupMajorityColor(List<CalendarTask> tasks) {
+    final counts = <int, int>{};
+    for (final task in tasks) {
+      final normalized = task.color.trim().replaceFirst('#', '');
+      final parsed = int.tryParse(normalized, radix: 16);
+      if (parsed == null || (normalized.length != 6 && normalized.length != 8)) {
+        continue;
+      }
+      final colorValue = normalized.length == 6 ? 0xFF000000 | parsed : parsed;
+      counts.update(colorValue, (value) => value + 1, ifAbsent: () => 1);
+    }
+
+    if (counts.isNotEmpty) {
+      final winner = counts.entries.reduce(
+        (best, next) => next.value > best.value ? next : best,
+      );
+      return Color(winner.key);
+    }
+
+    return _taskBaseColor(tasks.first);
+  }
+
+  Color _taskDisplayColor(CalendarTask task, Color groupColor) {
+    final normalized = task.color.trim().replaceFirst('#', '');
+    final parsed = int.tryParse(normalized, radix: 16);
+    if (parsed != null && (normalized.length == 6 || normalized.length == 8)) {
+      return Color(normalized.length == 6 ? 0xFF000000 | parsed : parsed);
+    }
+
+    return groupColor;
+  }
+
   @override
   Widget build(BuildContext context) {
     final weatherText = getWeatherText();
+    final groupColor = taskCount > 0 ? _groupMajorityColor(tasks) : const Color(0xFF64B5F6);
     final previewColors = <Color>[];
     for (final task in tasks) {
-      final color = _taskColor(task);
+      final color = _taskDisplayColor(task, groupColor);
       if (previewColors.any((existing) => existing.value == color.value)) {
         continue;
       }
@@ -163,7 +196,7 @@ class DayGrid extends StatelessWidget {
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF64B5F6),
+                        color: groupColor,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(

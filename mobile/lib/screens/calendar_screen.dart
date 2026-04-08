@@ -578,7 +578,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
-  Color _taskColor(CalendarTask task) {
+  Color _taskBaseColor(CalendarTask task) {
     final parsed = _parseColor(task.color);
     if (parsed != null) {
       return parsed;
@@ -590,6 +590,35 @@ class _CalendarScreenState extends State<CalendarScreen> {
       default:
         return AppTheme.accent;
     }
+  }
+
+  Color _groupMajorityColor(List<CalendarTask> tasks) {
+    final counts = <int, int>{};
+    for (final task in tasks) {
+      final parsed = _parseColor(task.color);
+      if (parsed == null) {
+        continue;
+      }
+      counts.update(parsed.value, (value) => value + 1, ifAbsent: () => 1);
+    }
+
+    if (counts.isNotEmpty) {
+      final winningValue = counts.entries.reduce(
+        (best, next) => next.value > best.value ? next : best,
+      );
+      return Color(winningValue.key);
+    }
+
+    return _taskBaseColor(tasks.first);
+  }
+
+  Color _taskDisplayColor(CalendarTask task, {Color? groupColor}) {
+    final parsed = _parseColor(task.color);
+    if (parsed != null) {
+      return parsed;
+    }
+
+    return groupColor ?? _taskBaseColor(task);
   }
 
   Color? _parseColor(String value) {
@@ -844,6 +873,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                               }
 
                               return groupedTasks.entries.expand((entry) sync* {
+                                final groupColor = _groupMajorityColor(
+                                  entry.value,
+                                );
                                 yield Padding(
                                   padding: const EdgeInsets.only(top: 8, bottom: 10),
                                   child: Row(
@@ -852,7 +884,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                         width: 10,
                                         height: 10,
                                         decoration: BoxDecoration(
-                                          color: _taskColor(entry.value.first),
+                                          color: groupColor,
                                           shape: BoxShape.circle,
                                         ),
                                       ),
@@ -872,20 +904,24 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                 );
 
                                 for (final task in entry.value) {
+                                  final taskColor = _taskDisplayColor(
+                                    task,
+                                    groupColor: groupColor,
+                                  );
                                   yield Card(
                                     margin: const EdgeInsets.only(bottom: 8),
-                                    color: _taskColor(task).withValues(alpha: 0.18),
+                                    color: taskColor.withValues(alpha: 0.18),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(20),
                                       side: BorderSide(
-                                        color: _taskColor(task).withValues(alpha: 0.65),
+                                        color: taskColor.withValues(alpha: 0.65),
                                       ),
                                     ),
                                     child: ListTile(
                                       onTap: () => _openTaskDialog(task: task),
                                       leading: Checkbox(
                                         value: task.isCompleted,
-                                        activeColor: _taskColor(task),
+                                        activeColor: taskColor,
                                         onChanged: (value) {
                                           if (value != null) {
                                             _toggleTask(task, value);

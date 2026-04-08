@@ -26,6 +26,17 @@ const REMINDER_OPTIONS = [
     { value: 1440, label: '1 day before' },
 ];
 
+const ITEM_COLOR_OPTIONS = [
+    '',
+    '#60A5FA',
+    '#F97316',
+    '#22C55E',
+    '#EAB308',
+    '#A855F7',
+    '#EF4444',
+    '#14B8A6',
+];
+
 const ITEM_TYPE_META = {
     plan: {
         modalTitleCreate: 'New Plan',
@@ -84,6 +95,60 @@ function formatTaskTime(dateValue) {
     }
 
     return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function taskGroupLabel(task) {
+    const explicitGroup = String(task?.group || '').trim();
+    if (explicitGroup) {
+        return explicitGroup;
+    }
+
+    const source = String(task?.source || '').toLowerCase();
+    if (source === 'ical') return 'Imported';
+    if (source === 'task') return 'Task';
+    if (source === 'plan') return 'Plan';
+    if (source === 'event') return 'Event';
+    return source ? source.charAt(0).toUpperCase() + source.slice(1) : 'Other';
+}
+
+function parseTaskColor(colorValue) {
+    const normalized = String(colorValue || '').trim().replace('#', '');
+    if (!normalized || (normalized.length !== 6 && normalized.length !== 8)) {
+        return '';
+    }
+
+    return `#${normalized.slice(0, 8)}`;
+}
+
+function fallbackTaskColor(task) {
+    const source = String(task?.source || '').toLowerCase();
+    if (source === 'ical') return '#94A3B8';
+    if (source === 'task') return '#22C55E';
+    if (source === 'plan') return '#A855F7';
+    return '#60A5FA';
+}
+
+function majorityGroupColor(tasks = []) {
+    const counts = new Map();
+    tasks.forEach((task) => {
+        const color = parseTaskColor(task?.color);
+        if (!color) {
+            return;
+        }
+        counts.set(color, (counts.get(color) || 0) + 1);
+    });
+
+    if (counts.size > 0) {
+        return Array.from(counts.entries()).reduce((best, next) => (
+            next[1] > best[1] ? next : best
+        ))[0];
+    }
+
+    return tasks.length > 0 ? fallbackTaskColor(tasks[0]) : '#60A5FA';
+}
+
+function taskDisplayColor(task, groupColor = '#60A5FA') {
+    return parseTaskColor(task?.color) || groupColor || fallbackTaskColor(task);
 }
 
 function suggestionKey(suggestion) {
@@ -415,6 +480,22 @@ function Calendar({
         return calendarTasks.filter((task) => task?.dueDate && normalizeDateKey(task.dueDate) === selectedKey);
     }, [calendarTasks, selectedDate]);
 
+    const groupedSelectedDayTasks = useMemo(() => {
+        const groups = new Map();
+        selectedDayTasks.forEach((task) => {
+            const key = taskGroupLabel(task);
+            if (!groups.has(key)) {
+                groups.set(key, []);
+            }
+            groups.get(key).push(task);
+        });
+        return Array.from(groups.entries()).map(([groupName, tasks]) => ({
+            groupName,
+            tasks,
+            color: majorityGroupColor(tasks),
+        }));
+    }, [selectedDayTasks]);
+
     useEffect(() => {
         onSelectedDateChange?.(selectedDate);
     }, [selectedDate, onSelectedDateChange]);
@@ -487,6 +568,8 @@ function Calendar({
             title: task?.title || '',
             description: task?.description || '',
             location: task?.location || '',
+            group: task?.group || '',
+            color: parseTaskColor(task?.color),
             startTime: formatTimeValue(dueDate),
             endTime: formatTimeValue(endDate),
             reminderEnabled: task?.reminderEnabled === true || (!task && defaultReminderEnabled),
@@ -753,6 +836,8 @@ function Calendar({
                     title: editorState.title.trim(),
                     description: editorState.description.trim(),
                     location: editorState.location.trim(),
+                    group: editorState.group.trim(),
+                    color: editorState.color || '',
                     dueDate: dueDate.toISOString(),
                     endDate: endDate.toISOString(),
                     source: editorState.source,
@@ -1215,21 +1300,37 @@ function Calendar({
                                     <span>{selectedDayTasks.length} scheduled</span>
                                 </div>
                                 <div className="calendar-day-list">
-                                    {selectedDayTasks.length > 0 ? selectedDayTasks.map((task) => (
-                                        <button
-                                            key={task._id || `${task.title}-${task.dueDate}`}
-                                            type="button"
-                                            className={`calendar-day-card ${normalizeItemType(task)}`}
-                                            onClick={() => openEditModal(task, selectedDate)}
-                                        >
-                                            <div className="calendar-day-card-time">{formatTaskTime(task.dueDate)}</div>
-                                            <div className="calendar-day-card-title">{task.title || 'Untitled'}</div>
-                                            {task.description && (
-                                                <div className="calendar-day-card-copy">
-                                                    {renderCalendarMarkdown(task.description)}
-                                                </div>
-                                            )}
-                                        </button>
+                                    {selectedDayTasks.length > 0 ? groupedSelectedDayTasks.map(({ groupName, tasks, color }) => (
+                                        <div key={groupName} className="calendar-day-group">
+                                            <div className="calendar-day-group-header" style={{ '--group-color': color }}>
+                                                <span className="calendar-day-group-title">{groupName}</span>
+                                                <span className="calendar-day-group-count">{tasks.length}</span>
+                                            </div>
+                                            <div className="calendar-day-group-list">
+                                                {tasks.map((task) => (
+                                                    (() => {
+                                                        const displayColor = taskDisplayColor(task, color);
+                                                        return (
+                                                    <button
+                                                        key={task._id || `${task.title}-${task.dueDate}`}
+                                                        type="button"
+                                                        className={`calendar-day-card ${normalizeItemType(task)}`}
+                                                        style={{ '--task-accent': displayColor }}
+                                                        onClick={() => openEditModal(task, selectedDate)}
+                                                    >
+                                                        <div className="calendar-day-card-time">{formatTaskTime(task.dueDate)}</div>
+                                                        <div className="calendar-day-card-title">{task.title || 'Untitled'}</div>
+                                                        {task.description && (
+                                                            <div className="calendar-day-card-copy">
+                                                                {renderCalendarMarkdown(task.description)}
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                        );
+                                                    })()
+                                                ))}
+                                            </div>
+                                        </div>
                                     )) : (
                                         <div className="calendar-day-empty">Nothing scheduled yet. Add an item or pull suggestions.</div>
                                     )}
@@ -1317,6 +1418,31 @@ function Calendar({
                                 <span>{editorMeta.locationLabel}</span>
                                 <input value={editorState.location} onChange={(event) => updateDraft('location', event.target.value)} placeholder="Add a location" />
                             </label>
+                            <label className="calendar-task-field">
+                                <span>Group</span>
+                                <input value={editorState.group} onChange={(event) => updateDraft('group', event.target.value)} placeholder="School, Work, Personal..." />
+                            </label>
+                            <div className="calendar-task-field">
+                                <span>Color</span>
+                                <div className="calendar-color-row">
+                                    {ITEM_COLOR_OPTIONS.map((option) => {
+                                        const isSelected = (editorState.color || '') === option;
+                                        const fill = option || '#334155';
+                                        return (
+                                            <button
+                                                key={option || 'none'}
+                                                type="button"
+                                                className={`calendar-color-swatch ${isSelected ? 'selected' : ''}`}
+                                                style={{ '--swatch-color': fill }}
+                                                onClick={() => updateDraft('color', option)}
+                                                aria-label={option ? `Set color ${option}` : 'Clear custom color'}
+                                            >
+                                                {option ? (isSelected ? '✓' : '') : '×'}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
                             <div className="calendar-task-reminder-row">
                                 <label className="calendar-task-checkbox">
                                     <input type="checkbox" checked={editorState.reminderEnabled} onChange={(event) => updateDraft('reminderEnabled', event.target.checked)} />
