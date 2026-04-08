@@ -378,6 +378,7 @@ function App() {
                         {rightOpen && (
                             <div className="sidebar-content ai-panel">
                                 <div className="ai-hero-card">
+                                    <div className="ai-badge">AI</div>
                                     <h2>AI Assistant</h2>
                                     <p className="ai-subtitle">
                                         Ask about your schedule or get suggestions for today.
@@ -401,55 +402,61 @@ function App() {
                                         onChange={(event) => setSuggestionPreferences(event.target.value)}
                                     />
                                     <button
-                                        className="ai-send-btn"
+                                        className="ai-send-btn ai-suggest-btn"
                                         onClick={loadSuggestions}
                                         disabled={aiLoading}
                                     >
+                                        <span className="ai-btn-stars">*</span>
                                         {aiLoading && aiMode === 'suggestions' ? 'Loading...' : 'Suggest Events'}
                                     </button>
                                 </div>
 
-                                <div className={`ai-main-shell ${aiMode === 'chat' ? 'chat-priority' : 'suggestions-priority'}`}>
-                                    {suggestions.length > 0 && (
-                                        <div className={`ai-section ai-suggestions ${aiMode === 'suggestions' ? 'active' : 'compact'}`}>
+                                <div className="ai-main-shell">
+                                    {aiMode === 'suggestions' ? (
+                                        <div className="ai-section ai-suggestions active">
                                             <div className="ai-section-header">
                                                 <h3>Suggestions</h3>
                                                 <span>{suggestions.length} ready</span>
                                             </div>
                                             <div className="ai-suggestion-list">
-                                                {suggestions.map((suggestion, index) => {
-                                                    const key = suggestionKey(suggestion);
-                                                    const isSaved = savedSuggestionKeys.includes(key);
+                                                {suggestions.length > 0 ? (
+                                                    suggestions.map((suggestion, index) => {
+                                                        const key = suggestionKey(suggestion);
+                                                        const isSaved = savedSuggestionKeys.includes(key);
 
-                                                    return (
-                                                        <div
-                                                            key={`${key}-${index}`}
-                                                            className="ai-suggestion-card"
-                                                        >
-                                                            <div className="ai-suggestion-copy">
-                                                                <div className="ai-suggestion-time">
-                                                                    {suggestion.suggestedTime || 'No time'}
-                                                                </div>
-                                                                <div className="ai-suggestion-title">{suggestion.title}</div>
-                                                                <div className="ai-suggestion-description">{suggestion.description}</div>
-                                                            </div>
-                                                            <button
-                                                                type="button"
-                                                                className={`ai-add-btn ${isSaved ? 'saved' : ''}`}
-                                                                onClick={() => saveSuggestion(suggestion)}
-                                                                disabled={isSaved || aiLoading}
-                                                                aria-label={isSaved ? 'Already added' : 'Add to calendar'}
+                                                        return (
+                                                            <div
+                                                                key={`${key}-${index}`}
+                                                                className="ai-suggestion-card"
                                                             >
-                                                                {isSaved ? '✓' : '+'}
-                                                            </button>
-                                                        </div>
-                                                    );
-                                                })}
+                                                                <div className="ai-suggestion-copy">
+                                                                    <div className="ai-suggestion-time">
+                                                                        {suggestion.suggestedTime || 'No time'}
+                                                                    </div>
+                                                                    <div className="ai-suggestion-title">{suggestion.title}</div>
+                                                                    <div className="ai-suggestion-description">{suggestion.description}</div>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    className={`ai-add-btn ${isSaved ? 'saved' : ''}`}
+                                                                    onClick={() => saveSuggestion(suggestion)}
+                                                                    disabled={isSaved || aiLoading}
+                                                                    aria-label={isSaved ? 'Already added' : 'Add to calendar'}
+                                                                >
+                                                                    {isSaved ? '\u2713' : '+'}
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    <div className="ai-empty-state">
+                                                        Use the button above and I&apos;ll fill this panel with ideas for today.
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
-                                    )}
-
-                                    <div className={`ai-section ai-chat ${aiMode === 'chat' ? 'active' : 'compact'}`}>
+                                    ) : (
+                                        <div className="ai-section ai-chat active">
                                         <div className="ai-section-header">
                                             <h3>Chat</h3>
                                             <span>Latest takes focus</span>
@@ -465,17 +472,26 @@ function App() {
                                             ))}
                                         </div>
                                     </div>
+                                    )}
                                 </div>
 
-                                <textarea
-                                    className="ai-input"
-                                    placeholder="e.g. What should I move today?"
-                                    value={aiInput}
-                                    onChange={(event) => setAiInput(event.target.value)}
-                                />
-                                <button className="ai-send-btn" onClick={sendChat} disabled={aiLoading}>
-                                    {aiLoading && aiMode === 'chat' ? 'Sending...' : 'Send to AI'}
-                                </button>
+                                <div className="ai-composer">
+                                    <textarea
+                                        className="ai-input ai-message-input"
+                                        placeholder="Message the assistant..."
+                                        value={aiInput}
+                                        onChange={(event) => setAiInput(event.target.value)}
+                                        onKeyDown={(event) => {
+                                            if (event.key === 'Enter' && !event.shiftKey) {
+                                                event.preventDefault();
+                                                sendChat();
+                                            }
+                                        }}
+                                    />
+                                    <button className="ai-send-btn ai-composer-send" onClick={sendChat} disabled={aiLoading}>
+                                        {aiLoading && aiMode === 'chat' ? '...' : 'Send'}
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>
