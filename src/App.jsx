@@ -87,7 +87,7 @@ function App(){
                     {/* CENTER CONTENT */}
                     <div className="center-content">
                         <div className="calendar-wrapper">
-                            <Calendar singleMonth = {false} setBackground = {setBackground}/>
+                            <Calendar singleMonth = {true} setBackground = {setBackground}/>
                         </div>
                     </div>
 
