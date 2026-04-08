@@ -55,7 +55,7 @@ function DayGrid( { weather, setCurrentWeather, maxFutureWeatherDays, maxPastWea
     return (
         <>
             {/* THE DATE BOX ITSELF CONTAINING SUBINFO AND IF ACTIVE (CURRRENT DAY), OTHER MONTH IF SPACER FROM PRIOR/NEXT MONTH BLEEDING OVER TO THIS ONE */}
-            <div className = {`day-grid-wrapper ${isToday ? "active" : ""} ${isOtherMonth ? "other-month" : ""}`} onClick = {()=>{setSelectedCalendarDate(new Date(year, month, dayOfMonth)); setSelectedCalendarDateWeather(generalWeather);}}>
+            <div className = {`day-grid-wrapper ${isToday ? "active" : ""} ${isOtherMonth ? "other-month" : ""}`} onClick = {()=>{setSelectedCalendarDate(new Date(year, month, dayOfMonth)); setSelectedCalendarDateWeather(weather?.hourly || null);}}>
                 {/* TOP LEFT WEATHER OF THE CURRENT DAY */}
                 {isWithinWeather && <text className = "day-grid-weather-header">{generalWeather}</text>}
                 {/* TOP RIGHT DAY NUMBER IN THE BOX */}

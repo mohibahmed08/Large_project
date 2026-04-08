@@ -1,0 +1,161 @@
+/* ANIMATION: grow from center */
+@keyframes growFromCenter {
+  0% {
+    transform: translate(-50%, -50%) scale(0.8);
+    opacity: 0;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+}
+
+/* WRAPPER TO CENTER THE CARD WITH SOFT GLASS EFFECT */
+.enlarged-date-wrapper {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 50vw;
+  height: 85vh;
+  background: rgba(30, 30, 47, 0.45); /* semi-transparent for glass */
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  padding: 0 15px 15px 15px;
+  font-family: 'Inter', sans-serif;
+  color: #f9fafb;
+  z-index: 100;
+  overflow-y: auto;
+  
+  /* ANIMATION */
+  animation: growFromCenter 0.3s ease forwards; 
+}
+
+/* Hover / subtle pop effect */
+.enlarged-date-wrapper:hover {
+  transform: translate(-50%, -50%) scale(1.03);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+
+/* DATE TITLE AT THE TOP */
+.enlarged-date-top-title {
+  font-size: 1.8rem;
+  font-weight: 700;
+  text-align: center;
+  border-bottom: 1px solid rgba(255,255,255,0.15);
+  padding-bottom: 0;
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+
+.enlarged-date-top-title-text{
+    margin: 25px 0 15px 0;
+    font-size: 1.4em;
+}
+
+/*/////////////////////////////////////////////////////////////////////////////////////*/
+
+
+/* HOURLY WEATHER WRAPPER */
+.enlarged-date-hourly-weather-wrapper {
+  display: flex;
+  flex-direction: row;
+  gap: 16px;
+  overflow-x: auto;        /* horizontal scroll */
+  overflow-y: hidden;      /* prevent vertical scroll */
+  padding: 0 16px 25px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  height: 200px;          
+  align-items: stretch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(107,114,128,0.5) transparent;
+  cursor:default;
+}
+
+/* Webkit scrollbars */
+.enlarged-date-hourly-weather-wrapper::-webkit-scrollbar {
+  height: 8px;
+}
+.enlarged-date-hourly-weather-wrapper::-webkit-scrollbar-thumb {
+  background: rgba(107,114,128,0.5);
+  border-radius: 4px;
+}
+
+/* EACH HOUR ITEM */
+.hourly-item {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-around;
+  min-width: 80px;
+  height: 100%;                 /* fill wrapper height */
+  background: rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 0.5em;
+  box-sizing: border-box;
+  transition: background 0.2s ease;
+  overflow: hidden;             /* prevent inner content overflow */
+}
+
+/* HOVER: only scale inner content, not the wrapper */
+.hourly-item:hover {
+  background: rgba(255,255,255,0.15);
+}
+
+.hourly-item.active{
+  border: 5px solid #64b5f6;
+}
+
+/* CONTENT INSIDE ITEM */
+.hourly-time,
+.hourly-icon,
+.hourly-temp {
+  transition: transform 0.2s ease;
+}
+
+/* SCALE CONTENT ON HOVER */
+.hourly-item:hover .hourly-time,
+.hourly-item:hover .hourly-icon,
+.hourly-item:hover .hourly-temp {
+  transform: scale(1.1);       /* only inner content scales */
+  transform-origin: center;    /* scale from center */
+}
+
+/* DEFAULT CONTENT SIZES */
+.hourly-time {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.hourly-icon {
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.hourly-temp {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/*/////////////////////////////////////////////////////////////////////////////*/
+
+.enlarged-date-top-title {
+  font-size: 1.8rem;             /* main title size */
+  font-weight: 700;              /* bold */
+  text-align: center;            /* horizontally center text */
+  color: #f9fafb;                /* light color */
+  letter-spacing: 0.5px;         /* subtle spacing for elegance */
+  margin: 0;                     /* remove default margins */
+  padding-bottom: 12px;          /* spacing below title */
+  border-bottom: 1px solid rgba(255,255,255,0.15); /* subtle separator */
+  line-height: 1.2;              /* tighter vertical spacing */
+  user-select: none;             /* prevent text selection */
+  text-shadow: 0 1px 3px rgba(0,0,0,0.4); /* slight shadow for depth */
+}
