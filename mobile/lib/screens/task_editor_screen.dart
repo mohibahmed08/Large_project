@@ -32,6 +32,7 @@ class TaskEditorScreen extends StatefulWidget {
     required this.initialLocation,
     required this.initialColor,
     required this.initialGroup,
+    required this.existingGroups,
     required this.initialStartDate,
     required this.initialEndDate,
     required this.initialReminderEnabled,
@@ -44,6 +45,7 @@ class TaskEditorScreen extends StatefulWidget {
   final String initialLocation;
   final String initialColor;
   final String initialGroup;
+  final List<String> existingGroups;
   final DateTime initialStartDate;
   final DateTime initialEndDate;
   final bool initialReminderEnabled;
@@ -59,6 +61,7 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
   late final TextEditingController _descriptionController;
   late final TextEditingController _locationController;
   late final TextEditingController _groupController;
+  late final TextEditingController _customColorController;
   late DateTime _startDate;
   late DateTime _endDate;
   late bool _reminderEnabled;
@@ -73,6 +76,14 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
     '#A855F7',
     '#EF4444',
     '#14B8A6',
+    '#0EA5E9',
+    '#F43F5E',
+    '#84CC16',
+    '#FB7185',
+    '#FACC15',
+    '#2DD4BF',
+    '#818CF8',
+    '#F59E0B',
   ];
   late String _selectedColor;
 
@@ -93,6 +104,7 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
     _selectedColor = _colorOptions.contains(widget.initialColor.toUpperCase())
         ? widget.initialColor.toUpperCase()
         : '';
+    _customColorController = TextEditingController(text: _selectedColor);
   }
 
   @override
@@ -101,6 +113,7 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
     _descriptionController.dispose();
     _locationController.dispose();
     _groupController.dispose();
+    _customColorController.dispose();
     super.dispose();
   }
 
@@ -142,6 +155,7 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
     final picked = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(current),
+      initialEntryMode: TimePickerEntryMode.input,
     );
 
     if (picked == null || !mounted) {
@@ -184,13 +198,15 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
       return;
     }
 
+    final normalizedColor = _normalizeColor(_customColorController.text);
+
     Navigator.pop(
       context,
       TaskEditorResult(
         title: title,
         description: _descriptionController.text.trim(),
         location: _locationController.text.trim(),
-        color: _selectedColor,
+        color: normalizedColor,
         group: _groupController.text.trim(),
         startDate: _startDate,
         endDate: _endDate,
@@ -241,6 +257,14 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
     return Color(normalized.length == 6 ? 0xFF000000 | value : value);
   }
 
+  String _normalizeColor(String value) {
+    final normalized = value.trim().toUpperCase();
+    if (RegExp(r'^#[0-9A-F]{6}([0-9A-F]{2})?$').hasMatch(normalized)) {
+      return normalized;
+    }
+    return '';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -278,6 +302,31 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
               ),
               textInputAction: TextInputAction.next,
             ),
+            if (widget.existingGroups.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: widget.existingGroups.contains(_groupController.text)
+                    ? _groupController.text
+                    : null,
+                decoration: const InputDecoration(
+                  labelText: 'Use an existing group',
+                ),
+                items: widget.existingGroups
+                    .map(
+                      (group) => DropdownMenuItem<String>(
+                        value: group,
+                        child: Text(group),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _groupController.text = value;
+                  });
+                },
+              ),
+            ],
             const SizedBox(height: 20),
             Text(
               'Task color',
@@ -294,6 +343,7 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
                   onTap: () {
                     setState(() {
                       _selectedColor = option;
+                      _customColorController.text = option;
                     });
                   },
                   child: AnimatedContainer(
@@ -404,6 +454,19 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
                 },
               ),
             ],
+            const SizedBox(height: 12),
+            TextField(
+              controller: _customColorController,
+              decoration: const InputDecoration(
+                labelText: 'Custom hex color',
+                hintText: '#60A5FA',
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _selectedColor = value.trim().toUpperCase();
+                });
+              },
+            ),
             const SizedBox(height: 20),
             FilledButton(
               onPressed: _save,

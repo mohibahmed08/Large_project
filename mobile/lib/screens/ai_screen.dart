@@ -233,7 +233,9 @@ class _AIScreenState extends State<AIScreen> {
         }
         setState(() {
           _locationNotice =
-              'Location permission is off, so the AI is using time and calendar context only.';
+              permission == LocationPermission.deniedForever
+                  ? 'Location permission is blocked for Calendar++. Open Settings to enable nearby suggestions.'
+                  : 'Location permission is off, so the AI is using time and calendar context only.';
         });
         return;
       }
@@ -299,14 +301,6 @@ class _AIScreenState extends State<AIScreen> {
                             'Schedule ideas with context',
                             style: Theme.of(context).textTheme.titleLarge,
                           ),
-                          const SizedBox(height: 6),
-                          const Text(
-                            'Use the same assistant style as the web sidebar to ask questions or generate suggestions for the selected day.',
-                            style: TextStyle(
-                              color: AppTheme.textMuted,
-                              height: 1.4,
-                            ),
-                          ),
                           const SizedBox(height: 14),
                           Row(
                             children: [
@@ -321,8 +315,17 @@ class _AIScreenState extends State<AIScreen> {
                                 ),
                               ),
                               IconButton(
-                                onPressed:
-                                    _isFetchingLocation ? null : _refreshLocation,
+                                onPressed: _isFetchingLocation
+                                    ? null
+                                    : () async {
+                                        if ((_locationNotice ?? '').contains(
+                                          'Open Settings',
+                                        )) {
+                                          await Geolocator.openAppSettings();
+                                        } else {
+                                          await _refreshLocation();
+                                        }
+                                      },
                                 icon: _isFetchingLocation
                                     ? const SizedBox(
                                         width: 16,
@@ -331,8 +334,18 @@ class _AIScreenState extends State<AIScreen> {
                                           strokeWidth: 2,
                                         ),
                                       )
-                                    : const Icon(Icons.my_location),
-                                tooltip: 'Refresh location',
+                                    : Icon(
+                                        (_locationNotice ?? '').contains(
+                                              'Open Settings',
+                                            )
+                                            ? Icons.settings_outlined
+                                            : Icons.my_location,
+                                      ),
+                                tooltip: (_locationNotice ?? '').contains(
+                                      'Open Settings',
+                                    )
+                                    ? 'Open Settings'
+                                    : 'Refresh location',
                               ),
                             ],
                           ),

@@ -1320,10 +1320,35 @@ async function resolveAssistantTaskReference(db, userId, taskReference)
 
     if(matches.length > 1)
     {
-        throw new Error('Multiple tasks matched that reference. Search first and then use the exact id from the tool results.');
+        throw new Error('Multiple tasks matched that reference. Search first or mention the title plus a date/group so I can pick the right one.');
     }
 
-    throw new Error('Task not found. Search first and then use the exact id from the tool results.');
+    const broadRegex = new RegExp(escapeRegexLiteral(trimmedReference), 'i');
+    const broadMatches = await db.collection('tasks')
+        .find({
+            user_id: userObjectId,
+            $or: [
+                { title: broadRegex },
+                { description: broadRegex },
+                { location: broadRegex },
+                { group: broadRegex },
+            ],
+        })
+        .sort({ dueDate: 1 })
+        .limit(5)
+        .toArray();
+
+    if(broadMatches.length === 1)
+    {
+        return broadMatches[0];
+    }
+
+    if(broadMatches.length > 1)
+    {
+        throw new Error('Multiple tasks matched that reference. Search first or mention the title plus a date/group so I can pick the right one.');
+    }
+
+    throw new Error('Task not found. Search first or mention the exact title plus a date/group so I can identify it.');
 }
 
 async function getUserCalendarSubscriptions(db, userId)
@@ -1510,11 +1535,11 @@ function buildCalendarAssistantTools()
         {
             type: 'function',
             name: 'update_calendar_task',
-            description: 'Update an existing calendar task or event for the current user. Search or list first if you are not already holding the exact id.',
+            description: 'Update an existing calendar task or event for the current user. Prefer an exact id from tool results, but a unique title or other unique reference can also work.',
             parameters: {
                 type: 'object',
                 properties: {
-                    taskId: { type: 'string', description: 'The exact task id from tool results. If uncertain, search first.' },
+                    taskId: { type: 'string', description: 'Prefer the exact task id from tool results, but a unique title or reference can also work. If uncertain, search first.' },
                     title: { type: 'string' },
                     description: { type: 'string' },
                     location: { type: 'string' },
@@ -1562,11 +1587,11 @@ function buildCalendarAssistantTools()
         {
             type: 'function',
             name: 'delete_calendar_task',
-            description: 'Delete an existing calendar task or event for the current user. Search or list first if you are not already holding the exact id.',
+            description: 'Delete an existing calendar task or event for the current user. Prefer an exact id from tool results, but a unique title or other unique reference can also work.',
             parameters: {
                 type: 'object',
                 properties: {
-                    taskId: { type: 'string', description: 'The exact task id from tool results. If uncertain, search first.' },
+                    taskId: { type: 'string', description: 'Prefer the exact task id from tool results, but a unique title or reference can also work. If uncertain, search first.' },
                 },
                 required: ['taskId'],
                 additionalProperties: false,
@@ -3100,7 +3125,7 @@ Suggest practical, realistic calendar events that complement the existing tasks 
                  Questions about store, restaurant, venue, or campus building hours are not calendar-edit requests. Use web search for those unless the user clearly refers to one of their scheduled items.
                  When the user asks to create, edit, move, reschedule, complete, or delete calendar tasks, use the available calendar tools.
                  When the user asks for repeating tasks like "every Monday and Wednesday until June", use the recurring calendar tool instead of many one-off creates.
-                 Think carefully before editing or deleting. If the exact task id is not already known from tool results, search or list first and then copy the id exactly. Do not invent or paraphrase task ids.
+                 Think carefully before editing or deleting. If the exact task id is not already known from tool results, search or list first. You may use an exact id, or a unique title/reference if it clearly identifies a single task. Do not invent task ids.
                  You can also enable email reminders when the user asks for a reminder before a task.
                  Respect task color or grouping requests when the user mentions them.
                  Treat times mentioned by the user as local to the user unless they say otherwise.
@@ -3273,7 +3298,7 @@ Help the user manage their schedule, suggest events, answer questions about thei
                  Questions about store, restaurant, venue, or campus building hours are not calendar-edit requests. Use web search for those unless the user clearly refers to one of their scheduled items.
                  When the user asks to create, edit, move, reschedule, complete, or delete calendar tasks, use the available calendar tools.
                  When the user asks for repeating tasks like "every Monday and Wednesday until June", use the recurring calendar tool instead of many one-off creates.
-                 Think carefully before editing or deleting. If the exact task id is not already known from tool results, search or list first and then copy the id exactly. Do not invent or paraphrase task ids.
+                 Think carefully before editing or deleting. If the exact task id is not already known from tool results, search or list first. You may use an exact id, or a unique title/reference if it clearly identifies a single task. Do not invent task ids.
                  You can also enable email reminders when the user asks for a reminder before a task.
                  Respect task color or grouping requests when the user mentions them.
                  Treat times mentioned by the user as local to the user unless they say otherwise.

@@ -13,6 +13,7 @@ import '../theme/app_theme.dart';
 import '../widgets/day_grid.dart';
 import 'ai_screen.dart';
 import 'login_screen.dart';
+import 'settings_screen.dart';
 import 'task_editor_screen.dart';
 
 class CalendarScreen extends StatefulWidget {
@@ -40,6 +41,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
   bool _isLoading = true;
   bool _isSearching = false;
   int _selectedIndex = 0;
+
+  List<String> get _existingGroups {
+    final counts = <String, int>{};
+    for (final task in _tasks) {
+      final group = task.group.trim();
+      if (group.isEmpty) continue;
+      counts.update(group, (value) => value + 1, ifAbsent: () => 1);
+    }
+    final entries = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return entries.map((entry) => entry.key).toList();
+  }
+
+  String get _defaultGroupForNewTask =>
+      _existingGroups.isNotEmpty ? _existingGroups.first : '';
 
   @override
   void initState() {
@@ -103,7 +119,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       final end = _formatDate(today.add(const Duration(days: 10)));
       final response = await http.get(
         Uri.parse(
-          'https://api.open-meteo.com/v1/forecast?latitude=28.5383&longitude=-81.3792&start_date=$start&end_date=$end&hourly=weathercode',
+          'https://api.open-meteo.com/v1/forecast?latitude=28.5383&longitude=-81.3792&start_date=$start&end_date=$end&hourly=weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit',
         ),
       );
 
@@ -175,7 +191,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
           initialDescription: task?.description ?? '',
           initialLocation: task?.location ?? '',
           initialColor: task?.color ?? '',
-          initialGroup: task?.group ?? '',
+          initialGroup: task?.group ?? _defaultGroupForNewTask,
+          existingGroups: _existingGroups,
           initialStartDate: baseDate,
           initialEndDate: initialEndDate,
           initialReminderEnabled: task?.reminderEnabled ?? false,
@@ -465,6 +482,22 @@ class _CalendarScreenState extends State<CalendarScreen> {
     await _loadMonth();
   }
 
+  Future<void> _openSettings() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SettingsScreen(
+          initialSession: _session,
+          onSessionUpdated: (session) {
+            _session = session;
+          },
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(() {});
+  }
+
   void _logout() {
     Navigator.pushAndRemoveUntil(
       context,
@@ -554,7 +587,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   List<CalendarTask> _tasksForDay(int day) {
     final date = DateTime(_currentDate.year, _currentDate.month, day);
-    return _tasks
+    return _visibleTasks
         .where((task) => DateUtils.isSameDay(task.startDate, date))
         .toList()
       ..sort(
@@ -637,6 +670,72 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  Map<String, dynamic>? get _selectedDayWeather {
+    final daily = _weatherData?['daily'];
+    if (daily is! Map<String, dynamic>) {
+      return null;
+    }
+
+    final target = _formatDate(_selectedDate);
+    final times = (daily['time'] as List?)?.map((item) => '$item').toList() ?? [];
+    final index = times.indexOf(target);
+    if (index < 0) return null;
+
+    int? readInt(String key) =>
+        ((daily[key] as List?)?.elementAt(index) as num?)?.toInt();
+    num? readNum(String key) => (daily[key] as List?)?.elementAt(index) as num?;
+
+    return {
+      'code': readInt('weathercode'),
+      'max': readNum('temperature_2m_max'),
+      'min': readNum('temperature_2m_min'),
+    };
+  }
+
+  String _weatherLabel(int? code) {
+    switch (code) {
+      case 0:
+        return 'Clear';
+      case 1:
+        return 'Mostly clear';
+      case 2:
+        return 'Partly cloudy';
+      case 3:
+        return 'Overcast';
+      case 61:
+      case 63:
+      case 65:
+        return 'Rain';
+      case 71:
+      case 73:
+      case 75:
+        return 'Snow';
+      default:
+        return 'Weather';
+    }
+  }
+
+  String _weatherGlyph(int? code) {
+    switch (code) {
+      case 0:
+      case 1:
+        return '☀';
+      case 2:
+      case 3:
+        return '☁';
+      case 61:
+      case 63:
+      case 65:
+        return '☂';
+      case 71:
+      case 73:
+      case 75:
+        return '❄';
+      default:
+        return '•';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final daysInMonth =
@@ -651,6 +750,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
           'Calendar - ${_session.firstName.isEmpty ? _session.userId : _session.firstName}',
         ),
         actions: [
+          IconButton(
+            onPressed: _openSettings,
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Settings',
+          ),
           IconButton(
             onPressed: _openImportDialog,
             icon: const Icon(Icons.link),
@@ -836,6 +940,42 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ),
                     ),
                   ),
+                  if (_selectedDayWeather != null) ...[
+                    const SizedBox(height: 16),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            Text(
+                              _weatherGlyph(_selectedDayWeather!['code'] as int?),
+                              style: Theme.of(context).textTheme.headlineMedium,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Weather for ${_selectedDate.month}/${_selectedDate.day}',
+                                    style: Theme.of(context).textTheme.titleMedium,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${_weatherLabel(_selectedDayWeather!['code'] as int?)} • High ${((_selectedDayWeather!['max'] as num?)?.round() ?? 0)}° • Low ${((_selectedDayWeather!['min'] as num?)?.round() ?? 0)}°',
+                                    style: const TextStyle(
+                                      color: AppTheme.textMuted,
+                                      height: 1.35,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   Card(
                     child: Padding(
