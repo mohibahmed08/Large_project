@@ -181,16 +181,6 @@ function weatherCodeToLabel(code) {
     return 'Weather';
 }
 
-function weatherCodeBadge(code) {
-    if ([0, 1].includes(code)) return 'Sun';
-    if ([2, 3].includes(code)) return 'Cloud';
-    if ([45, 48].includes(code)) return 'Fog';
-    if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return 'Rain';
-    if ([71, 73, 75, 77, 85, 86].includes(code)) return 'Snow';
-    if ([95, 96, 99].includes(code)) return 'Storm';
-    return 'Now';
-}
-
 function weatherGlyph(code) {
     if ([0, 1].includes(code)) return '\u2600\uFE0F';
     if ([2, 3].includes(code)) return '\u26C5';
@@ -201,12 +191,12 @@ function weatherGlyph(code) {
     return '\u2022';
 }
 
-function dayWeatherRange(selectedDate) {
-    const start = new Date(selectedDate);
+function dayWeatherRange() {
+    const start = new Date();
     start.setHours(0, 0, 0, 0);
     start.setDate(start.getDate() - 7);
     const end = new Date(start);
-    end.setDate(end.getDate() + 21);
+    end.setDate(end.getDate() + 22);
     return {
         startDate: start.toISOString().slice(0, 10),
         endDate: end.toISOString().slice(0, 10),
@@ -240,6 +230,8 @@ function Calendar({
     const containerRef = useRef(null);
     const lastMonthRef = useRef();
     const weatherStripRef = useRef(null);
+    const weatherCacheRef = useRef(new Map());
+    const weatherCoordsRef = useRef(null);
 
     const [calendarTasks, setCalendarTasks] = useState([]);
     const [calendarReloadTick, setCalendarReloadTick] = useState(0);
@@ -457,7 +449,7 @@ function Calendar({
         }
 
         let ignore = false;
-        const { startDate, endDate } = dayWeatherRange(selectedDate);
+        const { startDate, endDate } = dayWeatherRange();
 
         const loadWeather = async () => {
             if (!navigator.geolocation) {
@@ -472,13 +464,33 @@ function Calendar({
             setDayModalState((prev) => ({ ...prev, weatherLoading: true }));
 
             try {
-                const coords = await new Promise((resolve, reject) => {
+                const coords = weatherCoordsRef.current || await new Promise((resolve, reject) => {
                     navigator.geolocation.getCurrentPosition(
                         ({ coords: nextCoords }) => resolve(nextCoords),
                         reject,
                         { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
                     );
                 });
+                weatherCoordsRef.current = coords;
+
+                const cacheKey = [
+                    Number(coords.latitude).toFixed(2),
+                    Number(coords.longitude).toFixed(2),
+                    startDate,
+                    endDate,
+                ].join('|');
+
+                if (weatherCacheRef.current.has(cacheKey)) {
+                    const cachedDays = weatherCacheRef.current.get(cacheKey);
+                    if (!ignore) {
+                        setDayModalState((prev) => ({
+                            ...prev,
+                            weather: cachedDays,
+                            weatherLoading: false,
+                        }));
+                    }
+                    return;
+                }
 
                 const response = await fetch(
                     `https://api.open-meteo.com/v1/forecast?latitude=${coords.latitude}&longitude=${coords.longitude}&daily=weathercode,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&start_date=${startDate}&end_date=${endDate}`
@@ -495,6 +507,7 @@ function Calendar({
                         max: data.daily.temperature_2m_max?.[index],
                         min: data.daily.temperature_2m_min?.[index],
                     }));
+                    weatherCacheRef.current.set(cacheKey, days);
                     setDayModalState((prev) => ({
                         ...prev,
                         weather: days,
@@ -572,8 +585,23 @@ function Calendar({
         }
 
         const strip = weatherStripRef.current;
-        const selectedIndex = dayModalState.weather.findIndex((entry) => entry.date === selectedDate.toISOString().slice(0, 10));
-        const targetIndex = selectedIndex > 0 ? selectedIndex - 1 : selectedIndex;
+        const selectedIsoDate = selectedDate.toISOString().slice(0, 10);
+        const selectedIndex = dayModalState.weather.findIndex((entry) => entry.date === selectedIsoDate);
+        let targetIndex = selectedIndex > 0 ? selectedIndex - 1 : selectedIndex;
+
+        if (targetIndex < 0) {
+            const firstDate = dayModalState.weather[0]?.date || '';
+            const lastDate = dayModalState.weather[dayModalState.weather.length - 1]?.date || '';
+            if (selectedIsoDate > lastDate) {
+                targetIndex = Math.max(0, dayModalState.weather.length - 2);
+            } else {
+                targetIndex = 0;
+            }
+            if (selectedIsoDate < firstDate) {
+                targetIndex = 0;
+            }
+        }
+
         const targetCard = strip.children[targetIndex];
 
         if (!targetCard) {
