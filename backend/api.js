@@ -564,6 +564,35 @@ function endOfDayInZoneFromIcsDate(value, options = {})
     }, { zone }).toUTC().toJSDate();
 }
 
+function isLegacyDateOnlyImportedTask(dueDate, endDate, options = {})
+{
+    if(!(dueDate instanceof Date) || !Number.isFinite(dueDate.getTime()))
+    {
+        return false;
+    }
+
+    const zone = normalizeTimeZone(options.timeZone) || 'America/New_York';
+    const dueDateInZone = DateTime.fromJSDate(dueDate, { zone });
+
+    if(dueDateInZone.hour !== 0 || dueDateInZone.minute !== 0 || dueDateInZone.second !== 0)
+    {
+        return false;
+    }
+
+    if(!endDate)
+    {
+        return true;
+    }
+
+    if(!(endDate instanceof Date) || !Number.isFinite(endDate.getTime()))
+    {
+        return false;
+    }
+
+    const endDateInZone = DateTime.fromJSDate(endDate, { zone });
+    return endDateInZone.diff(dueDateInZone, 'hours').hours === 24;
+}
+
 function buildIcsTaskSignature(entry, options = {})
 {
     let dueDate = entry?.start ? new Date(entry.start) : null;
@@ -571,8 +600,10 @@ function buildIcsTaskSignature(entry, options = {})
 
     const shouldUseDefaultDueTime =
         dueDate &&
-        !entry?.end &&
-        (isDateOnlyIcsEntry(entry) || isExactMidnight(dueDate));
+        (
+            isDateOnlyIcsEntry(entry) ||
+            (!entry?.end && isExactMidnight(dueDate))
+        );
 
     if(shouldUseDefaultDueTime)
     {
@@ -662,8 +693,11 @@ function normalizeLegacyIcsTaskForResponse(task, options = {})
     const dueDate = task.dueDate instanceof Date ? task.dueDate : new Date(task.dueDate);
     const endDate = task?.endDate ? (task.endDate instanceof Date ? task.endDate : new Date(task.endDate)) : null;
     const shouldUseDefaultDueTime =
-        isExactMidnight(dueDate) &&
-        (!endDate || endDate.getTime() === dueDate.getTime());
+        isLegacyDateOnlyImportedTask(dueDate, endDate, options) ||
+        (
+            isExactMidnight(dueDate) &&
+            (!endDate || endDate.getTime() === dueDate.getTime())
+        );
 
     if(!shouldUseDefaultDueTime)
     {
