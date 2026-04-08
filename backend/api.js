@@ -1092,6 +1092,60 @@ function safeObjectId(value, fieldName = 'id')
     }
 }
 
+function escapeRegexLiteral(text)
+{
+    return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function resolveAssistantTaskReference(db, userId, taskReference)
+{
+    const trimmedReference = String(taskReference || '').trim();
+    if(!trimmedReference)
+    {
+        throw new Error('taskId is required');
+    }
+
+    const userObjectId = new ObjectId(userId);
+
+    if(ObjectId.isValid(trimmedReference))
+    {
+        const byId = await db.collection('tasks').findOne({
+            _id: new ObjectId(trimmedReference),
+            user_id: userObjectId,
+        });
+        if(byId)
+        {
+            return byId;
+        }
+    }
+
+    const exactTitleRegex = new RegExp(`^${escapeRegexLiteral(trimmedReference)}$`, 'i');
+    const matches = await db.collection('tasks')
+        .find({
+            user_id: userObjectId,
+            $or: [
+                { title: exactTitleRegex },
+                { externalEventId: trimmedReference },
+                { externalUid: trimmedReference },
+            ],
+        })
+        .sort({ dueDate: 1 })
+        .limit(3)
+        .toArray();
+
+    if(matches.length === 1)
+    {
+        return matches[0];
+    }
+
+    if(matches.length > 1)
+    {
+        throw new Error('Multiple tasks matched that reference. Search first and then use the exact id from the tool results.');
+    }
+
+    throw new Error('Task not found. Search first and then use the exact id from the tool results.');
+}
+
 async function getUserCalendarSubscriptions(db, userId)
 {
     const user = await db.collection('users').findOne(
@@ -1272,11 +1326,11 @@ function buildCalendarAssistantTools()
         {
             type: 'function',
             name: 'update_calendar_task',
-            description: 'Update an existing calendar task or event for the current user.',
+            description: 'Update an existing calendar task or event for the current user. Search or list first if you are not already holding the exact id.',
             parameters: {
                 type: 'object',
                 properties: {
-                    taskId: { type: 'string', description: 'The task id to update.' },
+                    taskId: { type: 'string', description: 'The exact task id from tool results. If uncertain, search first.' },
                     title: { type: 'string' },
                     description: { type: 'string' },
                     location: { type: 'string' },
@@ -1293,11 +1347,11 @@ function buildCalendarAssistantTools()
         {
             type: 'function',
             name: 'delete_calendar_task',
-            description: 'Delete a calendar task or event for the current user.',
+            description: 'Delete an existing calendar task or event for the current user. Search or list first if you are not already holding the exact id.',
             parameters: {
                 type: 'object',
                 properties: {
-                    taskId: { type: 'string', description: 'The task id to delete.' },
+                    taskId: { type: 'string', description: 'The exact task id from tool results. If uncertain, search first.' },
                 },
                 required: ['taskId'],
                 additionalProperties: false,
@@ -1425,16 +1479,9 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
 
     if(toolName === 'update_calendar_task')
     {
-        const taskId = safeObjectId(args.taskId, 'taskId');
-        const existing = await db.collection('tasks').findOne({
-            _id: taskId,
-            user_id: new ObjectId(userId),
-        });
+        const existing = await resolveAssistantTaskReference(db, userId, args.taskId);
+        const taskId = existing._id;
 
-        if(!existing)
-        {
-            throw new Error('Task not found');
-        }
 
         const updates = {};
         if(args.title !== undefined) updates.title = String(args.title || '').trim();
@@ -1496,16 +1543,8 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
 
     if(toolName === 'delete_calendar_task')
     {
-        const taskId = safeObjectId(args.taskId, 'taskId');
-        const existing = await db.collection('tasks').findOne({
-            _id: taskId,
-            user_id: new ObjectId(userId),
-        });
-
-        if(!existing)
-        {
-            throw new Error('Task not found');
-        }
+        const existing = await resolveAssistantTaskReference(db, userId, args.taskId);
+        const taskId = existing._id;
 
         await db.collection('tasks').deleteOne({
             _id: taskId,
@@ -2795,6 +2834,7 @@ Suggest practical, realistic calendar events that complement the existing tasks 
                  You may use live web search when the user asks about current, nearby, or time-sensitive things.
                  Do not claim you lack real-time access if web search would help; use it instead.
                  When the user asks to create, edit, move, reschedule, complete, or delete calendar tasks, use the available calendar tools.
+                 Think carefully before editing or deleting. If the exact task id is not already known from tool results, search or list first and then copy the id exactly. Do not invent or paraphrase task ids.
                  You can also enable email reminders when the user asks for a reminder before a task.
                  Treat times mentioned by the user as local to the user unless they say otherwise.
                  When calling calendar tools, provide ISO datetimes. If you only know a local wall-clock time, include the user's local offset if possible.
@@ -2963,6 +3003,7 @@ Help the user manage their schedule, suggest events, answer questions about thei
                  You may use live web search when the user asks about current, nearby, or time-sensitive things.
                  Do not claim you lack real-time access if web search would help; use it instead.
                  When the user asks to create, edit, move, reschedule, complete, or delete calendar tasks, use the available calendar tools.
+                 Think carefully before editing or deleting. If the exact task id is not already known from tool results, search or list first and then copy the id exactly. Do not invent or paraphrase task ids.
                  You can also enable email reminders when the user asks for a reminder before a task.
                  Treat times mentioned by the user as local to the user unless they say otherwise.
                  When calling calendar tools, provide ISO datetimes. If you only know a local wall-clock time, include the user's local offset if possible.
