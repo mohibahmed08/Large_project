@@ -22,7 +22,7 @@ import UpArrow from './icons/arrow-big-up.svg';
 import DownArrow from './icons/arrow-big-down.svg';
 
 //MAIN EXPORTED FUNCTION
-function Calendar({singleMonth, setBackground}){
+function Calendar({singleMonth, setBackground, setSelectedCalendarDate, setSelectedCalendarDateWeather}){
 
     //GENERAL DATE OBJECT
     const date = new Date();
@@ -171,7 +171,7 @@ function Calendar({singleMonth, setBackground}){
             {singleMonth ? (
                 //SINGLE MONTH DOESN'T NEED SCROLLING THEREFORE DON'T USE IT
                 <div className="calendar-month" >
-                    <CalendarMonth monthsFromNow = {currentMonthIndex} setBackgroundWeather = {setBackgroundWeather} singleMonth = {singleMonth}/>
+                    <CalendarMonth monthsFromNow = {currentMonthIndex} setBackgroundWeather = {setBackgroundWeather} singleMonth = {singleMonth} setSelectedCalendarDate = {setSelectedCalendarDate} setSelectedCalendarDateWeather = {setSelectedCalendarDateWeather}/>
                 </div>
             ) : (
                 //SCROLL CONTAINER FOR THE MONTHS TO COMPUTE CURRENT MONTH HEADER
@@ -180,7 +180,7 @@ function Calendar({singleMonth, setBackground}){
                     {/* SHOW THE CALENDARS FOR FIRST 5 MONTHS */}
                     {Array.from({ length: renderedMonths }, (_, i) => (
                         <div key={i} data-index={i} className="calendar-month" >
-                            <CalendarMonth monthsFromNow = {i} setBackgroundWeather = {setBackgroundWeather} singleMonth = {singleMonth} ref={i === renderedMonths - 1 ? lastMonthRef : null}/>
+                            <CalendarMonth monthsFromNow = {i} setBackgroundWeather = {setBackgroundWeather} singleMonth = {singleMonth} setSelectedCalendarDate = {setSelectedCalendarDate} setSelectedCalendarDateWeather = {setSelectedCalendarDateWeather} ref={i === renderedMonths - 1 ? lastMonthRef : null}/>
                         </div>
                     ))}
                 </div>

@@ -8,7 +8,7 @@ import Weather from './Weather.jsx';
 import { useState, useEffect } from 'react';
 
 //MAIN CONSTRUCTOR FOR CALENDAR MONTH
-function CalendarMonth({monthsFromNow, setBackgroundWeather, singleMonth}){
+function CalendarMonth({monthsFromNow, setBackgroundWeather, singleMonth, setSelectedCalendarDate, setSelectedCalendarDateWeather}){
 
     //HOLDS THE CURRENT WEATHER STATE FOR EXTENDED TIME
     const [weather, setWeather] = useState(null);
@@ -58,7 +58,7 @@ function CalendarMonth({monthsFromNow, setBackgroundWeather, singleMonth}){
         //CREATE AN ARRAY OF DAYS IN MONTH LENGTH
         Array.from( {length : daysInMonth}, (_, i) => 
             //THEN TAGS TO DAY GRID SUBCLASS WITH ITERATIVE INFO
-            <DayGrid key = {i} setCurrentWeather = {setCurrentWeather} weather = {weather} maxFutureWeatherDays = {maxFutureWeatherDays} maxPastWeatherDays = {maxPastWeatherDays} dayOfMonth = {i + 1} year = {year} month = {date.getMonth() + monthsFromNow}/>
+            <DayGrid key = {i} setCurrentWeather = {setCurrentWeather} weather = {weather} maxFutureWeatherDays = {maxFutureWeatherDays} maxPastWeatherDays = {maxPastWeatherDays} dayOfMonth = {i + 1} year = {targetDate.getFullYear()} month = {targetDate.getMonth()} setSelectedCalendarDate = {setSelectedCalendarDate} setSelectedCalendarDateWeather = {setSelectedCalendarDateWeather} />
         );
 
     // EMPTY DAYS (OFFSET THAT REPLACES INDENTATION)
@@ -70,7 +70,7 @@ function CalendarMonth({monthsFromNow, setBackgroundWeather, singleMonth}){
         const day = daysInPrevMonth - firstDay + i + 1;
         
         //RETURN A COPY OF LAST MONTHS PRIOR DAYS FILLING UP TO CURRENT NEW MONTH DAY (GRAYED OUT)
-        return (<DayGrid key={`prev-${i}`} setCurrentWeather={setCurrentWeather} weather={weather} maxFutureWeatherDays={maxFutureWeatherDays} maxPastWeatherDays={maxPastWeatherDays} dayOfMonth={day} year={year} month={date.getMonth() + monthsFromNow - 1} isOtherMonth={true}/>);
+        return (<DayGrid key={`prev-${i}`} setCurrentWeather={setCurrentWeather} weather={weather} maxFutureWeatherDays={maxFutureWeatherDays} maxPastWeatherDays={maxPastWeatherDays} dayOfMonth={day} year={targetDate.getFullYear()} month={targetDate.getMonth()} isOtherMonth={true} setSelectedCalendarDate = {setSelectedCalendarDate} setSelectedCalendarDateWeather = {setSelectedCalendarDateWeather}/>);
     
     }) : [];
 

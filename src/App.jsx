@@ -6,7 +6,6 @@ import { useState } from 'react';
 import Login from './login.jsx'
 
 import Calendar from './Calendar.jsx';
-import CreateEvent from './CreateEvent.jsx';
 import TaskList from './TaskList.jsx';
 import Settings from './Settings.jsx';
 
@@ -15,12 +14,12 @@ import leftOpenIcon from './icons/panel-left-open.svg';
 import leftCloseIcon from './icons/panel-left-close.svg';
 import rightOpenIcon from './icons/panel-right-open.svg';
 import rightCloseIcon from './icons/panel-right-close.svg';
+import EnlargedDate from './EnlargedDate.jsx';
 
 //OPTIONS FOR LEFT SIDEBAR
 const CALENDAR = 0;
-const EVENT = 1;
-const TASKS = 2;
-const SETTINGS = 3;
+const TASKLIST = 1;
+const SETTINGS = 2;
 
 //MAIN EXPORTED FUNCTION
 function App(){
@@ -34,6 +33,10 @@ function App(){
     //SIDEBAR STATES (True = open, False = closed)
     const [leftOpen, setLeftOpen] = useState(true);
     const [rightOpen, setRightOpen] = useState(true);
+
+    //SELECTED CALENDAR DATE FOR ENLARGED DATE (NULL MEANS NONE)
+    const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
+    const [selectedCalendarDateWeather, setSelectedCalendarDateWeather] = useState(null);
 
     // DATE STRINGS FOR SIDEBARS
     const currentDate = new Date();
@@ -92,10 +95,15 @@ function App(){
 
                                 <nav style={{display: 'flex', flexDirection: 'column', gap: '5px'}}>
                                     <button className={`nav-item ${selectedFocus === CALENDAR ? "active" : ""}`} onClick={()=>setSelectedFocus(CALENDAR)}><span className="nav-icon">📅</span> Calendar</button>
-                                    <button className={`nav-item ${selectedFocus === EVENT ? "active" : ""}`} onClick={()=>setSelectedFocus(EVENT)}><span className="nav-icon">✨</span> Event</button>
-                                    <button className={`nav-item ${selectedFocus === TASKS ? "active" : ""}`} onClick={()=>setSelectedFocus(TASKS)}><span className="nav-icon">✅</span> Tasks</button>
+                                    <button className={`nav-item ${selectedFocus === TASKLIST ? "active" : ""}`} onClick={()=>setSelectedFocus(TASKLIST)}><span className="nav-icon">✅</span> Tasks</button>
+                                    <button className={`nav-item`}><span className="nav-icon">⌛</span> Coming Soon</button>
                                     <hr style={{border: '0', borderTop: '1px solid #2c2c3e', margin: '10px 0'}} />
                                     <button className={`nav-item ${selectedFocus === SETTINGS ? "active" : ""}`} onClick={()=>setSelectedFocus(SETTINGS)}><span className="nav-icon">⚙️</span> Settings</button>
+                                    <hr style={{border: '0', borderTop: '1px solid #2c2c3e', margin: '10px 0'}} />
+                                    <h4 style={{margin: '20px 0 5px 5px'}}>{selectedCalendarDate != null ? "SELECTED (For Testing):" : ""}</h4>
+                                    <h4 style={{margin: '10px 0 5px 5px'}}>{selectedCalendarDate != null ? selectedCalendarDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) : ""}</h4>
+                                    <h4 style={{margin: '10px 0 5px 5px'}}>{selectedCalendarDateWeather != null ? selectedCalendarDateWeather : ""}</h4>
+
                                 </nav>
 
                                 {/* PROFILE ADDED HERE - margin-top: auto pushes it to the bottom */}
@@ -117,10 +125,10 @@ function App(){
                     {/* CENTER CONTENT */}
                     <div className="center-content">
                         {/* CHANGE OUT THE CENTER CONTENT FOR CURRENT SIDEBAR STATE */}
-                        {selectedFocus == CALENDAR && <Calendar singleMonth = {false} setBackground = {setBackground}/>}
-                        {selectedFocus == EVENT && <CreateEvent></CreateEvent>}
-                        {selectedFocus == TASKS && <TaskList></TaskList>}
-                        {selectedFocus == SETTINGS && <Settings></Settings>}
+                        {selectedFocus == CALENDAR && <Calendar singleMonth = {false} setBackground = {setBackground} setSelectedCalendarDate = {setSelectedCalendarDate} setSelectedCalendarDateWeather = {setSelectedCalendarDateWeather}/>}
+                        {selectedCalendarDate != null && <EnlargedDate setSelectedCalendarDate = {setSelectedCalendarDate} selectedCalendarDate = {selectedCalendarDate} selectedCalendarDateWeather = {selectedCalendarDateWeather}/>}
+                        {selectedFocus == TASKLIST && <TaskList/>}
+                        {selectedFocus == SETTINGS && <Settings/>}
                     </div>
 
                     {/* RIGHT SIDEBAR (AI) */}
