@@ -308,10 +308,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       }
       _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
     } finally {
-      if (!mounted) {
-        return;
-      }
-      if (showLoader) {
+      if (mounted && showLoader) {
         setState(() {
           _isLoading = false;
         });
@@ -399,12 +396,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
       }
       _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
     } finally {
-      if (!mounted) {
-        return;
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+        });
       }
-      setState(() {
-        _isSearching = false;
-      });
     }
   }
 
@@ -704,6 +700,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
     await SessionStorage.clearLiveActivity();
     await PushNotificationService.removeDeviceToken();
+    if (!mounted) {
+      return;
+    }
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -791,16 +790,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ..sort((a, b) => (a.startDate ?? _selectedDate).compareTo(b.startDate ?? _selectedDate));
   }
 
-  List<CalendarTask> _tasksForDay(int day) {
-    final date = DateTime(_currentDate.year, _currentDate.month, day);
-    return _visibleTasks
-        .where((task) => DateUtils.isSameDay(task.startDate, date))
-        .toList()
-      ..sort(
-        (a, b) => (a.startDate ?? date).compareTo(b.startDate ?? date),
-      );
-  }
-
   String _taskGroupLabel(CalendarTask task) {
     final explicitGroup = task.group.trim();
     if (explicitGroup.isNotEmpty) {
@@ -849,7 +838,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       if (parsed == null) {
         continue;
       }
-      counts.update(parsed.value, (value) => value + 1, ifAbsent: () => 1);
+      counts.update(parsed.toARGB32(), (value) => value + 1, ifAbsent: () => 1);
     }
 
     if (counts.isNotEmpty) {
@@ -1136,8 +1125,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 ),
                 ],
               ),
-            ),
-    );
+            );
   }
 
   Widget _buildDayTab() {

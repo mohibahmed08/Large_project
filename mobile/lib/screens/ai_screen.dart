@@ -124,12 +124,11 @@ class _AIScreenState extends State<AIScreen> {
       });
       _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
     } finally {
-      if (!mounted) {
-        return;
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+        });
       }
-      setState(() {
-        _isSending = false;
-      });
     }
   }
 
@@ -162,12 +161,11 @@ class _AIScreenState extends State<AIScreen> {
       }
       _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
     } finally {
-      if (!mounted) {
-        return;
+      if (mounted) {
+        setState(() {
+          _isLoadingSuggestions = false;
+        });
       }
-      setState(() {
-        _isLoadingSuggestions = false;
-      });
     }
   }
 
@@ -267,12 +265,11 @@ class _AIScreenState extends State<AIScreen> {
             'Could not read device location, so nearby suggestions may be generic.';
       });
     } finally {
-      if (!mounted) {
-        return;
+      if (mounted) {
+        setState(() {
+          _isFetchingLocation = false;
+        });
       }
-      setState(() {
-        _isFetchingLocation = false;
-      });
     }
   }
 

@@ -53,7 +53,7 @@ class LiveActivityService {
         'title':     title,
         'startTime': startTime.millisecondsSinceEpoch.toDouble(),
         if (endTime != null) 'endTime': endTime.millisecondsSinceEpoch.toDouble(),
-        if (location != null) 'location': location,
+        ...?(location == null ? null : {'location': location}),
       });
       if (kDebugMode) debugPrint('[LiveActivity] started: $id');
       return id;
@@ -79,7 +79,7 @@ class LiveActivityService {
         'title':       title,
         'startTime':   startTime.millisecondsSinceEpoch.toDouble(),
         if (endTime != null) 'endTime': endTime.millisecondsSinceEpoch.toDouble(),
-        if (location != null) 'location': location,
+        ...?(location == null ? null : {'location': location}),
         'isCompleted': isCompleted,
       });
     } on PlatformException catch (e) {

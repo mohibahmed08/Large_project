@@ -146,7 +146,7 @@ class DayGrid extends StatelessWidget {
     final previewColors = <Color>[];
     for (final task in tasks) {
       final color = _taskDisplayColor(task, groupColor);
-      if (previewColors.any((existing) => existing.value == color.value)) {
+      if (previewColors.any((existing) => existing.toARGB32() == color.toARGB32())) {
         continue;
       }
       previewColors.add(color);

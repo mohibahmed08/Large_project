@@ -89,8 +89,8 @@ class AiService {
         'localNow': _toOffsetIsoString(localNow),
         'timeZone': timeZone,
         'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
-        if (latitude != null) 'latitude': latitude,
-        if (longitude != null) 'longitude': longitude,
+        ...?(latitude == null ? null : {'latitude': latitude}),
+        ...?(longitude == null ? null : {'longitude': longitude}),
       },
     );
 
@@ -124,8 +124,8 @@ class AiService {
         'localNow': _toOffsetIsoString(localNow),
         'timeZone': timeZone,
         'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
-        if (latitude != null) 'latitude': latitude,
-        if (longitude != null) 'longitude': longitude,
+        ...?(latitude == null ? null : {'latitude': latitude}),
+        ...?(longitude == null ? null : {'longitude': longitude}),
       });
 
       final response = await client.send(request);
@@ -184,8 +184,8 @@ class AiService {
         'localNow': _toOffsetIsoString(localNow),
         'timeZone': timeZone,
         'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
-        if (latitude != null) 'latitude': latitude,
-        if (longitude != null) 'longitude': longitude,
+        ...?(latitude == null ? null : {'latitude': latitude}),
+        ...?(longitude == null ? null : {'longitude': longitude}),
         if (preferences != null && preferences.trim().isNotEmpty)
           'preferences': preferences.trim(),
       },

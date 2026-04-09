@@ -49,7 +49,7 @@ class PushNotificationService {
     _initialized = true;
 
     try {
-      await Firebase.app();
+      Firebase.app();
       _firebaseReady = true;
     } catch (e) {
       if (kDebugMode) {

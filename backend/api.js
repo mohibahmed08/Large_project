@@ -1,5 +1,6 @@
 const crypto     = require('crypto');
 const https      = require('https');
+const path       = require('path');
 const { ObjectId } = require('mongodb');
 const { DateTime, FixedOffsetZone, IANAZone } = require('luxon');
 const { verificationEmailHtml, emailChangeEmailHtml, reminderEmailHtml, passwordResetEmailHtml } = require('./emailTemplates');
@@ -2075,6 +2076,31 @@ Do not call any more tools in this response.`,
 exports.setApp = function(app, client)
 {
     const token = require('./createJWT.js');
+    const emailAssets = Object.freeze({
+        'verification-mascot.png': path.resolve(__dirname, '..', 'VerificationMascot.png'),
+        'reminder-mascot.png': path.resolve(__dirname, '..', 'ReminderMascot.png'),
+        'reset-password-mascot.png': path.resolve(__dirname, '..', 'ResetPassword.png'),
+    });
+
+    app.get('/api/email-assets/:assetName', (req, res) =>
+    {
+        const assetPath = emailAssets[req.params.assetName];
+        if(!assetPath)
+        {
+            res.sendStatus(404);
+            return;
+        }
+
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.type('png');
+        res.sendFile(assetPath, (error) =>
+        {
+            if(error && !res.headersSent)
+            {
+                res.sendStatus(404);
+            }
+        });
+    });
 
     app.post('/api/login', async (req, res) =>
     {

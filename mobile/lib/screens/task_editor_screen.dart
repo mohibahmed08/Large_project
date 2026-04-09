@@ -303,9 +303,10 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
             if (widget.existingGroups.isNotEmpty) ...[
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
-                value: widget.existingGroups.contains(_groupController.text)
-                    ? _groupController.text
-                    : null,
+                initialValue:
+                    widget.existingGroups.contains(_groupController.text)
+                        ? _groupController.text
+                        : null,
                 decoration: const InputDecoration(
                   labelText: 'Use an existing group',
                 ),
@@ -428,9 +429,10 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
             if (_reminderEnabled) ...[
               const SizedBox(height: 8),
               DropdownButtonFormField<int>(
-                value: _reminderOptions.contains(_reminderMinutesBefore)
-                    ? _reminderMinutesBefore
-                    : 30,
+                initialValue:
+                    _reminderOptions.contains(_reminderMinutesBefore)
+                        ? _reminderMinutesBefore
+                        : 30,
                 decoration: const InputDecoration(
                   labelText: 'Reminder timing',
                 ),

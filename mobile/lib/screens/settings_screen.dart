@@ -68,10 +68,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!mounted) return;
       _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -97,10 +98,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!mounted) return;
       _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _isSaving = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
     }
   }
 
@@ -120,10 +122,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!mounted) return;
       _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _isRegenerating = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isRegenerating = false;
+        });
+      }
     }
   }
 
@@ -224,9 +227,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         const SizedBox(height: 8),
                         DropdownButtonFormField<int>(
-                          value: _reminderOptions.contains(_reminderMinutesBefore)
-                              ? _reminderMinutesBefore
-                              : 30,
+                          initialValue:
+                              _reminderOptions.contains(_reminderMinutesBefore)
+                                  ? _reminderMinutesBefore
+                                  : 30,
                           onChanged: _reminderEnabled
                               ? (value) {
                                   if (value == null) return;

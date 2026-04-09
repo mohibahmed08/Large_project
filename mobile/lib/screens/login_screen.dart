@@ -88,10 +88,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
     } finally {
-      if (!mounted) {
-        return;
-      }
-      if (_isLoading) {
+      if (mounted && _isLoading) {
         setState(() {
           _isLoading = false;
         });
