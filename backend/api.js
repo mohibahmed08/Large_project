@@ -975,6 +975,33 @@ function normalizeTimeZone(timeZone)
     return IANAZone.isValidZone(text) ? text : '';
 }
 
+async function persistUserTimeContext(db, userId, timeZone, utcOffsetMinutes)
+{
+    const updates = {};
+    const normalizedTimeZone = normalizeTimeZone(timeZone);
+    const numericOffset = Number(utcOffsetMinutes);
+
+    if(normalizedTimeZone)
+    {
+        updates.timeZone = normalizedTimeZone;
+    }
+
+    if(Number.isFinite(numericOffset))
+    {
+        updates.utcOffsetMinutes = Math.round(numericOffset);
+    }
+
+    if(Object.keys(updates).length === 0)
+    {
+        return;
+    }
+
+    await db.collection('users').updateOne(
+        { _id: new ObjectId(userId) },
+        { $set: updates }
+    );
+}
+
 function resolveUserZone(options = {})
 {
     const zone = normalizeTimeZone(options.timeZone);
@@ -2864,6 +2891,7 @@ exports.setApp = function(app, client)
         try
         {
             const db = getDatabase(client);
+            await persistUserTimeContext(db, userId, timeZone, utcOffsetMinutes);
             await syncStoredCalendarSubscriptions(db, userId, { timeZone, utcOffsetMinutes });
             const query = { user_id: new ObjectId(userId) };
             const dateRangeFilter = buildDueDateRangeFilter(startDate, endDate, { timeZone, utcOffsetMinutes });
@@ -2996,6 +3024,7 @@ exports.setApp = function(app, client)
         try
         {
             const db = getDatabase(client);
+            await persistUserTimeContext(db, userId, timeZone, utcOffsetMinutes);
 
             if(taskId)
             {
@@ -3101,6 +3130,7 @@ exports.setApp = function(app, client)
         {
             const ical = require('node-ical');
             const db = getDatabase(client);
+            await persistUserTimeContext(db, userId, timeZone, utcOffsetMinutes);
             let calendarContent = String(icsContent || '').trim();
             const trimmedUrl = String(icsUrl || '').trim();
             let parsedUrl = null;

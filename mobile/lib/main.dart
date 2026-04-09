@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'firebase_options.dart';
 import 'screens/app_bootstrap_screen.dart';
 import 'screens/reset_password_screen.dart';
 import 'services/push_notification_service.dart';
@@ -44,7 +45,9 @@ class _MyAppState extends State<MyApp> {
   Future<void> _initializeServices() async {
     try {
       // Initialize optional native services after the first frame can render.
-      await Firebase.initializeApp();
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
       await PushNotificationService.init();
     } catch (error) {
       if (kDebugMode) {
@@ -143,9 +146,11 @@ class _MyAppState extends State<MyApp> {
       title: 'Calendar++',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.build(),
-      home: AppBootstrapScreen(
-        initialResetToken: _initialLinkResolved ? _initialResetToken : null,
-      ),
+      home: _initialLinkResolved
+          ? AppBootstrapScreen(initialResetToken: _initialResetToken)
+          : const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            ),
     );
   }
 }

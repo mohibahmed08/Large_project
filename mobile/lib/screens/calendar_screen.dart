@@ -53,10 +53,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime _displayMonth = DateTime(DateTime.now().year, DateTime.now().month);
   DateTime _selectedDate = DateUtils.dateOnly(DateTime.now());
   Map<String, dynamic>? _weatherData;
+  String? _weatherLocationName;
   List<CalendarTask> _tasks = [];
   List<CalendarTask> _visibleTasks = [];
   bool _isLoading = true;
   int _selectedIndex = 0; // 0=Calendar, 1=Day, 2=AI
+  final Set<String> _expandedDayTaskIds = <String>{};
 
   List<String> get _existingGroups {
     final counts = <String, int>{};
@@ -309,49 +311,81 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
-  Future<void> _fetchWeather() async {
-    try {
-      // Resolve device location, falling back to a default if permission denied.
-      double latitude = 28.5383;
-      double longitude = -81.3792;
+  Future<Map<String, dynamic>?> _loadWeatherForecast({
+    required double latitude,
+    required double longitude,
+  }) async {
+    final today = DateTime.now();
+    final start = _formatDate(today);
+    final end = _formatDate(today.add(const Duration(days: 10)));
+    final response = await http.get(
+      Uri.parse(
+        'https://api.open-meteo.com/v1/forecast?latitude=$latitude&longitude=$longitude&start_date=$start&end_date=$end&hourly=weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit',
+      ),
+    );
 
+    if (response.statusCode != 200) {
+      return null;
+    }
+
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<void> _fetchWeather() async {
+    const fallbackLatitude = 28.5383;
+    const fallbackLongitude = -81.3792;
+
+    try {
+      final fallbackForecast = await _loadWeatherForecast(
+        latitude: fallbackLatitude,
+        longitude: fallbackLongitude,
+      );
+      if (mounted && fallbackForecast != null) {
+        setState(() {
+          _weatherData = fallbackForecast;
+          _weatherLocationName = 'Orlando, Florida';
+        });
+      }
+    } catch (_) {
+      // Keep going and still try device-location weather below.
+    }
+
+    try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (serviceEnabled) {
-        var permission = await Geolocator.checkPermission();
-        if (permission == LocationPermission.denied) {
-          permission = await Geolocator.requestPermission();
-        }
-        if (permission == LocationPermission.whileInUse ||
-            permission == LocationPermission.always) {
-          final position = await Geolocator.getCurrentPosition(
-            locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.low,
-              timeLimit: Duration(seconds: 10),
-            ),
-          );
-          latitude = position.latitude;
-          longitude = position.longitude;
-        }
+      if (!serviceEnabled) {
+        return;
       }
 
-      final today = DateTime.now();
-      final start = _formatDate(today);
-      final end = _formatDate(today.add(const Duration(days: 10)));
-      final response = await http.get(
-        Uri.parse(
-          'https://api.open-meteo.com/v1/forecast?latitude=$latitude&longitude=$longitude&start_date=$start&end_date=$end&hourly=weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit',
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission != LocationPermission.whileInUse &&
+          permission != LocationPermission.always) {
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.low,
+          timeLimit: Duration(seconds: 10),
         ),
       );
 
-      if (!mounted || response.statusCode != 200) {
+      final localForecast = await _loadWeatherForecast(
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+      if (!mounted || localForecast == null) {
         return;
       }
 
       setState(() {
-        _weatherData = jsonDecode(response.body) as Map<String, dynamic>;
+        _weatherData = localForecast;
+        _weatherLocationName = 'Current location';
       });
     } catch (_) {
-      // Ignore optional weather failures.
+      // Keep the fallback weather if location lookup fails.
     }
   }
 
@@ -697,12 +731,101 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
   }
 
+  DateTime? _dayComparisonEnd(CalendarTask task) {
+    final start = task.startDate;
+    final end = task.endDate;
+    if (end == null) {
+      return start;
+    }
+    if (start == null) {
+      return end;
+    }
+
+    final endsAtMidnight = end.hour == 0 &&
+        end.minute == 0 &&
+        end.second == 0 &&
+        end.millisecond == 0 &&
+        end.microsecond == 0;
+    if (endsAtMidnight && end.isAfter(start)) {
+      return end.subtract(const Duration(milliseconds: 1));
+    }
+    return end;
+  }
+
+  bool _taskFallsOnDate(CalendarTask task, DateTime date) {
+    final start = task.startDate ?? task.endDate;
+    if (start == null) {
+      return false;
+    }
+
+    final end = _dayComparisonEnd(task) ?? start;
+    final target = DateUtils.dateOnly(date);
+    final startDay = DateUtils.dateOnly(start);
+    final endDay = DateUtils.dateOnly(end);
+    return !target.isBefore(startDay) && !target.isAfter(endDay);
+  }
+
+  bool _isAllDayTask(CalendarTask task) {
+    final start = task.startDate;
+    if (start == null) {
+      return true;
+    }
+
+    final end = _dayComparisonEnd(task);
+    final startsAtMidnight = start.hour == 0 && start.minute == 0;
+    if (!startsAtMidnight) {
+      return false;
+    }
+    if (end == null) {
+      return true;
+    }
+
+    return end.difference(start) >= const Duration(hours: 20);
+  }
+
+  int _compareDayTasks(CalendarTask a, CalendarTask b) {
+    final aAllDay = _isAllDayTask(a);
+    final bAllDay = _isAllDayTask(b);
+    if (aAllDay != bAllDay) {
+      return aAllDay ? -1 : 1;
+    }
+
+    final aStart = a.startDate;
+    final bStart = b.startDate;
+    if (aStart == null && bStart != null) {
+      return -1;
+    }
+    if (aStart != null && bStart == null) {
+      return 1;
+    }
+    if (aStart != null && bStart != null) {
+      final byStart = aStart.compareTo(bStart);
+      if (byStart != 0) {
+        return byStart;
+      }
+    }
+
+    final aEnd = _dayComparisonEnd(a);
+    final bEnd = _dayComparisonEnd(b);
+    if (aEnd == null && bEnd != null) {
+      return -1;
+    }
+    if (aEnd != null && bEnd == null) {
+      return 1;
+    }
+    if (aEnd != null && bEnd != null) {
+      final byEnd = aEnd.compareTo(bEnd);
+      if (byEnd != 0) {
+        return byEnd;
+      }
+    }
+
+    return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+  }
+
   List<CalendarTask> get _tasksForSelectedDay {
-    return _visibleTasks.where((task) {
-      final startDate = task.startDate;
-      return startDate != null && DateUtils.isSameDay(startDate, _selectedDate);
-    }).toList()
-      ..sort((a, b) => (a.startDate ?? _selectedDate).compareTo(b.startDate ?? _selectedDate));
+    return _visibleTasks.where((task) => _taskFallsOnDate(task, _selectedDate)).toList()
+      ..sort(_compareDayTasks);
   }
 
   List<CalendarTask> get _pendingSelectedTasks =>
@@ -711,40 +834,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
   List<CalendarTask> get _completedSelectedTasks =>
       _tasksForSelectedDay.where((task) => task.isCompleted).toList();
 
-  List<CalendarTask> get _todoTasksForSelectedDay =>
+  List<CalendarTask> get _allDaySelectedTasks =>
+      _pendingSelectedTasks.where(_isAllDayTask).toList()..sort(_compareDayTasks);
+
+  List<CalendarTask> get _timedSelectedTasks =>
       _pendingSelectedTasks
-          .where((task) => task.source.toLowerCase() == 'task')
-          .toList();
+          .where((task) => !_isAllDayTask(task) && task.startDate != null)
+          .toList()
+        ..sort(_compareDayTasks);
 
-
-  int get _selectedDayCompletedCount => _completedSelectedTasks.length;
-
-
-  String get _selectedDateLongLabel {
-    return '${_weekdayName(_selectedDate.weekday)}, ${_monthName(_selectedDate.month)} ${_selectedDate.day}, ${_selectedDate.year}';
-  }
-
-  DateTime _defaultQuickTaskStart() {
-    final now = DateTime.now();
-    if (DateUtils.isSameDay(now, _selectedDate)) {
-      final roundedMinute = now.minute <= 30 ? 30 : 0;
-      final roundedHour = now.minute <= 30 ? now.hour : now.hour + 1;
-      return DateTime(
-        _selectedDate.year,
-        _selectedDate.month,
-        _selectedDate.day,
-        roundedHour,
-        roundedMinute,
-      );
-    }
-
-    return DateTime(
-      _selectedDate.year,
-      _selectedDate.month,
-      _selectedDate.day,
-      9,
-    );
-  }
+  List<CalendarTask> get _todoTasksForSelectedDay => _pendingSelectedTasks;
 
   Color _taskBaseColor(CalendarTask task) {
     final parsed = _parseColor(task.color);
@@ -812,6 +911,72 @@ class _CalendarScreenState extends State<CalendarScreen> {
     };
   }
 
+  List<Map<String, dynamic>> get _selectedDayForecast {
+    final daily = _weatherData?['daily'];
+    if (daily is! Map<String, dynamic>) {
+      return const [];
+    }
+
+    final times = (daily['time'] as List?)?.map((item) => '$item').toList() ?? const [];
+    if (times.isEmpty) {
+      return const [];
+    }
+
+    final target = _formatDate(_selectedDate);
+    final startIndex = times.indexOf(target);
+    if (startIndex < 0) {
+      return const [];
+    }
+
+    final endIndex = (startIndex + 5).clamp(0, times.length);
+    return List.generate(endIndex - startIndex, (offset) {
+      final index = startIndex + offset;
+      num? readNum(String key) => (daily[key] as List?)?.elementAt(index) as num?;
+      int? readInt(String key) =>
+          ((daily[key] as List?)?.elementAt(index) as num?)?.toInt();
+      return {
+        'date': times[index],
+        'min': readNum('temperature_2m_min'),
+        'max': readNum('temperature_2m_max'),
+        'code': readInt('weathercode'),
+      };
+    });
+  }
+
+  String get _weatherLocationLabel {
+    final explicitName = _weatherLocationName?.trim() ?? '';
+    if (explicitName.isNotEmpty) {
+      return explicitName;
+    }
+
+    final timezone = _weatherData?['timezone']?.toString().trim() ?? '';
+    if (timezone.isEmpty) {
+      return 'Local forecast';
+    }
+
+    final upperTimezone = timezone.toUpperCase();
+    if (upperTimezone == 'GMT' || upperTimezone == 'UTC') {
+      return 'Local forecast';
+    }
+
+    final parts = timezone.split('/');
+    return parts.last.replaceAll('_', ' ');
+  }
+
+  String _weatherConditionLabel(int? code) {
+    if (code == null) return 'Weather unavailable';
+    if (code == 0) return 'Clear sky';
+    if (code == 1) return 'Mostly clear';
+    if (code == 2) return 'Partly cloudy';
+    if (code == 3) return 'Overcast';
+    if (code == 45 || code == 48) return 'Foggy';
+    if (code >= 51 && code <= 67) return 'Rain showers';
+    if (code >= 71 && code <= 77) return 'Snow showers';
+    if (code >= 80 && code <= 86) return 'Heavy rain';
+    if (code == 95 || code == 96 || code == 99) return 'Thunderstorms';
+    return 'Mixed conditions';
+  }
+
   String _weatherGlyph(int? code) {
     if (code == null) return '•';
     if (code == 0 || code == 1) return '☀️';
@@ -826,9 +991,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Widget _buildTaskPreviewRow(CalendarTask task) {
     final accentColor = _taskDisplayColor(task);
-    final timeText = task.startDate == null
-        ? 'Any time'
-        : task.endDate != null
+    final timeText = _isAllDayTask(task)
+        ? 'All day'
+        : task.startDate == null
+            ? 'Any time'
+            : task.endDate != null
             ? '${_formatTime(task.startDate!)} - ${_formatTime(task.endDate!)}'
             : _formatTime(task.startDate!);
 
@@ -922,7 +1089,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _buildDayTab() {
-    return _buildDayTabRevamp();
+    return _buildDayTabPolished();
   }
 
   // ── CALENDAR TAB — compact month grid + agenda list ─────────────────────
@@ -1205,6 +1372,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   // ── TODAY TAB — timeline schedule view ───────────────────────────────────
+  // ignore: unused_element
   Widget _buildDayTabRevamp() {
     final dayTasks = _tasksForSelectedDay;
     final todoTasks = _todoTasksForSelectedDay;
@@ -1429,6 +1597,571 @@ class _CalendarScreenState extends State<CalendarScreen> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  void _shiftSelectedDay(int delta) {
+    final nextDate = DateUtils.dateOnly(_selectedDate.add(Duration(days: delta)));
+    final today = DateTime.now();
+    final monthOffset =
+        (nextDate.year - today.year) * 12 + (nextDate.month - today.month);
+
+    setState(() {
+      _selectedDate = nextDate;
+      _displayMonth = DateTime(nextDate.year, nextDate.month);
+      _expandedDayTaskIds.clear();
+    });
+
+    if (_monthPageController.hasClients) {
+      _monthPageController.animateToPage(
+        1200 + monthOffset,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  void _toggleDayTaskExpanded(CalendarTask task) {
+    final taskId = task.id.isEmpty
+        ? '${task.title}-${task.startDate?.toIso8601String() ?? 'unscheduled'}'
+        : task.id;
+    setState(() {
+      if (!_expandedDayTaskIds.add(taskId)) {
+        _expandedDayTaskIds.remove(taskId);
+      }
+    });
+  }
+
+  Widget _buildDayTaskTile(CalendarTask task) {
+    final accentColor = _taskDisplayColor(task);
+    final taskKey = task.id.isEmpty
+        ? '${task.title}-${task.startDate?.toIso8601String() ?? 'unscheduled'}'
+        : task.id;
+    final isExpanded = _expandedDayTaskIds.contains(taskKey);
+    final hasDescription = task.description.trim().isNotEmpty;
+    final timeText = _isAllDayTask(task)
+        ? 'All day'
+        : task.startDate == null
+            ? 'Any time'
+            : task.endDate != null
+                ? '${_formatTime(task.startDate!)} - ${_formatTime(task.endDate!)}'
+                : _formatTime(task.startDate!);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () => _openTaskDialog(task: task),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: accentColor.withValues(alpha: task.isCompleted ? 0.07 : 0.12),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: accentColor.withValues(alpha: 0.25),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 12,
+              height: 12,
+              margin: const EdgeInsets.only(top: 5),
+              decoration: BoxDecoration(
+                color: accentColor,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    timeText,
+                    style: TextStyle(
+                      color: accentColor,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    task.title.isEmpty ? '(Untitled)' : task.title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: task.isCompleted
+                          ? AppTheme.textMuted
+                          : AppTheme.textPrimary,
+                      decoration: task.isCompleted
+                          ? TextDecoration.lineThrough
+                          : null,
+                    ),
+                  ),
+                  if (hasDescription) ...[
+                    const SizedBox(height: 6),
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _toggleDayTaskExpanded(task),
+                      child: Text(
+                        task.description.trim(),
+                        maxLines: isExpanded ? null : 2,
+                        overflow: isExpanded
+                            ? TextOverflow.visible
+                            : TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.82),
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                    if (task.description.trim().length > 90)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          isExpanded ? 'Show less' : 'Show more',
+                          style: TextStyle(
+                            color: accentColor,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                  ],
+                  if (task.location.trim().isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      task.location.trim(),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.62),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (task.source.toLowerCase() == 'task')
+              Checkbox(
+                value: task.isCompleted,
+                activeColor: accentColor,
+                onChanged: (value) {
+                  if (value != null) {
+                    _toggleTask(task, value);
+                  }
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTodayHeroCard({
+    required bool isToday,
+    required String formattedDate,
+    required int totalTasks,
+    required int completedTasks,
+    required Map<String, dynamic>? selectedDayWeather,
+    required List<Map<String, dynamic>> forecast,
+  }) {
+    final high = (selectedDayWeather?['max'] as num?)?.round();
+    final low = (selectedDayWeather?['min'] as num?)?.round();
+    final conditionCode = selectedDayWeather?['code'] as int?;
+    final forecastMins = forecast
+        .map((day) => (day['min'] as num?)?.toDouble())
+        .whereType<double>()
+        .toList();
+    final forecastMaxes = forecast
+        .map((day) => (day['max'] as num?)?.toDouble())
+        .whereType<double>()
+        .toList();
+    final minForecastTemp = forecastMins.isEmpty
+        ? null
+        : forecastMins.reduce((a, b) => a < b ? a : b);
+    final maxForecastTemp = forecastMaxes.isEmpty
+        ? null
+        : forecastMaxes.reduce((a, b) => a > b ? a : b);
+    final activeTasks = totalTasks - completedTasks;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF3F475A),
+            Color(0xFF2A82BF),
+            Color(0xFF244D86),
+          ],
+        ),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF091325).withValues(alpha: 0.42),
+            blurRadius: 24,
+            offset: const Offset(0, 16),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              IconButton(
+                onPressed: () => _shiftSelectedDay(-1),
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.chevron_left, color: Colors.white),
+              ),
+              Expanded(
+                child: Column(
+                  children: [
+                    Text(
+                      isToday ? 'Today' : _weekdayName(_selectedDate.weekday),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.96),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      formattedDate,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.72),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: () => _shiftSelectedDay(1),
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.chevron_right, color: Colors.white),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 5,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.near_me_rounded,
+                          size: 14,
+                          color: Colors.white.withValues(alpha: 0.92),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            _weatherLocationLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.92),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      high != null ? '$high°' : '--°',
+                      style: const TextStyle(
+                        fontSize: 58,
+                        height: 0.92,
+                        fontWeight: FontWeight.w300,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      _weatherConditionLabel(conditionCode),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.96),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      [
+                        if (low != null) 'Low of $low°',
+                        '$activeTasks active',
+                        '$completedTasks done',
+                      ].join(' · '),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.74),
+                        fontSize: 13,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                flex: 6,
+                child: forecast.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 20),
+                        child: Text(
+                          'Forecast unavailable',
+                          textAlign: TextAlign.right,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.78),
+                            fontSize: 13,
+                          ),
+                        ),
+                      )
+                    : Column(
+                        children: forecast.map((entry) {
+                          final date = DateTime.tryParse('${entry['date']}');
+                          final minTemp = (entry['min'] as num?)?.round();
+                          final maxTemp = (entry['max'] as num?)?.round();
+                          final minValue = (entry['min'] as num?)?.toDouble();
+                          final maxValue = (entry['max'] as num?)?.toDouble();
+                          final spread =
+                              ((maxForecastTemp ?? 0) - (minForecastTemp ?? 0))
+                                  .abs();
+                          final normalizedSpread = spread < 1 ? 1.0 : spread;
+                          final startFraction =
+                              minForecastTemp == null || minValue == null
+                                  ? 0.0
+                                  : ((minValue - minForecastTemp) /
+                                          normalizedSpread)
+                                      .clamp(0.0, 1.0);
+                          final widthFraction =
+                              minValue == null || maxValue == null
+                                  ? 0.45
+                                  : ((maxValue - minValue) / normalizedSpread)
+                                      .clamp(0.18, 1.0);
+
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              children: [
+                                SizedBox(
+                                  width: 36,
+                                  child: Text(
+                                    date == null
+                                        ? '--'
+                                        : _weekdayName(date.weekday)
+                                            .substring(0, 3),
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.92),
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 24,
+                                  child: Center(
+                                    child: Text(
+                                      _weatherGlyph(entry['code'] as int?),
+                                      style: const TextStyle(fontSize: 16),
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 30,
+                                  child: Text(
+                                    minTemp != null ? '$minTemp°' : '--',
+                                    textAlign: TextAlign.right,
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.68),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _WeatherRangeBar(
+                                    startFraction: startFraction,
+                                    widthFraction: widthFraction,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                SizedBox(
+                                  width: 30,
+                                  child: Text(
+                                    maxTemp != null ? '$maxTemp°' : '--',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDayTabPolished() {
+    final dayTasks = _tasksForSelectedDay;
+    final allDayTasks = _allDaySelectedTasks;
+    final timedTasks = _timedSelectedTasks;
+    final completedTasks = _completedSelectedTasks;
+    final selectedDayWeather = _selectedDayWeather;
+    final forecast = _selectedDayForecast;
+    final formattedDate =
+        '${_monthName(_selectedDate.month)} ${_selectedDate.day}, ${_selectedDate.year}';
+    final isToday = DateUtils.isSameDay(_selectedDate, DateTime.now());
+
+    return SafeArea(
+      top: true,
+      bottom: false,
+      child: RefreshIndicator(
+        onRefresh: () => _loadMonth(showLoader: false),
+        child: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                child: Row(
+                  children: [
+                    _DayActionChip(
+                      label: 'Task',
+                      icon: Icons.check_circle_outline,
+                      onTap: () => _openTaskDialog(initialDate: _selectedDate),
+                    ),
+                    const SizedBox(width: 8),
+                    _DayActionChip(
+                      label: 'Event',
+                      icon: Icons.event_outlined,
+                      onTap: () => _openTaskDialog(initialDate: _selectedDate),
+                    ),
+                    const SizedBox(width: 8),
+                    _DayActionChip(
+                      label: 'Plan',
+                      icon: Icons.auto_stories_outlined,
+                      onTap: () => _openTaskDialog(
+                        initialDate: _selectedDate,
+                        newTaskSource: 'plan',
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _DayActionChip(
+                      label: 'Suggest',
+                      icon: Icons.auto_awesome_outlined,
+                      onTap: () => setState(() => _selectedIndex = 2),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                child: _buildTodayHeroCard(
+                  isToday: isToday,
+                  formattedDate: formattedDate,
+                  totalTasks: dayTasks.length,
+                  completedTasks: completedTasks.length,
+                  selectedDayWeather: selectedDayWeather,
+                  forecast: forecast,
+                ),
+              ),
+            ),
+            if (allDayTasks.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                  child: Text(
+                    'ALL DAY',
+                    style: TextStyle(
+                      color: AppTheme.textMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => _buildDayTaskTile(allDayTasks[index]),
+                    childCount: allDayTasks.length,
+                  ),
+                ),
+              ),
+            ],
+            if (timedTasks.isNotEmpty)
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => _buildDayTaskTile(timedTasks[index]),
+                    childCount: timedTasks.length,
+                  ),
+                ),
+              ),
+            if (allDayTasks.isEmpty && timedTasks.isEmpty && completedTasks.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Text(
+                      'Nothing scheduled yet for this day.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppTheme.textMuted),
+                    ),
+                  ),
+                ),
+              ),
+            if (completedTasks.isNotEmpty) ...[
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                  child: Text(
+                    'COMPLETED',
+                    style: TextStyle(
+                      color: AppTheme.textMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => _buildDayTaskTile(completedTasks[index]),
+                    childCount: completedTasks.length,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -1766,6 +2499,59 @@ class _DayActionChip extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _WeatherRangeBar extends StatelessWidget {
+  const _WeatherRangeBar({
+    required this.startFraction,
+    required this.widthFraction,
+  });
+
+  final double startFraction;
+  final double widthFraction;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final trackWidth = constraints.maxWidth;
+        final clampedWidth = widthFraction.clamp(0.12, 1.0) * trackWidth;
+        final clampedLeft =
+            startFraction.clamp(0.0, 1.0) * (trackWidth - clampedWidth);
+
+        return SizedBox(
+          height: 6,
+          child: Stack(
+            children: [
+              Container(
+                height: 6,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.20),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              Positioned(
+                left: clampedLeft,
+                child: Container(
+                  width: clampedWidth,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(999),
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0xFF8EE1E9),
+                        Color(0xFFF7C949),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

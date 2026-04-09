@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
@@ -29,6 +30,71 @@ Future<void> maybeSuggestBiometricSetup(BuildContext context) async {
     backgroundColor: Colors.transparent,
     builder: (_) => _BiometricSetupSheet(biometricLabel: status.label),
   );
+}
+
+Future<bool> _confirmBiometricSetupFromPrompt({
+  required BuildContext context,
+  required BiometricAuthService biometricService,
+  required String biometricLabel,
+  required String reason,
+  required String successMessage,
+}) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final authenticated = await biometricService.authenticate(
+    reason: reason,
+    allowDeviceCredential: false,
+  );
+  if (authenticated) {
+    return true;
+  }
+  if (!context.mounted) {
+    return false;
+  }
+
+  final action = await showModalBottomSheet<_PromptBiometricRecoveryAction>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _PromptBiometricRecoverySheet(
+      biometricLabel: biometricLabel,
+    ),
+  );
+
+  if (!context.mounted) {
+    return false;
+  }
+
+  if (action == _PromptBiometricRecoveryAction.retry) {
+    final retried = await biometricService.authenticate(
+      reason: reason,
+      allowDeviceCredential: false,
+    );
+    if (retried) {
+      messenger.showSnackBar(SnackBar(content: Text(successMessage)));
+      return true;
+    }
+  } else if (action == _PromptBiometricRecoveryAction.settings) {
+    await Geolocator.openAppSettings();
+    if (!context.mounted) {
+      return false;
+    }
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          'System settings opened. Enable $biometricLabel for Calendar++, then try again.',
+        ),
+      ),
+    );
+    return false;
+  }
+
+  messenger.showSnackBar(
+    SnackBar(
+      content: Text(
+        '$biometricLabel setup did not complete. You can turn it on later from Settings.',
+      ),
+    ),
+  );
+  return false;
 }
 
 class LoginScreen extends StatefulWidget {
@@ -657,30 +723,25 @@ class _BiometricSetupSheet extends StatelessWidget {
               icon: Icon(faceIcon),
               label: Text('Enable $biometricLabel'),
               onPressed: () async {
-                final messenger = ScaffoldMessenger.of(context);
-                final authenticated = await biometricService.authenticate(
+                final authenticated = await _confirmBiometricSetupFromPrompt(
+                  context: context,
+                  biometricService: biometricService,
+                  biometricLabel: biometricLabel,
                   reason:
                       'Use $biometricLabel to enable faster sign in for Calendar++.',
-                  allowDeviceCredential: false,
+                  successMessage: '$biometricLabel sign in enabled.',
                 );
                 if (!context.mounted) {
                   return;
                 }
                 if (!authenticated) {
-                  messenger.showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        '$biometricLabel was not confirmed, so it was not enabled.',
-                      ),
-                    ),
-                  );
                   return;
                 }
                 await SessionStorage.setBiometricLoginEnabled(true);
                 if (!context.mounted) {
                   return;
                 }
-                messenger.showSnackBar(
+                ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text('$biometricLabel sign in enabled.'),
                   ),
@@ -692,6 +753,84 @@ class _BiometricSetupSheet extends StatelessWidget {
           const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,
+            child: TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                'Not now',
+                style: TextStyle(color: AppTheme.textMuted),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+enum _PromptBiometricRecoveryAction { retry, settings }
+
+class _PromptBiometricRecoverySheet extends StatelessWidget {
+  const _PromptBiometricRecoverySheet({
+    required this.biometricLabel,
+  });
+
+  final String biometricLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 34),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Finish setting up $biometricLabel',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: AppTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'You can retry the system biometric prompt now. If you denied it before, open system settings and allow $biometricLabel for Calendar++ first.',
+            style: const TextStyle(
+              color: AppTheme.textMuted,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: () => Navigator.pop(
+                context,
+                _PromptBiometricRecoveryAction.retry,
+              ),
+              child: Text('Try $biometricLabel again'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () => Navigator.pop(
+                context,
+                _PromptBiometricRecoveryAction.settings,
+              ),
+              child: const Text('Open system settings'),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerRight,
             child: TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text(

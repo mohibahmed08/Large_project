@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../models/account_settings.dart';
 import '../models/user_model.dart';
@@ -45,6 +46,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _reminderDelivery = 'email';
   int _reminderMinutesBefore = 30;
   static const List<int> _reminderOptions = [0, 5, 10, 15, 30, 60, 120, 1440];
+
+  Future<bool> _confirmBiometricSetup({
+    required String reason,
+    required String successMessage,
+  }) async {
+    final authenticated = await _biometricAuthService.authenticate(
+      reason: reason,
+      allowDeviceCredential: false,
+    );
+    if (authenticated) {
+      return true;
+    }
+    if (!mounted) {
+      return false;
+    }
+
+    final action = await showModalBottomSheet<_BiometricRecoveryAction>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _BiometricRecoverySheet(
+        biometricLabel: _biometricLabel,
+      ),
+    );
+
+    if (!mounted) {
+      return false;
+    }
+
+    if (action == _BiometricRecoveryAction.retry) {
+      final retried = await _biometricAuthService.authenticate(
+        reason: reason,
+        allowDeviceCredential: false,
+      );
+      if (!mounted) {
+        return false;
+      }
+      if (retried) {
+        _showSnackBar(successMessage);
+        return true;
+      }
+    } else if (action == _BiometricRecoveryAction.settings) {
+      await Geolocator.openAppSettings();
+      if (!mounted) {
+        return false;
+      }
+      _showSnackBar(
+        'System settings opened. Enable $_biometricLabel access there, then try again.',
+      );
+      await _loadBiometricSettings();
+      return false;
+    }
+
+    _showSnackBar(
+      '$_biometricLabel setup did not complete. You can try again anytime from Settings.',
+    );
+    return false;
+  }
 
   @override
   void initState() {
@@ -108,15 +166,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _setBiometricUnlock(bool enabled) async {
     if (enabled) {
-      final authenticated = await _biometricAuthService.authenticate(
+      final authenticated = await _confirmBiometricSetup(
         reason:
             'Use $_biometricLabel to require biometric unlock for Calendar++.',
-        allowDeviceCredential: false,
+        successMessage: '$_biometricLabel unlock enabled.',
       );
       if (!authenticated) {
-        if (mounted) {
-          _showSnackBar('$_biometricLabel was not confirmed.');
-        }
         return;
       }
     }
@@ -127,23 +182,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _biometricUnlockEnabled = enabled;
     });
-    _showSnackBar(
-      enabled
-          ? '$_biometricLabel unlock enabled.'
-          : '$_biometricLabel unlock disabled.',
-    );
+    if (!enabled) {
+      _showSnackBar('$_biometricLabel unlock disabled.');
+    }
   }
 
   Future<void> _setBiometricLogin(bool enabled) async {
     if (enabled) {
-      final authenticated = await _biometricAuthService.authenticate(
+      final authenticated = await _confirmBiometricSetup(
         reason: 'Use $_biometricLabel to enable faster sign in for Calendar++.',
-        allowDeviceCredential: false,
+        successMessage: '$_biometricLabel sign in enabled.',
       );
       if (!authenticated) {
-        if (mounted) {
-          _showSnackBar('$_biometricLabel was not confirmed.');
-        }
         return;
       }
     }
@@ -154,11 +204,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _biometricLoginEnabled = enabled;
     });
-    _showSnackBar(
-      enabled
-          ? '$_biometricLabel sign in enabled.'
-          : '$_biometricLabel sign in disabled.',
-    );
+    if (!enabled) {
+      _showSnackBar('$_biometricLabel sign in disabled.');
+    }
   }
 
   Future<void> _save() async {
@@ -486,6 +534,81 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onPressed: _isSaving ? null : _save,
           child: Text(_isSaving ? 'Saving...' : 'Save changes'),
         ),
+      ),
+    );
+  }
+}
+
+enum _BiometricRecoveryAction { retry, settings }
+
+class _BiometricRecoverySheet extends StatelessWidget {
+  const _BiometricRecoverySheet({
+    required this.biometricLabel,
+  });
+
+  final String biometricLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Finish setting up $biometricLabel',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: AppTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'If you dismissed or denied the biometric prompt earlier, you can try again now. If the system keeps blocking it, open system settings and allow $biometricLabel for Calendar++ first.',
+            style: const TextStyle(
+              color: AppTheme.textMuted,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: () => Navigator.pop(
+                context,
+                _BiometricRecoveryAction.retry,
+              ),
+              child: Text('Try $biometricLabel again'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () => Navigator.pop(
+                context,
+                _BiometricRecoveryAction.settings,
+              ),
+              child: const Text('Open system settings'),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Not now'),
+            ),
+          ),
+        ],
       ),
     );
   }
