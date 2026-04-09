@@ -13,16 +13,6 @@ import 'theme/app_theme.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  try {
-    // Initialise Firebase when native config is present.
-    await Firebase.initializeApp();
-    await PushNotificationService.init();
-  } catch (error) {
-    if (kDebugMode) {
-      debugPrint('[Main] Firebase init skipped: $error');
-    }
-  }
-
   runApp(const MyApp());
 }
 
@@ -38,16 +28,29 @@ class _MyAppState extends State<MyApp> {
   final AppLinks _appLinks = AppLinks();
   StreamSubscription<Uri>? _linkSubscription;
   String? _initialResetToken;
-  bool _initialLinkResolved = false;
+  bool _initialLinkResolved = true;
 
   @override
   void initState() {
     super.initState();
+    unawaited(_initializeServices());
     unawaited(_resolveInitialLink());
     _linkSubscription = _appLinks.uriLinkStream.listen(
       _handleIncomingLink,
       onError: (_) {},
     );
+  }
+
+  Future<void> _initializeServices() async {
+    try {
+      // Initialize optional native services after the first frame can render.
+      await Firebase.initializeApp();
+      await PushNotificationService.init();
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('[Main] Firebase init skipped: $error');
+      }
+    }
   }
 
   @override
@@ -58,7 +61,9 @@ class _MyAppState extends State<MyApp> {
 
   Future<void> _resolveInitialLink() async {
     try {
-      final initialUri = await _appLinks.getInitialLink();
+      final initialUri = await _appLinks.getInitialLink().timeout(
+        const Duration(seconds: 2),
+      );
       if (!mounted) {
         return;
       }
@@ -138,11 +143,9 @@ class _MyAppState extends State<MyApp> {
       title: 'Calendar++',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.build(),
-      home: _initialLinkResolved
-          ? AppBootstrapScreen(initialResetToken: _initialResetToken)
-          : const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            ),
+      home: AppBootstrapScreen(
+        initialResetToken: _initialLinkResolved ? _initialResetToken : null,
+      ),
     );
   }
 }

@@ -79,18 +79,6 @@ class PushNotificationService {
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(_reminderChannel);
 
-    // ── Request permissions ──────────────────────────────────────────────
-    final settings = await FirebaseMessaging.instance.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-      provisional: false,
-    );
-
-    if (kDebugMode) {
-      debugPrint('[Push] Permission status: ${settings.authorizationStatus}');
-    }
-
     // ── Foreground message handler ───────────────────────────────────────
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       _showLocalNotification(message);
