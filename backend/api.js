@@ -342,9 +342,31 @@ async function sendWithResend(to, subject, html)
 }
 
 // ─── Send FCM push notification via Firebase Admin REST API ─────────────────
+function pushDebug(message, details)
+{
+    const prefix = '[PushDebug]';
+    if(details === undefined)
+    {
+        console.log(`${prefix} ${message}`);
+        return;
+    }
+
+    console.log(`${prefix} ${message}`, details);
+}
+
 async function sendFcmPush(deviceToken, title, body, data = {})
 {
-    if(!process.env.FCM_SERVER_KEY || !deviceToken) return;
+    if(!process.env.FCM_SERVER_KEY)
+    {
+        pushDebug('Skipping push send because FCM_SERVER_KEY is missing.');
+        return;
+    }
+
+    if(!deviceToken)
+    {
+        pushDebug('Skipping push send because device token is missing.');
+        return;
+    }
 
     const payload = JSON.stringify({
         to: deviceToken,
@@ -365,10 +387,21 @@ async function sendFcmPush(deviceToken, title, body, data = {})
 
     try
     {
-        await httpsRequest(options, payload);
+        pushDebug('Sending FCM push.', {
+            tokenPreview: `${String(deviceToken).slice(0, 12)}...`,
+            title,
+            hasBody: Boolean(body),
+            dataKeys: Object.keys(data || {}),
+        });
+        const result = await httpsRequest(options, payload);
+        pushDebug('FCM push response received.', {
+            status: result?.status,
+            body: result?.body,
+        });
     }
     catch(err)
     {
+        pushDebug('FCM push request failed.', { error: err.message });
         console.error('[FCM] push error:', err.message);
     }
 }
@@ -1424,6 +1457,19 @@ async function sendTaskReminderEmail(user, task)
     }).reminderDelivery;
     const shouldSendEmail = delivery === 'email' || delivery === 'both';
     const shouldSendPush = delivery === 'push' || delivery === 'both';
+    pushDebug('Preparing reminder delivery.', {
+        taskId: String(task?._id || ''),
+        title: task?.title || '',
+        delivery,
+        shouldSendEmail,
+        shouldSendPush,
+        hasDeviceToken: Boolean(user?.deviceToken),
+        devicePlatform: user?.devicePlatform || '',
+        userTimeZone: user?.timeZone || '',
+        utcOffsetMinutes: user?.utcOffsetMinutes,
+        reminderAt: task?.reminderAt ? new Date(task.reminderAt).toISOString() : null,
+        dueDate: task?.dueDate ? new Date(task.dueDate).toISOString() : null,
+    });
 
     if(shouldSendEmail && user?.email)
     {
@@ -1438,9 +1484,23 @@ async function sendTaskReminderEmail(user, task)
     {
         const pushTitle = `⏰ ${task.title || 'Upcoming task'}`;
         const pushBody  = startText + (endText ? ` → ${endText}` : '');
+        pushDebug('Attempting push reminder send.', {
+            taskId: String(task?._id || ''),
+            tokenPreview: `${String(user.deviceToken).slice(0, 12)}...`,
+            pushTitle,
+            pushBody,
+        });
         await sendFcmPush(user.deviceToken, pushTitle, pushBody, {
             taskId: String(task._id || ''),
             type:   'reminder',
+        });
+    }
+
+    if(shouldSendPush && !user.deviceToken)
+    {
+        pushDebug('Push reminder skipped because user has no device token.', {
+            taskId: String(task?._id || ''),
+            userId: String(user?._id || ''),
         });
     }
 
@@ -2495,6 +2555,12 @@ exports.setApp = function(app, client)
         if(!userId) return;
 
         const { deviceToken, platform } = req.body;
+        pushDebug('registerdevicetoken hit.', {
+            userId: String(userId || ''),
+            platform: platform || '',
+            hasToken: Boolean(deviceToken),
+            tokenPreview: deviceToken ? `${String(deviceToken).slice(0, 12)}...` : '',
+        });
         if(!deviceToken)
         {
             res.status(400).json({ error: 'deviceToken is required' });
@@ -2504,14 +2570,26 @@ exports.setApp = function(app, client)
         try
         {
             const db = getDatabase(client);
+            pushDebug('Persisting device token to users collection.', {
+                userId: String(userId || ''),
+                platform: platform || 'ios',
+            });
             await db.collection('users').updateOne(
                 { _id: new ObjectId(userId) },
                 { $set: { deviceToken, devicePlatform: platform || 'ios' } }
             );
+            pushDebug('Device token persisted successfully.', {
+                userId: String(userId || ''),
+                platform: platform || 'ios',
+            });
             res.status(200).json({ error: '' });
         }
         catch(error)
         {
+            pushDebug('registerdevicetoken failed.', {
+                userId: String(userId || ''),
+                error: error.message,
+            });
             res.status(500).json({ error: error.toString() });
         }
     });
