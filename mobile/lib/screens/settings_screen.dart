@@ -25,6 +25,11 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final AccountService _accountService = AccountService();
   final BiometricAuthService _biometricAuthService = BiometricAuthService();
+  static const List<String> _reminderDeliveryOptions = [
+    'email',
+    'push',
+    'both',
+  ];
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
   late UserSession _session;
@@ -35,7 +40,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _reminderEnabled = false;
   bool _biometricAvailable = false;
   bool _biometricUnlockEnabled = false;
+  bool _biometricLoginEnabled = false;
   String _biometricLabel = 'Face ID';
+  String _reminderDelivery = 'email';
   int _reminderMinutesBefore = 30;
   static const List<int> _reminderOptions = [0, 5, 10, 15, 30, 60, 120, 1440];
 
@@ -70,6 +77,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _reminderEnabled = result.settings.reminderDefaults.reminderEnabled;
       _reminderMinutesBefore =
           result.settings.reminderDefaults.reminderMinutesBefore;
+      _reminderDelivery = result.settings.reminderDefaults.reminderDelivery;
       setState(() {});
     } catch (error) {
       if (!mounted) return;
@@ -86,6 +94,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadBiometricSettings() async {
     final status = await _biometricAuthService.getStatus();
     final enabled = await SessionStorage.isBiometricUnlockEnabled();
+    final loginEnabled = await SessionStorage.isBiometricLoginEnabled();
     if (!mounted) {
       return;
     }
@@ -93,10 +102,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _biometricAvailable = status.supported;
       _biometricLabel = status.label;
       _biometricUnlockEnabled = enabled && status.supported;
+      _biometricLoginEnabled = loginEnabled && status.supported;
     });
   }
 
   Future<void> _setBiometricUnlock(bool enabled) async {
+    if (enabled) {
+      final authenticated = await _biometricAuthService.authenticate(
+        reason:
+            'Use $_biometricLabel to require biometric unlock for Calendar++.',
+        allowDeviceCredential: false,
+      );
+      if (!authenticated) {
+        if (mounted) {
+          _showSnackBar('$_biometricLabel was not confirmed.');
+        }
+        return;
+      }
+    }
     await SessionStorage.setBiometricUnlockEnabled(enabled);
     if (!mounted) {
       return;
@@ -111,6 +134,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _setBiometricLogin(bool enabled) async {
+    if (enabled) {
+      final authenticated = await _biometricAuthService.authenticate(
+        reason: 'Use $_biometricLabel to enable faster sign in for Calendar++.',
+        allowDeviceCredential: false,
+      );
+      if (!authenticated) {
+        if (mounted) {
+          _showSnackBar('$_biometricLabel was not confirmed.');
+        }
+        return;
+      }
+    }
+    await SessionStorage.setBiometricLoginEnabled(enabled);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _biometricLoginEnabled = enabled;
+    });
+    _showSnackBar(
+      enabled
+          ? '$_biometricLabel sign in enabled.'
+          : '$_biometricLabel sign in disabled.',
+    );
+  }
+
   Future<void> _save() async {
     setState(() {
       _isSaving = true;
@@ -122,6 +172,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         lastName: _lastNameController.text.trim(),
         reminderEnabled: _reminderEnabled,
         reminderMinutesBefore: _reminderMinutesBefore,
+        reminderDelivery: _reminderDelivery,
       );
       if (!mounted) return;
       _session = result.session;
@@ -189,6 +240,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return '${minutes ~/ 60} hours before';
     }
     return '$minutes minutes before';
+  }
+
+  String _reminderDeliveryLabel(String value) {
+    switch (value) {
+      case 'push':
+        return 'Push only';
+      case 'both':
+        return 'Email and push';
+      case 'email':
+      default:
+        return 'Email only';
+    }
   }
 
   @override
@@ -266,6 +329,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 }
                               : null,
                         ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text('Show $_biometricLabel on login'),
+                          subtitle: Text(
+                            _biometricAvailable
+                                ? 'Offer $_biometricLabel as a quick sign-in option when a saved session exists.'
+                                : 'Biometric sign in becomes available on supported phones.',
+                            style: const TextStyle(color: AppTheme.textMuted),
+                          ),
+                          value: _biometricLoginEnabled,
+                          onChanged: _biometricAvailable
+                              ? (value) {
+                                  _setBiometricLogin(value);
+                                }
+                              : null,
+                        ),
                       ],
                     ),
                   ),
@@ -314,6 +393,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 (minutes) => DropdownMenuItem<int>(
                                   value: minutes,
                                   child: Text(_reminderLabel(minutes)),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          initialValue: _reminderDeliveryOptions.contains(
+                                _reminderDelivery,
+                              )
+                              ? _reminderDelivery
+                              : 'email',
+                          onChanged: _reminderEnabled
+                              ? (value) {
+                                  if (value == null) return;
+                                  setState(() {
+                                    _reminderDelivery = value;
+                                  });
+                                }
+                              : null,
+                          decoration: const InputDecoration(
+                            labelText: 'Reminder delivery',
+                          ),
+                          items: _reminderDeliveryOptions
+                              .map(
+                                (value) => DropdownMenuItem<String>(
+                                  value: value,
+                                  child: Text(_reminderDeliveryLabel(value)),
                                 ),
                               )
                               .toList(),

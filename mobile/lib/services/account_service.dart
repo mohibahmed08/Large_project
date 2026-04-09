@@ -43,6 +43,7 @@ class AccountService {
     required String lastName,
     required bool reminderEnabled,
     required int reminderMinutesBefore,
+    required String reminderDelivery,
   }) async {
     final json = await _post(
       'saveaccountsettings',
@@ -52,6 +53,7 @@ class AccountService {
         'lastName': lastName,
         'reminderEnabled': reminderEnabled,
         'reminderMinutesBefore': reminderMinutesBefore,
+        'reminderDelivery': reminderDelivery,
       },
     );
     final nextSession = _updatedSession(session, json).copyWith(
