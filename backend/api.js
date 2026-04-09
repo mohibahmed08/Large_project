@@ -1469,8 +1469,24 @@ function startReminderLoop(client)
         });
     };
 
+    // Fire once immediately to catch any overdue reminders on startup, then
+    // align subsequent ticks to the top of each wall-clock minute so that a
+    // reminder set for e.g. 14:30 is sent within a second of 14:30 rather
+    // than up to 60 s late due to interval drift.
     tick();
-    reminderIntervalHandle = setInterval(tick, 60 * 1000);
+
+    const msUntilNextMinute = () =>
+    {
+        const now = Date.now();
+        return 60_000 - (now % 60_000);
+    };
+
+    // setTimeout to the next minute boundary, then keep a steady 60-second interval.
+    setTimeout(() =>
+    {
+        tick();
+        reminderIntervalHandle = setInterval(tick, 60 * 1000);
+    }, msUntilNextMinute());
 }
 
 function safeObjectId(value, fieldName = 'id')
@@ -2188,7 +2204,7 @@ exports.setApp = function(app, client)
             return;
         }
 
-        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.setHeader('Cache-Control', 'no-store, max-age=0');
         res.type('png');
         res.sendFile(assetPath, (error) =>
         {

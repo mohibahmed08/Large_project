@@ -1,10 +1,13 @@
 const serverUrl = String(process.env.SERVER_URL || 'http://localhost:5000')
   .trim()
   .replace(/\/+$/, '');
+const emailAssetVersion = encodeURIComponent(
+  String(process.env.EMAIL_ASSET_VERSION || Date.now()),
+);
 
-const VERIFICATION_MASCOT = `${serverUrl}/api/email-assets/verification-mascot.png`;
-const REMINDER_MASCOT = `${serverUrl}/api/email-assets/reminder-mascot.png`;
-const RESET_PASSWORD_MASCOT = `${serverUrl}/api/email-assets/reset-password-mascot.png`;
+const VERIFICATION_MASCOT = `${serverUrl}/api/email-assets/verification-mascot.png?v=${emailAssetVersion}`;
+const REMINDER_MASCOT = `${serverUrl}/api/email-assets/reminder-mascot.png?v=${emailAssetVersion}`;
+const RESET_PASSWORD_MASCOT = `${serverUrl}/api/email-assets/reset-password-mascot.png?v=${emailAssetVersion}`;
 
 function escapeHtml(value)
 {
