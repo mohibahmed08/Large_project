@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../services/push_notification_service.dart';
+import '../services/session_storage.dart';
 import '../theme/app_theme.dart';
 import 'calendar_screen.dart';
 
@@ -50,6 +52,7 @@ class _LoginScreenState extends State<LoginScreen> {
           _emailController.text.trim(),
           _passwordController.text,
         );
+        await SessionStorage.saveSession(session);
         if (!mounted) {
           return;
         }
@@ -97,6 +100,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _openCalendar(UserSession session) {
+    // Request push permission and register token after login (non-blocking)
+    PushNotificationService.requestPermission();
+
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(

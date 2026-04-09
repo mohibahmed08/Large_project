@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/task_model.dart';
+import '../theme/app_theme.dart';
 
 class DayGrid extends StatelessWidget {
   const DayGrid({
@@ -68,20 +69,22 @@ class DayGrid extends StatelessWidget {
   }
 
   String weatherCodeToText(int code) {
-    switch (code) {
-      case 0:
-        return 'Sunny';
-      case 1:
-        return 'Mostly';
-      case 2:
-        return 'Partly';
-      case 3:
-        return 'Cloudy';
-      case 61:
-        return 'Rain';
-      default:
-        return '';
-    }
+    if (code == 0) return 'Sunny';
+    if (code == 1) return 'Mostly';
+    if (code == 2) return 'Partly';
+    if (code == 3) return 'Cloudy';
+    if (code == 45 || code == 48) return 'Foggy';
+    if (code == 51 || code == 53 || code == 55) return 'Drizzle';
+    if (code == 56 || code == 57) return 'Ice';
+    if (code == 61 || code == 63 || code == 65) return 'Rain';
+    if (code == 66 || code == 67) return 'Sleet';
+    if (code == 71 || code == 73 || code == 75) return 'Snow';
+    if (code == 77) return 'Flurries';
+    if (code == 80 || code == 81 || code == 82) return 'Showers';
+    if (code == 85 || code == 86) return 'Snow';
+    if (code == 95) return 'Storm';
+    if (code == 96 || code == 99) return 'Hail';
+    return '';
   }
 
   Color _taskBaseColor(CalendarTask task) {
@@ -93,9 +96,14 @@ class DayGrid extends StatelessWidget {
 
     switch (task.source.toLowerCase()) {
       case 'ical':
-        return const Color(0xFF94A3B8);
+        return const Color(0xFF94A3B8); // slate – matches web
+      case 'task':
+        return const Color(0xFF22C55E); // green – matches web
+      case 'plan':
+        return const Color(0xFFA855F7); // purple – matches web
+      case 'event':
       default:
-        return const Color(0xFF64B5F6);
+        return const Color(0xFF60A5FA); // blue – matches web accent
     }
   }
 
@@ -155,10 +163,10 @@ class DayGrid extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isSelected
-                ? const Color(0xFF9C27B0)
+                ? AppTheme.accent           // blue – consistent with theme
                 : isToday
-                    ? const Color(0xFF64B5F6)
-                    : const Color(0xFF2C2C3E),
+                    ? AppTheme.accentStrong // stronger blue for today
+                    : AppTheme.border,
             width: isSelected || isToday ? 2 : 1,
           ),
         ),

@@ -79,11 +79,9 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
     '#0EA5E9',
     '#F43F5E',
     '#84CC16',
-    '#FB7185',
     '#FACC15',
     '#2DD4BF',
     '#818CF8',
-    '#F59E0B',
   ];
   late String _selectedColor;
 

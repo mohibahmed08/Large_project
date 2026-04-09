@@ -15,6 +15,7 @@ class AIScreen extends StatefulWidget {
     required this.onSessionUpdated,
     required this.onCreateTaskFromSuggestion,
     required this.onCalendarChanged,
+    this.embedded = false,
   });
 
   final UserSession initialSession;
@@ -23,6 +24,7 @@ class AIScreen extends StatefulWidget {
   final Future<void> Function(String title, String description, String suggestedTime)
       onCreateTaskFromSuggestion;
   final Future<void> Function() onCalendarChanged;
+  final bool embedded;
 
   @override
   State<AIScreen> createState() => _AIScreenState();
@@ -282,15 +284,15 @@ class _AIScreenState extends State<AIScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('AI Assistant')),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
+    final content = SafeArea(
+      top: !widget.embedded,
+      bottom: !widget.embedded,
+      child: Column(
+        children: [
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(18),
@@ -470,41 +472,49 @@ class _AIScreenState extends State<AIScreen> {
                       ),
                     );
                   }),
-                ],
-              ),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _messageController,
-                      minLines: 1,
-                      maxLines: 4,
-                      decoration: const InputDecoration(
-                        hintText: 'Ask something about your calendar...',
-                      ),
-                      onSubmitted: (_) => _sendMessage(),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _messageController,
+                    minLines: 1,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      hintText: 'Ask something about your calendar...',
                     ),
+                    onSubmitted: (_) => _sendMessage(),
                   ),
-                  const SizedBox(width: 12),
-                  FilledButton(
-                    onPressed: _isSending ? null : _sendMessage,
-                    child: _isSending
-                        ? const SizedBox(
-                            height: 16,
-                            width: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send),
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton(
+                  onPressed: _isSending ? null : _sendMessage,
+                  child: _isSending
+                      ? const SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.send),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
+    );
+
+    if (widget.embedded) {
+      return content;
+    }
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('AI Assistant')),
+      body: content,
     );
   }
 }

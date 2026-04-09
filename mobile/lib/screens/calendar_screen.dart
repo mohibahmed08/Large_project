@@ -1,14 +1,19 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/task_model.dart';
 import '../models/user_model.dart';
 import '../services/calendar_service.dart';
+import '../services/live_activity_service.dart';
+import '../services/push_notification_service.dart';
+import '../services/session_storage.dart';
 import '../theme/app_theme.dart';
 import '../widgets/day_grid.dart';
 import 'ai_screen.dart';
@@ -29,10 +34,19 @@ class CalendarScreen extends StatefulWidget {
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
+  static const Duration _liveActivityUpcomingWindow = Duration(hours: 12);
+
   final CalendarService _calendarService = CalendarService();
   final TextEditingController _searchController = TextEditingController();
+  final PageController _monthPageController = PageController(initialPage: 1200);
 
   late UserSession _session;
+  Timer? _liveActivityTimer;
+  StreamSubscription<Map<String, dynamic>>? _notificationOpenSubscription;
+  String? _liveActivityId;
+  String? _liveActivityTaskId;
+  bool _liveActivitySupported = false;
+  bool _liveActivityReady = false;
   DateTime _currentDate = DateTime.now();
   DateTime _selectedDate = DateUtils.dateOnly(DateTime.now());
   Map<String, dynamic>? _weatherData;
@@ -40,7 +54,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   List<CalendarTask> _visibleTasks = [];
   bool _isLoading = true;
   bool _isSearching = false;
-  int _selectedIndex = 0;
+  int _selectedIndex = 0; // 0=Calendar, 1=Day, 2=AI
 
   List<String> get _existingGroups {
     final counts = <String, int>{};
@@ -61,14 +75,206 @@ class _CalendarScreenState extends State<CalendarScreen> {
   void initState() {
     super.initState();
     _session = widget.initialSession;
+    unawaited(SessionStorage.saveSession(_session));
+    unawaited(_restoreLiveActivityState());
+    _liveActivityTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => unawaited(_syncLiveActivity()),
+    );
+    _notificationOpenSubscription =
+        PushNotificationService.notificationOpens.listen((data) {
+      unawaited(_handleNotificationOpen(data));
+    });
     _loadMonth(showLoader: true);
     _fetchWeather();
   }
 
   @override
   void dispose() {
+    _liveActivityTimer?.cancel();
+    _notificationOpenSubscription?.cancel();
     _searchController.dispose();
+    _monthPageController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleNotificationOpen(Map<String, dynamic> data) async {
+    final taskId = data['taskId']?.toString() ?? '';
+    if (taskId.isEmpty) {
+      return;
+    }
+
+    CalendarTask? task = _taskById(taskId);
+    if (task == null) {
+      await _loadMonth(showLoader: false);
+      task = _taskById(taskId);
+    }
+
+    if (!mounted || task?.startDate == null) {
+      return;
+    }
+
+    final selectedDay = DateUtils.dateOnly(task!.startDate!);
+    setState(() {
+      _selectedDate = selectedDay;
+      _currentDate = DateTime(selectedDay.year, selectedDay.month, 1);
+      _selectedIndex = 1;
+    });
+
+    final now = DateTime.now();
+    final monthOffset =
+        (selectedDay.year - now.year) * 12 + (selectedDay.month - now.month);
+    _monthPageController.jumpToPage(1200 + monthOffset);
+  }
+
+  Future<void> _restoreLiveActivityState() async {
+    _liveActivitySupported = await LiveActivityService.isSupported();
+    final saved = await SessionStorage.readLiveActivity();
+    _liveActivityId = saved.activityId;
+    _liveActivityTaskId = saved.taskId;
+    _liveActivityReady = true;
+    await _syncLiveActivity();
+  }
+
+  String _liveActivityTaskType(CalendarTask task) {
+    switch (task.source.toLowerCase()) {
+      case 'plan':
+        return 'plan';
+      case 'event':
+        return 'event';
+      case 'ical':
+        return 'ical';
+      case 'task':
+      case 'manual':
+      default:
+        return 'task';
+    }
+  }
+
+  DateTime _effectiveEndDate(CalendarTask task) {
+    return task.endDate ??
+        task.startDate?.add(const Duration(hours: 1)) ??
+        DateTime.now();
+  }
+
+  CalendarTask? _liveActivityCandidate() {
+    final now = DateTime.now();
+    final candidates = _tasks.where((task) {
+      if (task.isCompleted || task.startDate == null) {
+        return false;
+      }
+
+      final start = task.startDate!;
+      final end = _effectiveEndDate(task);
+      final isOngoing = !now.isBefore(start) && !now.isAfter(end);
+      final isUpcoming = start.isAfter(now) &&
+          start.difference(now) <= _liveActivityUpcomingWindow;
+
+      return isOngoing || isUpcoming;
+    }).toList()
+      ..sort((a, b) {
+        final aStart = a.startDate!;
+        final bStart = b.startDate!;
+        final aOngoing = !now.isBefore(aStart) && !now.isAfter(_effectiveEndDate(a));
+        final bOngoing = !now.isBefore(bStart) && !now.isAfter(_effectiveEndDate(b));
+
+        if (aOngoing != bOngoing) {
+          return aOngoing ? -1 : 1;
+        }
+
+        return aStart.compareTo(bStart);
+      });
+
+    return candidates.isEmpty ? null : candidates.first;
+  }
+
+  CalendarTask? _taskById(String taskId) {
+    for (final task in _tasks) {
+      if (task.id == taskId) {
+        return task;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _syncLiveActivity() async {
+    if (!_liveActivityReady || !_liveActivitySupported) {
+      return;
+    }
+
+    final candidate = _liveActivityCandidate();
+
+    if (candidate == null) {
+      if (_liveActivityId != null) {
+        await LiveActivityService.endActivity(_liveActivityId!);
+        _liveActivityId = null;
+        _liveActivityTaskId = null;
+        await SessionStorage.clearLiveActivity();
+      }
+      return;
+    }
+
+    final candidateStart = candidate.startDate!;
+    final candidateEnd = candidate.endDate;
+    final candidateLocation =
+        candidate.location.trim().isEmpty ? null : candidate.location.trim();
+    final candidateTitle =
+        candidate.title.trim().isEmpty ? 'Untitled item' : candidate.title.trim();
+
+    if (_liveActivityId != null && _liveActivityTaskId == candidate.id) {
+      await LiveActivityService.updateActivity(
+        activityId: _liveActivityId!,
+        title: candidateTitle,
+        startTime: candidateStart,
+        endTime: candidateEnd,
+        location: candidateLocation,
+        isCompleted: candidate.isCompleted,
+      );
+      return;
+    }
+
+    if (_liveActivityId != null) {
+      await LiveActivityService.endActivity(_liveActivityId!);
+      _liveActivityId = null;
+      _liveActivityTaskId = null;
+      await SessionStorage.clearLiveActivity();
+    }
+
+    final activityId = await LiveActivityService.startActivity(
+      taskId: candidate.id,
+      taskType: _liveActivityTaskType(candidate),
+      title: candidateTitle,
+      startTime: candidateStart,
+      endTime: candidateEnd,
+      location: candidateLocation,
+    );
+
+    if (activityId == null) {
+      return;
+    }
+
+    _liveActivityId = activityId;
+    _liveActivityTaskId = candidate.id;
+    await SessionStorage.saveLiveActivity(
+      activityId: activityId,
+      taskId: candidate.id,
+    );
+  }
+
+  void _goToToday() {
+    final now = DateUtils.dateOnly(DateTime.now());
+    setState(() {
+      _selectedDate = now;
+      _currentDate = now;
+    });
+    // Jump the page controller back to the base page (offset 1200 represents today)
+    _monthPageController.jumpToPage(1200);
+    _loadMonth(showLoader: false);
+  }
+
+  void _cacheSession(UserSession session) {
+    _session = session;
+    unawaited(SessionStorage.saveSession(session));
   }
 
   Future<void> _loadMonth({bool showLoader = false}) async {
@@ -91,10 +297,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
       }
 
       setState(() {
-        _session = result.session;
+        _cacheSession(result.session);
         _tasks = result.tasks;
         _visibleTasks = result.tasks;
       });
+      unawaited(_syncLiveActivity());
     } catch (error) {
       if (!mounted) {
         return;
@@ -114,12 +321,35 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Future<void> _fetchWeather() async {
     try {
+      // Resolve device location, falling back to a default if permission denied.
+      double latitude = 28.5383;
+      double longitude = -81.3792;
+
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (serviceEnabled) {
+        var permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+        }
+        if (permission == LocationPermission.whileInUse ||
+            permission == LocationPermission.always) {
+          final position = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.low,
+              timeLimit: Duration(seconds: 10),
+            ),
+          );
+          latitude = position.latitude;
+          longitude = position.longitude;
+        }
+      }
+
       final today = DateTime.now();
       final start = _formatDate(today);
       final end = _formatDate(today.add(const Duration(days: 10)));
       final response = await http.get(
         Uri.parse(
-          'https://api.open-meteo.com/v1/forecast?latitude=28.5383&longitude=-81.3792&start_date=$start&end_date=$end&hourly=weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit',
+          'https://api.open-meteo.com/v1/forecast?latitude=$latitude&longitude=$longitude&start_date=$start&end_date=$end&hourly=weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit',
         ),
       );
 
@@ -160,7 +390,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       }
 
       setState(() {
-        _session = result.session;
+        _cacheSession(result.session);
         _visibleTasks = result.tasks;
       });
     } catch (error) {
@@ -207,7 +437,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
 
     try {
-      _session = await _calendarService.saveTask(
+      final nextSession = await _calendarService.saveTask(
         session: _session,
         taskId: task?.id,
         title: result.title,
@@ -222,6 +452,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         reminderEnabled: result.reminderEnabled,
         reminderMinutesBefore: result.reminderMinutesBefore,
       );
+      _cacheSession(nextSession);
 
       await _loadMonth();
       if (!mounted) {
@@ -243,7 +474,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Future<void> _toggleTask(CalendarTask task, bool value) async {
     try {
-      _session = await _calendarService.saveTask(
+      final nextSession = await _calendarService.saveTask(
         session: _session,
         taskId: task.id,
         title: task.title,
@@ -258,6 +489,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         reminderEnabled: task.reminderEnabled,
         reminderMinutesBefore: task.reminderMinutesBefore,
       );
+      _cacheSession(nextSession);
       await _loadMonth();
     } catch (error) {
       if (!mounted) {
@@ -342,7 +574,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         icsUrl: result.$1,
         icsContent: result.$2,
       );
-      _session = importResult.$1;
+      _cacheSession(importResult.$1);
       await _loadMonth();
       if (!mounted) {
         return;
@@ -430,7 +662,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         session: _session,
         icsContent: content,
       );
-      _session = importResult.$1;
+      _cacheSession(importResult.$1);
       totalImported += importResult.$2;
     }
 
@@ -447,41 +679,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
     });
   }
 
-  Future<void> _openAiScreen() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AIScreen(
-          initialSession: _session,
-          selectedDate: _selectedDate,
-          onSessionUpdated: (session) {
-            _session = session;
-          },
-          onCalendarChanged: () => _loadMonth(),
-          onCreateTaskFromSuggestion: (title, description, suggestedTime) async {
-            final startDate = _dateWithTime(_selectedDate, suggestedTime);
-            _session = await _calendarService.saveTask(
-              session: _session,
-              title: title,
-              description: description,
-              startDate: startDate,
-              color: '',
-              group: '',
-              reminderEnabled: false,
-              reminderMinutesBefore: 30,
-            );
-            await _loadMonth();
-          },
-        ),
-      ),
-    );
-
-    if (!mounted) {
-      return;
-    }
-    await _loadMonth();
-  }
-
   Future<void> _openSettings() async {
     await Navigator.push(
       context,
@@ -489,7 +686,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         builder: (_) => SettingsScreen(
           initialSession: _session,
           onSessionUpdated: (session) {
-            _session = session;
+            _cacheSession(session);
           },
         ),
       ),
@@ -498,7 +695,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
     setState(() {});
   }
 
-  void _logout() {
+  Future<void> _logout() async {
+    _liveActivityTimer?.cancel();
+    if (_liveActivityId != null) {
+      await LiveActivityService.endActivity(_liveActivityId!);
+    } else if (_liveActivitySupported) {
+      await LiveActivityService.endAllActivities();
+    }
+    await SessionStorage.clearLiveActivity();
+    await PushNotificationService.removeDeviceToken();
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -539,10 +744,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
 
     try {
-      _session = await _calendarService.deleteTask(
+      final nextSession = await _calendarService.deleteTask(
         session: _session,
         taskId: task.id,
       );
+      _cacheSession(nextSession);
       await _loadMonth();
       if (!mounted) {
         return;
@@ -604,6 +810,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
     switch (task.source.toLowerCase()) {
       case 'ical':
         return 'Imported';
+      case 'task':
+        return 'Task';
+      case 'plan':
+        return 'Plan';
+      case 'event':
+        return 'Event';
       case 'manual':
         return 'Manual';
       default:
@@ -619,9 +831,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
     switch (task.source.toLowerCase()) {
       case 'ical':
-        return const Color(0xFF94A3B8);
+        return const Color(0xFF94A3B8); // slate
+      case 'task':
+        return const Color(0xFF22C55E); // green
+      case 'plan':
+        return const Color(0xFFA855F7); // purple
+      case 'event':
       default:
-        return AppTheme.accent;
+        return AppTheme.accent; // blue
     }
   }
 
@@ -693,102 +910,63 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   String _weatherLabel(int? code) {
-    switch (code) {
-      case 0:
-        return 'Clear';
-      case 1:
-        return 'Mostly clear';
-      case 2:
-        return 'Partly cloudy';
-      case 3:
-        return 'Overcast';
-      case 61:
-      case 63:
-      case 65:
-        return 'Rain';
-      case 71:
-      case 73:
-      case 75:
-        return 'Snow';
-      default:
-        return 'Weather';
-    }
+    if (code == null) return 'Weather';
+    if (code == 0) return 'Clear';
+    if (code == 1) return 'Mostly clear';
+    if (code == 2) return 'Partly cloudy';
+    if (code == 3) return 'Overcast';
+    if (code == 45 || code == 48) return 'Fog';
+    if (code == 51 || code == 53 || code == 55) return 'Drizzle';
+    if (code == 56 || code == 57) return 'Freezing drizzle';
+    if (code == 61 || code == 63 || code == 65) return 'Rain';
+    if (code == 66 || code == 67) return 'Freezing rain';
+    if (code == 71 || code == 73 || code == 75) return 'Snow';
+    if (code == 77) return 'Snow grains';
+    if (code == 80 || code == 81 || code == 82) return 'Showers';
+    if (code == 85 || code == 86) return 'Snow showers';
+    if (code == 95) return 'Thunderstorm';
+    if (code == 96 || code == 99) return 'Thunderstorm w/ hail';
+    return 'Weather';
   }
 
   String _weatherGlyph(int? code) {
-    switch (code) {
-      case 0:
-      case 1:
-        return '☀';
-      case 2:
-      case 3:
-        return '☁';
-      case 61:
-      case 63:
-      case 65:
-        return '☂';
-      case 71:
-      case 73:
-      case 75:
-        return '❄';
-      default:
-        return '•';
-    }
+    if (code == null) return '•';
+    if (code == 0 || code == 1) return '☀️';
+    if (code == 2 || code == 3) return '⛅';
+    if (code == 45 || code == 48) return '🌫️';
+    if (code >= 51 && code <= 67) return '🌧️';
+    if (code >= 71 && code <= 77) return '❄️';
+    if (code >= 80 && code <= 86) return '🌦️';
+    if (code == 95 || code == 96 || code == 99) return '⛈️';
+    return '•';
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final daysInMonth =
-        DateTime(_currentDate.year, _currentDate.month + 1, 0).day;
-    final firstDayOfMonth =
-        DateTime(_currentDate.year, _currentDate.month, 1).weekday % 7;
+  Widget _buildCalendarTab() {
     final today = DateTime.now();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Calendar - ${_session.firstName.isEmpty ? _session.userId : _session.firstName}',
-        ),
-        actions: [
-          IconButton(
-            onPressed: _openSettings,
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Settings',
-          ),
-          IconButton(
-            onPressed: _openImportDialog,
-            icon: const Icon(Icons.link),
-            tooltip: 'Connect calendar',
-          ),
-          IconButton(
-            onPressed: _logout,
-            icon: const Icon(Icons.logout),
-            tooltip: 'Logout',
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: () => _loadMonth(showLoader: false),
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          AppTheme.surfaceAlt.withValues(alpha: 0.95),
-                          AppTheme.surface.withValues(alpha: 0.98),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: AppTheme.border),
+    return _isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : RefreshIndicator(
+            onRefresh: () => _loadMonth(showLoader: false),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              children: [
+                // Search card
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        AppTheme.surfaceAlt.withValues(alpha: 0.95),
+                        AppTheme.surface.withValues(alpha: 0.98),
+                      ],
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                         Text(
                           'Plan in one place',
                           style: Theme.of(context).textTheme.headlineSmall,
@@ -830,46 +1008,53 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              IconButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _currentDate = DateTime(
-                                      _currentDate.year,
-                                      _currentDate.month - 1,
-                                    );
-                                  });
-                                  _loadMonth(showLoader: true);
-                                },
-                                icon: const Icon(Icons.chevron_left),
-                              ),
-                              Text(
-                                '${_monthName(_currentDate.month)} ${_currentDate.year}',
-                                style: Theme.of(context).textTheme.titleLarge,
-                              ),
-                              IconButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _currentDate = DateTime(
-                                      _currentDate.year,
-                                      _currentDate.month + 1,
-                                    );
-                                  });
-                                  _loadMonth(showLoader: true);
-                                },
-                                icon: const Icon(Icons.chevron_right),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
+                const SizedBox(height: 16),
+                // Month header with Today button
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: () {
+                          _monthPageController.previousPage(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                          );
+                        },
+                        icon: const Icon(Icons.chevron_left),
+                        tooltip: 'Previous month',
+                      ),
+                      Expanded(
+                        child: Text(
+                          '${_monthName(_currentDate.month)} ${_currentDate.year}',
+                          style: Theme.of(context).textTheme.titleLarge,
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () {
+                          _monthPageController.nextPage(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                          );
+                        },
+                        icon: const Icon(Icons.chevron_right),
+                        tooltip: 'Next month',
+                      ),
+                      TextButton(
+                        onPressed: _goToToday,
+                        child: const Text('Today'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                    child: Column(
+                      children: [
+                          // Weekday header
                           Row(
                             children: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
                                 .map(
@@ -891,257 +1076,398 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                 .toList(),
                           ),
                           const SizedBox(height: 8),
-                          GridView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: daysInMonth + firstDayOfMonth,
-                            gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 7,
-                              crossAxisSpacing: 4,
-                              mainAxisSpacing: 4,
-                            ),
-                            itemBuilder: (context, index) {
-                              if (index < firstDayOfMonth) {
-                                return const SizedBox.shrink();
-                              }
-
-                              final day = index - firstDayOfMonth + 1;
-                              final date = DateTime(
-                                _currentDate.year,
-                                _currentDate.month,
-                                day,
-                              );
-
-                              return DayGrid(
-                                day: day,
-                                month: _currentDate.month,
-                                year: _currentDate.year,
-                                isToday: DateUtils.isSameDay(date, today),
-                                isSelected: DateUtils.isSameDay(
-                                  date,
-                                  _selectedDate,
-                                ),
-                                weatherData: _weatherData,
-                                tasks: _tasksForDay(day),
-                                onDayTap: (selectedDay) {
-                                  setState(() {
-                                    _selectedDate = DateTime(
-                                      _currentDate.year,
-                                      _currentDate.month,
-                                      selectedDay,
+                          // Swipeable month grid
+                          SizedBox(
+                            height: 340,
+                            child: PageView.builder(
+                              controller: _monthPageController,
+                              onPageChanged: (page) {
+                                final now = DateTime.now();
+                                final monthOffset = page - 1200;
+                                final newDate = DateTime(now.year, now.month + monthOffset, 1);
+                                setState(() {
+                                  _currentDate = newDate;
+                                });
+                                _loadMonth(showLoader: false);
+                              },
+                              itemBuilder: (context, page) {
+                                final now = DateTime.now();
+                                final monthOffset = page - 1200;
+                                final pageMonth = DateTime(now.year, now.month + monthOffset, 1);
+                                final daysInPageMonth = DateTime(pageMonth.year, pageMonth.month + 1, 0).day;
+                                final firstDay = DateTime(pageMonth.year, pageMonth.month, 1).weekday % 7;
+                                return GridView.builder(
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  itemCount: daysInPageMonth + firstDay,
+                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 7,
+                                    crossAxisSpacing: 4,
+                                    mainAxisSpacing: 4,
+                                  ),
+                                  itemBuilder: (context, index) {
+                                    if (index < firstDay) return const SizedBox.shrink();
+                                    final day = index - firstDay + 1;
+                                    final date = DateTime(pageMonth.year, pageMonth.month, day);
+                                    return DayGrid(
+                                      day: day,
+                                      month: pageMonth.month,
+                                      year: pageMonth.year,
+                                      isToday: DateUtils.isSameDay(date, today),
+                                      isSelected: DateUtils.isSameDay(date, _selectedDate),
+                                      weatherData: _weatherData,
+                                      tasks: _visibleTasks
+                                          .where((t) => DateUtils.isSameDay(t.startDate, date))
+                                          .toList(),
+                                      onDayTap: (selectedDay) {
+                                        setState(() {
+                                          _selectedDate = DateTime(pageMonth.year, pageMonth.month, selectedDay);
+                                          _selectedIndex = 1; // Switch to Day tab
+                                        });
+                                      },
                                     );
-                                  });
-                                },
-                              );
-                            },
+                                  },
+                                );
+                              },
+                            ),
                           ),
-                        ],
-                      ),
+                      ],
                     ),
                   ),
-                  if (_selectedDayWeather != null) ...[
-                    const SizedBox(height: 16),
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
+                ),
+                ],
+              ),
+            ),
+    );
+  }
+
+  Widget _buildDayTab() {
+    final dayTasks = _tasksForSelectedDay;
+    final selectedDayWeather = _selectedDayWeather;
+    final formattedDate = '${_monthName(_selectedDate.month)} ${_selectedDate.day}, ${_selectedDate.year}';
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(formattedDate),
+        actions: [
+          IconButton(
+            onPressed: _openSettings,
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Settings',
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _openTaskDialog(),
+        label: const Text('Add Item'),
+        icon: const Icon(Icons.add),
+      ),
+      body: RefreshIndicator(
+        onRefresh: () => _loadMonth(showLoader: false),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+          children: [
+            // Weather card for selected day
+            if (selectedDayWeather != null) ...[
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Text(
+                        _weatherGlyph(selectedDayWeather['code'] as int?),
+                        style: Theme.of(context).textTheme.headlineMedium,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              _weatherGlyph(_selectedDayWeather!['code'] as int?),
-                              style: Theme.of(context).textTheme.headlineMedium,
+                              _weatherLabel(selectedDayWeather['code'] as int?),
+                              style: Theme.of(context).textTheme.titleMedium,
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Weather for ${_selectedDate.month}/${_selectedDate.day}',
-                                    style: Theme.of(context).textTheme.titleMedium,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${_weatherLabel(_selectedDayWeather!['code'] as int?)} • High ${((_selectedDayWeather!['max'] as num?)?.round() ?? 0)}° • Low ${((_selectedDayWeather!['min'] as num?)?.round() ?? 0)}°',
-                                    style: const TextStyle(
-                                      color: AppTheme.textMuted,
-                                      height: 1.35,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'High ${((selectedDayWeather['max'] as num?)?.round() ?? 0)}°  •  Low ${((selectedDayWeather['min'] as num?)?.round() ?? 0)}°',
+                              style: const TextStyle(color: AppTheme.textMuted, height: 1.35),
                             ),
                           ],
                         ),
                       ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            // Tasks / items for selected day
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            dayTasks.isEmpty ? 'Nothing scheduled' : '${dayTasks.length} item${dayTasks.length == 1 ? '' : 's'}',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                  const SizedBox(height: 20),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  'Tasks for ${_selectedDate.month}/${_selectedDate.day}/${_selectedDate.year}',
-                                  style: Theme.of(context).textTheme.titleMedium,
+                    const SizedBox(height: 12),
+                    if (dayTasks.isEmpty)
+                      const Text(
+                        'No items scheduled for this day. Tap + to add one.',
+                        style: TextStyle(color: AppTheme.textMuted),
+                      )
+                    else
+                      ...(() {
+                        final groupedTasks = <String, List<CalendarTask>>{};
+                        for (final task in dayTasks) {
+                          final key = _taskGroupLabel(task);
+                          groupedTasks.putIfAbsent(key, () => []).add(task);
+                        }
+
+                        return groupedTasks.entries.expand((entry) sync* {
+                          final groupColor = _groupMajorityColor(entry.value);
+                          yield Padding(
+                            padding: const EdgeInsets.only(top: 8, bottom: 4),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: BoxDecoration(
+                                    color: groupColor,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  entry.key.toUpperCase(),
+                                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                    color: groupColor,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.08,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '${entry.value.length}',
+                                  style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          );
+
+                          for (final task in entry.value) {
+                            final taskColor = _taskDisplayColor(task, groupColor: groupColor);
+                            yield Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              decoration: BoxDecoration(
+                                color: taskColor.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border(
+                                  left: BorderSide(color: taskColor, width: 3),
+                                  top: BorderSide(color: taskColor.withValues(alpha: 0.2)),
+                                  right: BorderSide(color: taskColor.withValues(alpha: 0.2)),
+                                  bottom: BorderSide(color: taskColor.withValues(alpha: 0.2)),
                                 ),
                               ),
-                              IconButton(
-                                onPressed: () => _openTaskDialog(),
-                                icon: const Icon(Icons.add_circle_outline),
-                                tooltip: 'Add task',
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          if (_tasksForSelectedDay.isEmpty)
-                            const Text(
-                              'No tasks scheduled for this day.',
-                              style: TextStyle(color: AppTheme.textMuted),
-                            )
-                          else
-                            ...(() {
-                              final groupedTasks = <String, List<CalendarTask>>{};
-                              for (final task in _tasksForSelectedDay) {
-                                final key = _taskGroupLabel(task);
-                                groupedTasks.putIfAbsent(key, () => []).add(task);
-                              }
-
-                              return groupedTasks.entries.expand((entry) sync* {
-                                final groupColor = _groupMajorityColor(
-                                  entry.value,
-                                );
-                                yield Padding(
-                                  padding: const EdgeInsets.only(top: 8, bottom: 10),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        width: 10,
-                                        height: 10,
-                                        decoration: BoxDecoration(
-                                          color: groupColor,
-                                          shape: BoxShape.circle,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        '${entry.key} - ${entry.value.length}',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .labelLarge
-                                            ?.copyWith(
-                                              color: AppTheme.textMuted,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-
-                                for (final task in entry.value) {
-                                  final taskColor = _taskDisplayColor(
-                                    task,
-                                    groupColor: groupColor,
-                                  );
-                                  yield Card(
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    color: taskColor.withValues(alpha: 0.18),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(20),
-                                      side: BorderSide(
-                                        color: taskColor.withValues(alpha: 0.65),
-                                      ),
-                                    ),
-                                    child: ListTile(
-                                      onTap: () => _openTaskDialog(task: task),
-                                      leading: Checkbox(
+                              child: ListTile(
+                                onTap: () => _openTaskDialog(task: task),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                leading: task.source == 'task'
+                                    ? Checkbox(
                                         value: task.isCompleted,
                                         activeColor: taskColor,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                                         onChanged: (value) {
-                                          if (value != null) {
-                                            _toggleTask(task, value);
-                                          }
+                                          if (value != null) _toggleTask(task, value);
                                         },
-                                      ),
-                                      title: Text(
-                                        task.title.isEmpty ? '(Untitled)' : task.title,
-                                      ),
-                                      subtitle: Text(
-                                        [
-                                          if (task.description.isNotEmpty)
-                                            task.description,
-                                          if (task.startDate != null)
-                                            'Starts ${task.startDate!.hour.toString().padLeft(2, '0')}:${task.startDate!.minute.toString().padLeft(2, '0')}',
-                                          if (task.endDate != null)
-                                            'Ends ${task.endDate!.hour.toString().padLeft(2, '0')}:${task.endDate!.minute.toString().padLeft(2, '0')}',
-                                          if (task.reminderEnabled)
-                                            'Email reminder ${task.reminderMinutesBefore == 0 ? 'at time of event' : '${task.reminderMinutesBefore} min before'}',
-                                          if (task.location.isNotEmpty) task.location,
-                                        ].join('\n'),
-                                        style: const TextStyle(
-                                          color: AppTheme.textMuted,
-                                          height: 1.35,
+                                      )
+                                    : null,
+                                title: Text(
+                                  task.title.isEmpty ? '(Untitled)' : task.title,
+                                  style: TextStyle(
+                                    decoration: task.isCompleted ? TextDecoration.lineThrough : null,
+                                    color: task.isCompleted ? AppTheme.textMuted : AppTheme.textPrimary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (task.startDate != null) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        task.endDate != null
+                                            ? '${_formatTime(task.startDate!)} – ${_formatTime(task.endDate!)}'
+                                            : _formatTime(task.startDate!),
+                                        style: TextStyle(
+                                          color: taskColor,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
                                         ),
                                       ),
-                                      isThreeLine: true,
-                                      trailing: PopupMenuButton<String>(
-                                        onSelected: (value) {
-                                          if (value == 'edit') {
-                                            _openTaskDialog(task: task);
-                                          } else if (value == 'delete') {
-                                            _deleteTask(task);
-                                          }
-                                        },
-                                        itemBuilder: (context) => const [
-                                          PopupMenuItem<String>(
-                                            value: 'edit',
-                                            child: Text('Edit'),
-                                          ),
-                                          PopupMenuItem<String>(
-                                            value: 'delete',
-                                            child: Text('Delete'),
-                                          ),
-                                        ],
+                                    ],
+                                    if (task.description.isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        task.description,
+                                        style: const TextStyle(color: AppTheme.textMuted, height: 1.35),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                    ),
-                                  );
-                                }
-                              }).toList();
-                            })(),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+                                    ],
+                                    if (task.location.isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '📍 ${task.location}',
+                                        style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                trailing: PopupMenuButton<String>(
+                                  onSelected: (value) {
+                                    if (value == 'edit') {
+                                      _openTaskDialog(task: task);
+                                    } else if (value == 'delete') {
+                                      _deleteTask(task);
+                                    }
+                                  },
+                                  itemBuilder: (context) => const [
+                                    PopupMenuItem<String>(value: 'edit', child: Text('Edit')),
+                                    PopupMenuItem<String>(value: 'delete', child: Text('Delete')),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+                        }).toList();
+                      })(),
+                  ],
+                ),
               ),
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _selectedIndex == 0 ? () => _openTaskDialog() : _openAiScreen,
-        label: Text(_selectedIndex == 0 ? 'Add Task' : 'Open AI'),
-        icon: Icon(_selectedIndex == 0 ? Icons.add : Icons.smart_toy),
+          ],
+        ),
       ),
+    );
+  }
+
+  String _formatTime(DateTime dt) {
+    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final period = dt.hour < 12 ? 'AM' : 'PM';
+    return '$hour:$minute $period';
+  }
+
+  PreferredSizeWidget? _buildAppBar() {
+    final selectedDateLabel =
+        '${_monthName(_selectedDate.month)} ${_selectedDate.day}, ${_selectedDate.year}';
+
+    if (_selectedIndex == 1) {
+      return null;
+    }
+
+    return AppBar(
+      title: Text(
+        _selectedIndex == 0 ? 'Calendar++' : 'AI for $selectedDateLabel',
+      ),
+      actions: [
+        if (_selectedIndex == 0) ...[
+          IconButton(
+            onPressed: _openImportDialog,
+            icon: const Icon(Icons.link),
+            tooltip: 'Connect calendar',
+          ),
+        ],
+        IconButton(
+          onPressed: _openSettings,
+          icon: const Icon(Icons.settings_outlined),
+          tooltip: 'Settings',
+        ),
+        IconButton(
+          onPressed: _logout,
+          icon: const Icon(Icons.logout),
+          tooltip: 'Logout',
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: _buildAppBar(),
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: [
+          _buildCalendarTab(),
+          _buildDayTab(),
+          AIScreen(
+            embedded: true,
+            key: ValueKey(_selectedDate.toIso8601String()),
+            initialSession: _session,
+            selectedDate: _selectedDate,
+            onSessionUpdated: (session) {
+              setState(() {
+                _cacheSession(session);
+              });
+            },
+            onCalendarChanged: () => _loadMonth(),
+            onCreateTaskFromSuggestion: (title, description, suggestedTime) async {
+              final startDate = _dateWithTime(_selectedDate, suggestedTime);
+              final nextSession = await _calendarService.saveTask(
+                session: _session,
+                title: title,
+                description: description,
+                startDate: startDate,
+                color: '',
+                group: '',
+                reminderEnabled: false,
+                reminderMinutesBefore: 30,
+              );
+              _cacheSession(nextSession);
+              await _loadMonth();
+            },
+          ),
+        ],
+      ),
+      floatingActionButton: (_selectedIndex == 0 || _selectedIndex == 1)
+          ? FloatingActionButton.extended(
+              onPressed: () => _openTaskDialog(),
+              tooltip: 'Add Item',
+              icon: const Icon(Icons.add),
+              label: Text(_selectedIndex == 0 ? 'Add Item' : 'Add to Day'),
+            )
+          : null,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: (index) {
           setState(() {
             _selectedIndex = index;
           });
-          if (index == 1) {
-            _openAiScreen();
-          }
         },
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.calendar_month),
+            icon: Icon(Icons.calendar_month_outlined),
+            selectedIcon: Icon(Icons.calendar_month),
             label: 'Calendar',
           ),
           NavigationDestination(
-            icon: Icon(Icons.smart_toy),
+            icon: Icon(Icons.today_outlined),
+            selectedIcon: Icon(Icons.today),
+            label: 'Day',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.auto_awesome_outlined),
+            selectedIcon: Icon(Icons.auto_awesome),
             label: 'AI',
           ),
         ],
