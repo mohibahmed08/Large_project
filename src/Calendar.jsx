@@ -514,21 +514,29 @@ function Calendar({
         return calendarTasks.filter((task) => task?.dueDate && normalizeDateKey(task.dueDate) === selectedKey);
     }, [calendarTasks, selectedDate]);
 
-    const groupedSelectedDayTasks = useMemo(() => {
-        const groups = new Map();
-        selectedDayTasks.forEach((task) => {
-            const key = taskGroupLabel(task);
-            if (!groups.has(key)) {
-                groups.set(key, []);
-            }
-            groups.get(key).push(task);
-        });
-        return Array.from(groups.entries()).map(([groupName, tasks]) => ({
-            groupName,
-            tasks,
-            color: majorityGroupColor(tasks),
-        }));
-    }, [selectedDayTasks]);
+    const visibleSelectedDayTasks = useMemo(() => (
+        [...selectedDayTasks]
+            .filter((task) => !dayModalState.hideCompleted || !task.isCompleted)
+            .sort((a, b) => {
+                const aStart = new Date(a.dueDate).getTime();
+                const bStart = new Date(b.dueDate).getTime();
+                if (aStart !== bStart) return aStart - bStart;
+
+                const aEnd = new Date(a.endDate || a.dueDate).getTime();
+                const bEnd = new Date(b.endDate || b.dueDate).getTime();
+                if (aEnd !== bEnd) return aEnd - bEnd;
+
+                return String(a.title || '').localeCompare(String(b.title || ''));
+            })
+    ), [selectedDayTasks, dayModalState.hideCompleted]);
+
+    const groupedSelectedDayTasks = useMemo(() => ([
+        {
+            groupName: '',
+            tasks: visibleSelectedDayTasks,
+            color: '#60A5FA',
+        },
+    ]), [visibleSelectedDayTasks]);
 
     useEffect(() => {
         onSelectedDateChange?.(selectedDate);
@@ -1274,20 +1282,16 @@ function Calendar({
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, [editorState, importState.open, dayModalState.open]);
 
-    const goToToday = () => {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        setSelectedDate(today);
-        setCurrentMonthIndex(0);
-    };
-
     return (
         <div className="calendar-calendar-background">
             <div className="calendar-month-interactable-header">
-                {singleMonth && <img onClick={() => setCurrentMonthIndex(currentMonthIndex - 1)} className="calendar-month-arrow" src={UpArrow} alt="Previous month" />}
+                <div className="calendar-month-header-side">
+                    {singleMonth && <img onClick={() => setCurrentMonthIndex(currentMonthIndex - 1)} className="calendar-month-arrow" src={UpArrow} alt="Previous month" />}
+                </div>
                 <h1 className="calendar-month-month-name">{monthName} {year}</h1>
-                {singleMonth && <img onClick={() => setCurrentMonthIndex(currentMonthIndex + 1)} className="calendar-month-arrow" src={DownArrow} alt="Next month" />}
-                <button type="button" className="calendar-today-btn" onClick={goToToday}>Today</button>
+                <div className="calendar-month-header-side">
+                    {singleMonth && <img onClick={() => setCurrentMonthIndex(currentMonthIndex + 1)} className="calendar-month-arrow" src={DownArrow} alt="Next month" />}
+                </div>
             </div>
 
             <div className="calendar-weekdays">
@@ -1398,10 +1402,10 @@ function Calendar({
                             <div className="calendar-day-column">
                                 <div className="calendar-day-column-header">
                                     <h3>Schedule</h3>
-                                    <span>{selectedDayTasks.length} scheduled</span>
+                                    <span>{visibleSelectedDayTasks.length} scheduled</span>
                                 </div>
                                 <div className="calendar-day-list">
-                                    {selectedDayTasks.length > 0 ? groupedSelectedDayTasks.map(({ groupName, tasks, color }) => {
+                                    {visibleSelectedDayTasks.length > 0 ? groupedSelectedDayTasks.map(({ groupName, tasks, color }) => {
                                         const visibleTasks = dayModalState.hideCompleted
                                             ? tasks.filter((t) => !t.isCompleted)
                                             : tasks;
