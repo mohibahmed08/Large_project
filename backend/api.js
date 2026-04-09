@@ -572,6 +572,7 @@ function buildSettingsPayload(user)
     const reminderDefaults = normalizeReminderSettings(user?.reminderDefaults || {}, {
         reminderEnabled: false,
         reminderMinutesBefore: 30,
+        reminderDelivery: 'email',
     });
     const feedUrls = buildCalendarFeedUrls(user);
 
@@ -1255,6 +1256,7 @@ function buildRecurringTaskDocuments(userId, args, options = {})
         Object.assign(document, buildReminderFields(document, {
             reminderEnabled: args.reminderEnabled,
             reminderMinutesBefore: args.reminderMinutesBefore,
+            reminderDelivery: args.reminderDelivery,
         }));
         documents.push(document);
 
@@ -1329,6 +1331,8 @@ function normalizeReminderSettings(input = {}, fallback = {})
 {
     const enabledInput = input.reminderEnabled;
     const minutesInput = input.reminderMinutesBefore;
+    const deliveryInput = String(input.reminderDelivery || '').trim().toLowerCase();
+    const fallbackDelivery = String(fallback.reminderDelivery || 'email').trim().toLowerCase();
     const baseEnabled = fallback.reminderEnabled === true;
     const enabled = enabledInput === undefined
         ? baseEnabled
@@ -1339,10 +1343,16 @@ function normalizeReminderSettings(input = {}, fallback = {})
     const parsedMinutes = minutesInput === undefined || minutesInput === null || minutesInput === ''
         ? fallbackMinutes
         : Math.max(0, Math.round(Number(minutesInput)));
+    const reminderDelivery = ['email', 'push', 'both'].includes(deliveryInput)
+        ? deliveryInput
+        : ['email', 'push', 'both'].includes(fallbackDelivery)
+            ? fallbackDelivery
+            : 'email';
 
     return {
         reminderEnabled: enabled,
         reminderMinutesBefore: enabled ? parsedMinutes : 0,
+        reminderDelivery,
     };
 }
 
@@ -1357,6 +1367,7 @@ function buildReminderFields(taskLike, reminderInput = {}, fallback = {})
     return {
         reminderEnabled: normalized.reminderEnabled,
         reminderMinutesBefore: normalized.reminderMinutesBefore,
+        reminderDelivery: normalized.reminderDelivery,
         reminderAt,
         reminderSentAt: null,
     };
@@ -1364,7 +1375,7 @@ function buildReminderFields(taskLike, reminderInput = {}, fallback = {})
 
 async function sendTaskReminderEmail(user, task)
 {
-    if(!user?.email || !task?.dueDate)
+    if(!task?.dueDate)
     {
         return false;
     }
@@ -1379,15 +1390,24 @@ async function sendTaskReminderEmail(user, task)
     const endText = endDate ? formatDateTimeForUser(endDate, timeOptions) : '';
     const locationLine = task.location ? `<p>Location: ${task.location}</p>` : '';
     const descriptionLine = task.description ? `<p>${task.description}</p>` : '';
+    const delivery = normalizeReminderSettings(task, {
+        reminderEnabled: true,
+        reminderMinutesBefore: Number(task?.reminderMinutesBefore || 30),
+        reminderDelivery: 'email',
+    }).reminderDelivery;
+    const shouldSendEmail = delivery === 'email' || delivery === 'both';
+    const shouldSendPush = delivery === 'push' || delivery === 'both';
 
-    await sendWithResend(
+    if(shouldSendEmail && user?.email)
+    {
+        await sendWithResend(
         user.email,
         `⏰ Reminder: ${task.title || 'Upcoming task'}`,
         reminderEmailHtml(task, startText, endText)
-    );
+        );
+    }
 
-    // Also send a push notification if the user has a registered device token
-    if(user.deviceToken)
+    if(shouldSendPush && user.deviceToken)
     {
         const pushTitle = `⏰ ${task.title || 'Upcoming task'}`;
         const pushBody  = startText + (endText ? ` → ${endText}` : '');
@@ -1700,6 +1720,7 @@ function normalizeTaskForTool(task)
         reminderMinutesBefore: Number.isFinite(Number(task.reminderMinutesBefore))
             ? Number(task.reminderMinutesBefore)
             : 0,
+        reminderDelivery: String(task.reminderDelivery || 'email'),
         reminderAt: task.reminderAt ? new Date(task.reminderAt).toISOString() : null,
     };
 }
@@ -1978,7 +1999,8 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
             args.dueDate !== undefined ||
             args.endDate !== undefined ||
             args.reminderEnabled !== undefined ||
-            args.reminderMinutesBefore !== undefined
+            args.reminderMinutesBefore !== undefined ||
+            args.reminderDelivery !== undefined
         )
         {
             const mergedTask = {
@@ -1988,6 +2010,7 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
             Object.assign(updates, buildReminderFields(mergedTask, {
                 reminderEnabled: args.reminderEnabled,
                 reminderMinutesBefore: args.reminderMinutesBefore,
+                reminderDelivery: args.reminderDelivery,
             }, existing));
         }
 
@@ -2645,6 +2668,7 @@ exports.setApp = function(app, client)
             lastName,
             reminderEnabled,
             reminderMinutesBefore,
+            reminderDelivery,
         } = req.body;
 
         if(!validateJwtOrRespond(token, res, jwtToken))
@@ -2661,9 +2685,11 @@ exports.setApp = function(app, client)
                 reminderDefaults: normalizeReminderSettings({
                     reminderEnabled,
                     reminderMinutesBefore,
+                    reminderDelivery,
                 }, {
                     reminderEnabled: false,
                     reminderMinutesBefore: 30,
+                    reminderDelivery: 'email',
                 }),
             };
 
@@ -2957,6 +2983,7 @@ exports.setApp = function(app, client)
             isCompleted,
             reminderEnabled,
             reminderMinutesBefore,
+            reminderDelivery,
             timeZone,
             utcOffsetMinutes,
         } = req.body;
@@ -3005,7 +3032,8 @@ exports.setApp = function(app, client)
                     nextDueDate !== undefined ||
                     endDate !== undefined ||
                     reminderEnabled !== undefined ||
-                    reminderMinutesBefore !== undefined
+                    reminderMinutesBefore !== undefined ||
+                    reminderDelivery !== undefined
                 )
                 {
                     const mergedTask = {
@@ -3015,6 +3043,7 @@ exports.setApp = function(app, client)
                     Object.assign(updates, buildReminderFields(mergedTask, {
                         reminderEnabled,
                         reminderMinutesBefore,
+                        reminderDelivery,
                     }, existingTask));
                 }
 
@@ -3044,6 +3073,7 @@ exports.setApp = function(app, client)
                 Object.assign(newTask, buildReminderFields(newTask, {
                     reminderEnabled,
                     reminderMinutesBefore,
+                    reminderDelivery,
                 }));
 
                 await db.collection('tasks').insertOne(newTask);

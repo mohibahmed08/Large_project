@@ -380,6 +380,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           initialEndDate: initialEndDate,
           initialReminderEnabled: task?.reminderEnabled ?? false,
           initialReminderMinutesBefore: task?.reminderMinutesBefore ?? 30,
+          initialReminderDelivery: task?.reminderDelivery ?? 'email',
           isEditing: task != null,
         ),
       ),
@@ -404,6 +405,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         isCompleted: task?.isCompleted ?? false,
         reminderEnabled: result.reminderEnabled,
         reminderMinutesBefore: result.reminderMinutesBefore,
+        reminderDelivery: result.reminderDelivery,
       );
       _cacheSession(nextSession);
 
@@ -441,6 +443,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         isCompleted: value,
         reminderEnabled: task.reminderEnabled,
         reminderMinutesBefore: task.reminderMinutesBefore,
+        reminderDelivery: task.reminderDelivery,
       );
       _cacheSession(nextSession);
       await _loadMonth();
@@ -1646,6 +1649,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 group: '',
                 reminderEnabled: false,
                 reminderMinutesBefore: 30,
+                reminderDelivery: 'email',
               );
               _cacheSession(nextSession);
               await _loadMonth();

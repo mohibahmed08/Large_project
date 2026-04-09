@@ -12,6 +12,7 @@ class CalendarTask {
     required this.group,
     required this.reminderEnabled,
     required this.reminderMinutesBefore,
+    required this.reminderDelivery,
   });
 
   final String id;
@@ -26,6 +27,7 @@ class CalendarTask {
   final String group;
   final bool reminderEnabled;
   final int reminderMinutesBefore;
+  final String reminderDelivery;
 
   factory CalendarTask.fromJson(Map<String, dynamic> json) {
     return CalendarTask(
@@ -41,6 +43,7 @@ class CalendarTask {
       group: (json['group'] ?? '').toString(),
       reminderEnabled: json['reminderEnabled'] == true,
       reminderMinutesBefore: (json['reminderMinutesBefore'] as num?)?.toInt() ?? 0,
+      reminderDelivery: (json['reminderDelivery'] ?? 'email').toString(),
     );
   }
 

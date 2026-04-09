@@ -117,29 +117,17 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
       }
 
       // biometricOnly: true — we want Face ID / Touch ID, not device passcode.
-      final unlocked = await _biometricAuthService.authenticate(
-        reason: 'Use $_biometricLabel to unlock Calendar++.',
-        allowDeviceCredential: false,
-      );
-      if (!mounted) {
-        return;
-      }
-
-      if (unlocked) {
-        setState(() {
-          _session = session;
-          _lockedSession = null;
-          _isLoading = false;
-        });
-        return;
-      }
-
       setState(() {
         _session = null;
         _lockedSession = session;
         _unlockMessage =
-            'Unlock your saved session with $_biometricLabel, or choose password login instead.';
+            'Use $_biometricLabel to open your saved session, or choose password login instead.';
         _isLoading = false;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _lockedSession != null) {
+          unawaited(_retryUnlock(auto: true));
+        }
       });
     } catch (_) {
       await SessionStorage.clear();
@@ -154,7 +142,7 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
     }
   }
 
-  Future<void> _retryUnlock() async {
+  Future<void> _retryUnlock({bool auto = false}) async {
     final session = _lockedSession;
     if (session == null) {
       return;
@@ -162,7 +150,9 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
 
     setState(() {
       _isUnlocking = true;
-      _unlockMessage = null;
+      if (!auto) {
+        _unlockMessage = null;
+      }
     });
 
     // biometricOnly — Face ID/Touch ID only, no passcode fallback here.
@@ -179,9 +169,12 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
       if (unlocked) {
         _session = session;
         _lockedSession = null;
+        _unlockMessage = null;
       } else {
         _unlockMessage =
-            '$_biometricLabel did not complete. You can try again or sign in with your password.';
+            auto
+                ? 'Unlock with $_biometricLabel when you are ready, or choose password login instead.'
+                : '$_biometricLabel did not complete. You can try again or sign in with your password.';
       }
     });
   }

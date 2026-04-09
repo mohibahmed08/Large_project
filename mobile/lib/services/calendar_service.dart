@@ -93,6 +93,7 @@ class CalendarService {
     bool isCompleted = false,
     bool reminderEnabled = false,
     int reminderMinutesBefore = 30,
+    String reminderDelivery = 'email',
   }) async {
     final timeZone = await _timeZone();
     final localNow = DateTime.now();
@@ -112,6 +113,7 @@ class CalendarService {
         'isCompleted': isCompleted,
         'reminderEnabled': reminderEnabled,
         'reminderMinutesBefore': reminderMinutesBefore,
+        'reminderDelivery': reminderDelivery,
         'timeZone': timeZone,
         'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
       },

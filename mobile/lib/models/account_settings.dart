@@ -2,16 +2,19 @@ class ReminderDefaults {
   const ReminderDefaults({
     required this.reminderEnabled,
     required this.reminderMinutesBefore,
+    required this.reminderDelivery,
   });
 
   final bool reminderEnabled;
   final int reminderMinutesBefore;
+  final String reminderDelivery;
 
   factory ReminderDefaults.fromJson(Map<String, dynamic> json) {
     return ReminderDefaults(
       reminderEnabled: json['reminderEnabled'] == true,
       reminderMinutesBefore:
           (json['reminderMinutesBefore'] as num?)?.toInt() ?? 30,
+      reminderDelivery: (json['reminderDelivery'] ?? 'email').toString(),
     );
   }
 
@@ -19,17 +22,20 @@ class ReminderDefaults {
     return {
       'reminderEnabled': reminderEnabled,
       'reminderMinutesBefore': reminderMinutesBefore,
+      'reminderDelivery': reminderDelivery,
     };
   }
 
   ReminderDefaults copyWith({
     bool? reminderEnabled,
     int? reminderMinutesBefore,
+    String? reminderDelivery,
   }) {
     return ReminderDefaults(
       reminderEnabled: reminderEnabled ?? this.reminderEnabled,
       reminderMinutesBefore:
           reminderMinutesBefore ?? this.reminderMinutesBefore,
+      reminderDelivery: reminderDelivery ?? this.reminderDelivery,
     );
   }
 }

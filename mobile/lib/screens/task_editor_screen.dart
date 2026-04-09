@@ -11,6 +11,7 @@ class TaskEditorResult {
     required this.endDate,
     required this.reminderEnabled,
     required this.reminderMinutesBefore,
+    required this.reminderDelivery,
   });
 
   final String title;
@@ -22,6 +23,7 @@ class TaskEditorResult {
   final DateTime endDate;
   final bool reminderEnabled;
   final int reminderMinutesBefore;
+  final String reminderDelivery;
 }
 
 class TaskEditorScreen extends StatefulWidget {
@@ -37,6 +39,7 @@ class TaskEditorScreen extends StatefulWidget {
     required this.initialEndDate,
     required this.initialReminderEnabled,
     required this.initialReminderMinutesBefore,
+    required this.initialReminderDelivery,
     required this.isEditing,
   });
 
@@ -50,6 +53,7 @@ class TaskEditorScreen extends StatefulWidget {
   final DateTime initialEndDate;
   final bool initialReminderEnabled;
   final int initialReminderMinutesBefore;
+  final String initialReminderDelivery;
   final bool isEditing;
 
   @override
@@ -66,7 +70,13 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
   late DateTime _endDate;
   late bool _reminderEnabled;
   late int _reminderMinutesBefore;
+  late String _reminderDelivery;
   static const List<int> _reminderOptions = [0, 5, 10, 15, 30, 60, 120, 1440];
+  static const List<String> _reminderDeliveryOptions = [
+    'email',
+    'push',
+    'both',
+  ];
   static const List<String> _colorOptions = [
     '',
     '#60A5FA',
@@ -99,6 +109,11 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
         : widget.initialEndDate;
     _reminderEnabled = widget.initialReminderEnabled;
     _reminderMinutesBefore = widget.initialReminderMinutesBefore;
+    _reminderDelivery = _reminderDeliveryOptions.contains(
+          widget.initialReminderDelivery,
+        )
+        ? widget.initialReminderDelivery
+        : 'email';
     _selectedColor = _colorOptions.contains(widget.initialColor.toUpperCase())
         ? widget.initialColor.toUpperCase()
         : '';
@@ -210,8 +225,21 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
         endDate: _endDate,
         reminderEnabled: _reminderEnabled,
         reminderMinutesBefore: _reminderMinutesBefore,
+        reminderDelivery: _reminderDelivery,
       ),
     );
+  }
+
+  String _reminderDeliveryLabel(String value) {
+    switch (value) {
+      case 'push':
+        return 'Push notification';
+      case 'both':
+        return 'Email and push';
+      case 'email':
+      default:
+        return 'Email only';
+    }
   }
 
   String _reminderLabel(int minutes) {
@@ -417,8 +445,10 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
             const SizedBox(height: 20),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Email reminder'),
-              subtitle: const Text('Send a reminder email before this task.'),
+              title: const Text('Reminder'),
+              subtitle: const Text(
+                'Send a reminder before this task starts.',
+              ),
               value: _reminderEnabled,
               onChanged: (value) {
                 setState(() {
@@ -450,6 +480,29 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
                   }
                   setState(() {
                     _reminderMinutesBefore = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _reminderDelivery,
+                decoration: const InputDecoration(
+                  labelText: 'Reminder delivery',
+                ),
+                items: _reminderDeliveryOptions
+                    .map(
+                      (value) => DropdownMenuItem<String>(
+                        value: value,
+                        child: Text(_reminderDeliveryLabel(value)),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null) {
+                    return;
+                  }
+                  setState(() {
+                    _reminderDelivery = value;
                   });
                 },
               ),

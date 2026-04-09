@@ -56,6 +56,7 @@ class _LoginScreenState extends State<LoginScreen> {
   // and Face ID / Touch ID is available on the device.
   bool _biometricAvailable = false;
   bool _hasSavedSession = false;
+  bool _biometricLoginEnabled = false;
   String _biometricLabel = 'Face ID';
 
   @override
@@ -67,17 +68,18 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _checkBiometricAvailability() async {
     final token = await SessionStorage.readToken();
     final hasSaved = token.isNotEmpty;
+    final biometricLoginEnabled =
+        await SessionStorage.isBiometricLoginEnabled();
     final status = await _biometricAuthService.getStatus();
     if (!mounted) return;
     setState(() {
       _hasSavedSession = hasSaved;
       _biometricAvailable = status.supported;
+      _biometricLoginEnabled = biometricLoginEnabled;
       _biometricLabel = status.label;
     });
 
-    // Auto-prompt Face ID when returning to the login screen with a saved
-    // session — mirrors the behaviour users expect from apps like 1Password.
-    if (hasSaved && status.supported) {
+    if (hasSaved && status.supported && biometricLoginEnabled) {
       unawaited(_loginWithBiometrics(auto: true));
     }
   }
@@ -278,7 +280,10 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   bool get _showBiometricButton =>
-      _isLogin && _biometricAvailable && _hasSavedSession;
+      _isLogin &&
+      _biometricAvailable &&
+      _hasSavedSession &&
+      _biometricLoginEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -604,6 +609,7 @@ class _BiometricSetupSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final biometricService = BiometricAuthService();
     final faceIcon = biometricLabel.toLowerCase().contains('face')
         ? Icons.face_unlock_outlined
         : Icons.fingerprint;
@@ -640,7 +646,7 @@ class _BiometricSetupSheet extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Use $biometricLabel to unlock Calendar++ instantly next time — no password needed.',
+            'Use $biometricLabel as a faster sign-in option the next time you open Calendar++.',
             style: const TextStyle(color: AppTheme.textMuted, height: 1.45),
             textAlign: TextAlign.center,
           ),
@@ -651,8 +657,35 @@ class _BiometricSetupSheet extends StatelessWidget {
               icon: Icon(faceIcon),
               label: Text('Enable $biometricLabel'),
               onPressed: () async {
-                await SessionStorage.setBiometricUnlockEnabled(true);
-                if (context.mounted) Navigator.pop(context);
+                final messenger = ScaffoldMessenger.of(context);
+                final authenticated = await biometricService.authenticate(
+                  reason:
+                      'Use $biometricLabel to enable faster sign in for Calendar++.',
+                  allowDeviceCredential: false,
+                );
+                if (!context.mounted) {
+                  return;
+                }
+                if (!authenticated) {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        '$biometricLabel was not confirmed, so it was not enabled.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                await SessionStorage.setBiometricLoginEnabled(true);
+                if (!context.mounted) {
+                  return;
+                }
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text('$biometricLabel sign in enabled.'),
+                  ),
+                );
+                Navigator.pop(context);
               },
             ),
           ),
