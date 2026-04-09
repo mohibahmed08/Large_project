@@ -10,6 +10,7 @@ class SessionStorage {
   static const _biometricLoginEnabledKey = 'biometricLoginEnabled';
   static const _liveActivityIdKey = 'liveActivityId';
   static const _liveActivityTaskIdKey = 'liveActivityTaskId';
+  static const _weatherWidgetModeKey = 'weatherWidgetMode';
 
   static Future<void> saveSession(UserSession session) async {
     final prefs = await SharedPreferences.getInstance();
@@ -39,6 +40,16 @@ class SessionStorage {
   static Future<bool> isBiometricLoginEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_biometricLoginEnabledKey) ?? false;
+  }
+
+  static Future<void> setWeatherWidgetMode(String mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_weatherWidgetModeKey, mode);
+  }
+
+  static Future<String> readWeatherWidgetMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_weatherWidgetModeKey) ?? 'future';
   }
 
   static Future<void> clear() async {

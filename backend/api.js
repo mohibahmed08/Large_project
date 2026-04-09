@@ -1,6 +1,7 @@
 const crypto     = require('crypto');
 const https      = require('https');
 const path       = require('path');
+const jwt        = require('jsonwebtoken');
 const { ObjectId } = require('mongodb');
 const { DateTime, FixedOffsetZone, IANAZone } = require('luxon');
 const { verificationEmailHtml, emailChangeEmailHtml, reminderEmailHtml, passwordResetEmailHtml } = require('./emailTemplates');
@@ -469,6 +470,38 @@ function validateJwtOrRespond(tokenUtils, response, accessToken)
     }
 
     return true;
+}
+
+function validateBearerJwtOrRespond(req, response)
+{
+    const authorizationHeader = String(req.headers.authorization || '').trim();
+
+    if(!authorizationHeader.toLowerCase().startsWith('bearer '))
+    {
+        response.status(401).json({ error: 'Missing bearer token' });
+        return null;
+    }
+
+    const accessToken = authorizationHeader.slice(7).trim();
+    if(!accessToken)
+    {
+        response.status(401).json({ error: 'Missing bearer token' });
+        return null;
+    }
+
+    try
+    {
+        const verifiedJwt = jwt.verify(accessToken, process.env.ACCESS_TOKEN_SECRET);
+        return {
+            accessToken,
+            userId: verifiedJwt.userId,
+        };
+    }
+    catch(error)
+    {
+        response.status(401).json({ error: error.message });
+        return null;
+    }
 }
 
 function refreshJwtToken(tokenUtils, accessToken)
@@ -1533,7 +1566,16 @@ async function sendPendingTaskReminders(client)
         {
             const user = await db.collection('users').findOne(
                 { _id: task.user_id },
-                { projection: { email: 1, isVerified: 1 } }
+                {
+                    projection: {
+                        email: 1,
+                        isVerified: 1,
+                        deviceToken: 1,
+                        devicePlatform: 1,
+                        timeZone: 1,
+                        utcOffsetMinutes: 1,
+                    },
+                }
             );
 
             if(!user?.email || user.isVerified === false)
@@ -2551,8 +2593,9 @@ exports.setApp = function(app, client)
     // ─── Register Device Token (for push notifications) ─────────────────────
     app.post('/api/registerdevicetoken', async (req, res) =>
     {
-        const { userId } = verifyJwt(req, res);
-        if(!userId) return;
+        const auth = validateBearerJwtOrRespond(req, res);
+        if(!auth) return;
+        const { userId } = auth;
 
         const { deviceToken, platform } = req.body;
         pushDebug('registerdevicetoken hit.', {
@@ -2596,8 +2639,9 @@ exports.setApp = function(app, client)
 
     app.delete('/api/registerdevicetoken', async (req, res) =>
     {
-        const { userId } = verifyJwt(req, res);
-        if(!userId) return;
+        const auth = validateBearerJwtOrRespond(req, res);
+        if(!auth) return;
+        const { userId } = auth;
 
         try
         {

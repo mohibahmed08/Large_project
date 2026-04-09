@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/task_model.dart';
 import '../models/user_model.dart';
+import '../services/ai_service.dart';
 import '../services/calendar_service.dart';
 import '../services/live_activity_service.dart';
 import '../services/push_notification_service.dart';
@@ -20,6 +21,12 @@ import 'ai_screen.dart';
 import 'login_screen.dart';
 import 'settings_screen.dart';
 import 'task_editor_screen.dart';
+
+enum _WeatherWidgetMode {
+  future,
+  futureAndHourly,
+  hourly,
+}
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({
@@ -36,6 +43,7 @@ class CalendarScreen extends StatefulWidget {
 class _CalendarScreenState extends State<CalendarScreen> {
   static const Duration _liveActivityUpcomingWindow = Duration(hours: 12);
 
+  final AiService _aiService = AiService();
   final CalendarService _calendarService = CalendarService();
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _quickTaskController = TextEditingController();
@@ -58,6 +66,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   List<CalendarTask> _visibleTasks = [];
   bool _isLoading = true;
   int _selectedIndex = 0; // 0=Calendar, 1=Day, 2=AI
+  _WeatherWidgetMode _weatherWidgetMode = _WeatherWidgetMode.future;
   final Set<String> _expandedDayTaskIds = <String>{};
 
   List<String> get _existingGroups {
@@ -91,6 +100,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     });
     _loadMonth(showLoader: true);
     _fetchWeather();
+    unawaited(_restoreWeatherWidgetMode());
   }
 
   @override
@@ -272,6 +282,37 @@ class _CalendarScreenState extends State<CalendarScreen> {
     unawaited(SessionStorage.saveSession(session));
   }
 
+  Future<void> _restoreWeatherWidgetMode() async {
+    final savedMode = await SessionStorage.readWeatherWidgetMode();
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _weatherWidgetMode = switch (savedMode) {
+        'futureAndHourly' => _WeatherWidgetMode.futureAndHourly,
+        'hourly' => _WeatherWidgetMode.hourly,
+        _ => _WeatherWidgetMode.future,
+      };
+    });
+  }
+
+  Future<void> _setWeatherWidgetMode(_WeatherWidgetMode mode) async {
+    if (_weatherWidgetMode == mode) {
+      return;
+    }
+
+    setState(() {
+      _weatherWidgetMode = mode;
+    });
+
+    await SessionStorage.setWeatherWidgetMode(switch (mode) {
+      _WeatherWidgetMode.future => 'future',
+      _WeatherWidgetMode.futureAndHourly => 'futureAndHourly',
+      _WeatherWidgetMode.hourly => 'hourly',
+    });
+  }
+
   Future<void> _loadMonth({bool showLoader = false}) async {
     if (showLoader) {
       setState(() {
@@ -311,6 +352,49 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
+  Future<void> _setDisplayedMonth(
+    DateTime month, {
+    bool animatePage = false,
+    DateTime? selectedDateOverride,
+  }) async {
+    final normalizedMonth = DateTime(month.year, month.month);
+    final daysInMonth =
+        DateTime(normalizedMonth.year, normalizedMonth.month + 1, 0).day;
+    final baseSelectedDate = selectedDateOverride ?? _selectedDate;
+    final nextSelectedDay =
+        baseSelectedDate.day > daysInMonth ? daysInMonth : baseSelectedDate.day;
+    final nextSelectedDate = DateUtils.dateOnly(
+      DateTime(normalizedMonth.year, normalizedMonth.month, nextSelectedDay),
+    );
+    if (_displayMonth.year == normalizedMonth.year &&
+        _displayMonth.month == normalizedMonth.month &&
+        _currentDate.year == normalizedMonth.year &&
+        _currentDate.month == normalizedMonth.month &&
+        DateUtils.isSameDay(_selectedDate, nextSelectedDate)) {
+      return;
+    }
+    final today = DateTime.now();
+    final monthOffset = (normalizedMonth.year - today.year) * 12 +
+        (normalizedMonth.month - today.month);
+
+    setState(() {
+      _displayMonth = normalizedMonth;
+      _currentDate = normalizedMonth;
+      _selectedDate = nextSelectedDate;
+      _expandedDayTaskIds.clear();
+    });
+
+    if (animatePage && _monthPageController.hasClients) {
+      await _monthPageController.animateToPage(
+        1200 + monthOffset,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    }
+
+    await _loadMonth(showLoader: false);
+  }
+
   Future<Map<String, dynamic>?> _loadWeatherForecast({
     required double latitude,
     required double longitude,
@@ -320,7 +404,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final end = _formatDate(today.add(const Duration(days: 10)));
     final response = await http.get(
       Uri.parse(
-        'https://api.open-meteo.com/v1/forecast?latitude=$latitude&longitude=$longitude&start_date=$start&end_date=$end&hourly=weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit',
+        'https://api.open-meteo.com/v1/forecast?latitude=$latitude&longitude=$longitude&start_date=$start&end_date=$end&hourly=temperature_2m,weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit',
       ),
     );
 
@@ -453,6 +537,72 @@ class _CalendarScreenState extends State<CalendarScreen> {
         }
         _showSnackBar(task == null ? 'Task added.' : 'Task updated.');
       });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _saveQuickAddFallback(String title) async {
+    final nextSession = await _calendarService.saveTask(
+      session: _session,
+      title: title,
+      startDate: DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+      ),
+      source: 'manual',
+    );
+    _cacheSession(nextSession);
+    await _loadMonth();
+  }
+
+  Future<void> _submitQuickAdd(String rawValue) async {
+    final value = rawValue.trim();
+    if (value.isEmpty) {
+      return;
+    }
+
+    _quickAddController.clear();
+
+    final selectedDateIso = _formatDate(_selectedDate);
+    try {
+      final result = await _aiService.chat(
+        session: _session,
+        messages: [
+          {
+            'role': 'user',
+            'content':
+                'Create exactly one calendar task for $selectedDateIso from this quick-add text: "$value". '
+                    'Infer a local time only if the user implied one. '
+                    'If no time is implied, make it an untimed or all-day task on that date. '
+                    'Do not ask follow-up questions.',
+          },
+        ],
+      );
+      _cacheSession(result.session);
+
+      if (result.calendarChanged) {
+        await _loadMonth();
+        if (!mounted) {
+          return;
+        }
+        _showSnackBar('Added to your calendar.');
+        return;
+      }
+    } catch (_) {
+      // Fall through to the local quick-add fallback below.
+    }
+
+    try {
+      await _saveQuickAddFallback(value);
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar('Saved as an all-day task.');
     } catch (error) {
       if (!mounted) {
         return;
@@ -943,6 +1093,71 @@ class _CalendarScreenState extends State<CalendarScreen> {
     });
   }
 
+  List<Map<String, dynamic>> get _selectedDayHourlyForecast {
+    final hourly = _weatherData?['hourly'];
+    if (hourly is! Map<String, dynamic>) {
+      return const [];
+    }
+
+    final times = (hourly['time'] as List?)?.map((item) => '$item').toList() ??
+        const [];
+    if (times.isEmpty) {
+      return const [];
+    }
+
+    final targetDate = _formatDate(_selectedDate);
+    final now = DateTime.now();
+    final allEntries = <Map<String, dynamic>>[];
+
+    for (var index = 0; index < times.length; index++) {
+      final parsedTime = DateTime.tryParse(times[index]);
+      if (parsedTime == null || _formatDate(parsedTime) != targetDate) {
+        continue;
+      }
+
+      final temperature =
+          (hourly['temperature_2m'] as List?)?.elementAt(index) as num?;
+      final weatherCode =
+          ((hourly['weathercode'] as List?)?.elementAt(index) as num?)?.toInt();
+      allEntries.add({
+        'time': parsedTime,
+        'temperature': temperature,
+        'code': weatherCode,
+      });
+    }
+
+    if (allEntries.isEmpty) {
+      return const [];
+    }
+
+    final isToday = DateUtils.isSameDay(_selectedDate, now);
+    if (isToday) {
+      final upcoming = allEntries.where((entry) {
+        final time = entry['time'] as DateTime?;
+        return time != null &&
+            !time.isBefore(
+              DateTime(now.year, now.month, now.day, now.hour),
+            );
+      }).toList();
+      return (upcoming.isNotEmpty ? upcoming : allEntries).take(6).toList();
+    }
+
+    final preferredHours = {6, 9, 12, 15, 18, 21};
+    final preferredEntries = allEntries.where((entry) {
+      final time = entry['time'] as DateTime?;
+      return time != null && preferredHours.contains(time.hour);
+    }).toList();
+
+    if (preferredEntries.length >= 4) {
+      return preferredEntries.take(6).toList();
+    }
+
+    return allEntries.where((entry) {
+      final time = entry['time'] as DateTime?;
+      return time != null && time.hour % 3 == 0;
+    }).take(6).toList();
+  }
+
   String get _weatherLocationLabel {
     final explicitName = _weatherLocationName?.trim() ?? '';
     if (explicitName.isNotEmpty) {
@@ -975,6 +1190,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
     if (code >= 80 && code <= 86) return 'Heavy rain';
     if (code == 95 || code == 96 || code == 99) return 'Thunderstorms';
     return 'Mixed conditions';
+  }
+
+  String _weatherWidgetMenuLabel(_WeatherWidgetMode mode) {
+    return switch (mode) {
+      _WeatherWidgetMode.future => 'Future forecast',
+      _WeatherWidgetMode.futureAndHourly => 'Future + hourly',
+      _WeatherWidgetMode.hourly => 'Hourly only',
+    };
   }
 
   String _weatherGlyph(int? code) {
@@ -1120,30 +1343,39 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         ),
                         IconButton(
                           icon: const Icon(Icons.chevron_left),
-                          onPressed: () => setState(() {
-                            _displayMonth = DateTime(
-                              _displayMonth.year,
-                              _displayMonth.month - 1,
-                            );
-                          }),
+                          onPressed: () => unawaited(
+                            _setDisplayedMonth(
+                              DateTime(
+                                _displayMonth.year,
+                                _displayMonth.month - 1,
+                              ),
+                              animatePage: true,
+                            ),
+                          ),
                           visualDensity: VisualDensity.compact,
                         ),
                         IconButton(
                           icon: const Icon(Icons.chevron_right),
-                          onPressed: () => setState(() {
-                            _displayMonth = DateTime(
-                              _displayMonth.year,
-                              _displayMonth.month + 1,
-                            );
-                          }),
+                          onPressed: () => unawaited(
+                            _setDisplayedMonth(
+                              DateTime(
+                                _displayMonth.year,
+                                _displayMonth.month + 1,
+                              ),
+                              animatePage: true,
+                            ),
+                          ),
                           visualDensity: VisualDensity.compact,
                         ),
                         IconButton(
                           icon: const Icon(Icons.today_outlined),
-                          onPressed: () => setState(() {
-                            _displayMonth = DateTime(today.year, today.month);
-                            _selectedDate = today;
-                          }),
+                          onPressed: () => unawaited(
+                            _setDisplayedMonth(
+                              DateTime(today.year, today.month),
+                              animatePage: true,
+                              selectedDateOverride: today,
+                            ),
+                          ),
                           tooltip: 'Today',
                           visualDensity: VisualDensity.compact,
                         ),
@@ -1180,17 +1412,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 // ── Swipeable month grid ──────────────────────────────────
                 SliverToBoxAdapter(
                   child: SizedBox(
-                    height: 280,
+                    height: 336,
                     child: PageView.builder(
-                      controller: PageController(initialPage: 1200),
+                      controller: _monthPageController,
                       onPageChanged: (page) {
                         final base = DateTime(today.year, today.month);
-                        setState(() {
-                          _displayMonth = DateTime(
-                            base.year,
-                            base.month + (page - 1200),
-                          );
-                        });
+                        unawaited(
+                          _setDisplayedMonth(
+                            DateTime(
+                              base.year,
+                              base.month + (page - 1200),
+                            ),
+                          ),
+                        );
                       },
                       itemBuilder: (context, page) {
                         final base = DateTime(today.year, today.month);
@@ -1210,7 +1444,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           gridDelegate:
                               const SliverGridDelegateWithFixedCrossAxisCount(
                             crossAxisCount: 7,
-                            childAspectRatio: 0.72,
+                            childAspectRatio: 0.9,
                             mainAxisSpacing: 2,
                             crossAxisSpacing: 2,
                           ),
@@ -1326,15 +1560,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           borderSide: BorderSide(color: AppTheme.border),
                         ),
                       ),
-                      onSubmitted: (value) {
-                        if (value.trim().isNotEmpty) {
-                          _openTaskDialog(
-                            initialTitle: value.trim(),
-                            initialDate: _selectedDate,
-                          );
-                          _quickAddController.clear();
-                        }
-                      },
+                      onSubmitted: (value) => unawaited(_submitQuickAdd(value)),
                     ),
                   ),
                 ),
@@ -1758,6 +1984,228 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  String _formatHourlyWeatherLabel(DateTime time) {
+    final suffix = time.hour >= 12 ? 'PM' : 'AM';
+    final hour = time.hour % 12 == 0 ? 12 : time.hour % 12;
+    return '$hour$suffix';
+  }
+
+  Widget _buildHourlyWeatherStrip(List<Map<String, dynamic>> hourlyForecast) {
+    if (hourlyForecast.isEmpty) {
+      return Text(
+        'Hourly forecast unavailable',
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: 0.78),
+          fontSize: 13,
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        children: hourlyForecast.map((entry) {
+          final time = entry['time'] as DateTime?;
+          final temperature = (entry['temperature'] as num?)?.round();
+          return Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  time == null ? '--' : _formatHourlyWeatherLabel(time),
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.76),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  _weatherGlyph(entry['code'] as int?),
+                  style: const TextStyle(fontSize: 22),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  temperature != null ? '$temperature°' : '--',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildFutureForecastList(
+    List<Map<String, dynamic>> forecast,
+    double? minForecastTemp,
+    double? maxForecastTemp,
+  ) {
+    if (forecast.isEmpty) {
+      return Text(
+        'Forecast unavailable',
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: 0.78),
+          fontSize: 13,
+        ),
+      );
+    }
+
+    return Column(
+      children: forecast.map((entry) {
+        final date = DateTime.tryParse('${entry['date']}');
+        final minTemp = (entry['min'] as num?)?.round();
+        final maxTemp = (entry['max'] as num?)?.round();
+        final minValue = (entry['min'] as num?)?.toDouble();
+        final maxValue = (entry['max'] as num?)?.toDouble();
+        final spread = ((maxForecastTemp ?? 0) - (minForecastTemp ?? 0)).abs();
+        final normalizedSpread = spread < 1 ? 1.0 : spread;
+        final startFraction = minForecastTemp == null || minValue == null
+            ? 0.0
+            : ((minValue - minForecastTemp) / normalizedSpread)
+                .clamp(0.0, 1.0);
+        final widthFraction = minValue == null || maxValue == null
+            ? 0.45
+            : ((maxValue - minValue) / normalizedSpread).clamp(0.18, 1.0);
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 36,
+                child: Text(
+                  date == null
+                      ? '--'
+                      : _weekdayName(date.weekday).substring(0, 3),
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 24,
+                child: Center(
+                  child: Text(
+                    _weatherGlyph(entry['code'] as int?),
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 30,
+                child: Text(
+                  minTemp != null ? '$minTemp°' : '--',
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.68),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _WeatherRangeBar(
+                  startFraction: startFraction,
+                  widthFraction: widthFraction,
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 30,
+                child: Text(
+                  maxTemp != null ? '$maxTemp°' : '--',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildWeatherWidgetModeButton() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF081120).withValues(alpha: 0.16),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: PopupMenuButton<_WeatherWidgetMode>(
+        initialValue: _weatherWidgetMode,
+        tooltip: 'Weather layout',
+        onSelected: (mode) => unawaited(_setWeatherWidgetMode(mode)),
+        padding: EdgeInsets.zero,
+        splashRadius: 20,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+        ),
+        color: const Color(0xFF203756),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.widgets_outlined,
+                color: Colors.white.withValues(alpha: 0.92),
+                size: 16,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _weatherWidgetMenuLabel(_weatherWidgetMode),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.94),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Icon(
+                Icons.expand_more_rounded,
+                color: Colors.white.withValues(alpha: 0.82),
+                size: 16,
+              ),
+            ],
+          ),
+        ),
+        itemBuilder: (context) => _WeatherWidgetMode.values
+            .map(
+              (mode) => PopupMenuItem<_WeatherWidgetMode>(
+                value: mode,
+                child: Text(
+                  _weatherWidgetMenuLabel(mode),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+
   Widget _buildTodayHeroCard({
     required bool isToday,
     required String formattedDate,
@@ -2019,6 +2467,240 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  Widget _buildTodayHeroCardV2({
+    required bool isToday,
+    required String formattedDate,
+    required int totalTasks,
+    required int completedTasks,
+    required Map<String, dynamic>? selectedDayWeather,
+    required List<Map<String, dynamic>> forecast,
+  }) {
+    final high = (selectedDayWeather?['max'] as num?)?.round();
+    final low = (selectedDayWeather?['min'] as num?)?.round();
+    final conditionCode = selectedDayWeather?['code'] as int?;
+    final forecastMins = forecast
+        .map((day) => (day['min'] as num?)?.toDouble())
+        .whereType<double>()
+        .toList();
+    final forecastMaxes = forecast
+        .map((day) => (day['max'] as num?)?.toDouble())
+        .whereType<double>()
+        .toList();
+    final minForecastTemp = forecastMins.isEmpty
+        ? null
+        : forecastMins.reduce((a, b) => a < b ? a : b);
+    final maxForecastTemp = forecastMaxes.isEmpty
+        ? null
+        : forecastMaxes.reduce((a, b) => a > b ? a : b);
+    final activeTasks = totalTasks - completedTasks;
+    final hourlyForecast = _selectedDayHourlyForecast;
+
+    Widget buildSummaryColumn() {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.near_me_rounded,
+                size: 14,
+                color: Colors.white.withValues(alpha: 0.92),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  _weatherLocationLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            high != null ? '$high°' : '--°',
+            style: const TextStyle(
+              fontSize: 58,
+              height: 0.92,
+              fontWeight: FontWeight.w300,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            _weatherConditionLabel(conditionCode),
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.96),
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            [
+              if (low != null) 'Low of $low°',
+              '$activeTasks active',
+              '$completedTasks done',
+            ].join(' · '),
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.74),
+              fontSize: 13,
+              height: 1.35,
+            ),
+          ),
+        ],
+      );
+    }
+
+    Widget buildHourlySummary() {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: buildSummaryColumn()),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    _weatherConditionLabel(conditionCode),
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.96),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    [
+                      if (high != null) 'H:$high°',
+                      if (low != null) 'L:$low°',
+                    ].join(' '),
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.8),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF3F475A),
+            Color(0xFF2A82BF),
+            Color(0xFF244D86),
+          ],
+        ),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF091325).withValues(alpha: 0.42),
+            blurRadius: 24,
+            offset: const Offset(0, 16),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              IconButton(
+                onPressed: () => _shiftSelectedDay(-1),
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.chevron_left, color: Colors.white),
+              ),
+              Expanded(
+                child: Column(
+                  children: [
+                    Text(
+                      isToday ? 'Today' : _weekdayName(_selectedDate.weekday),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.96),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      formattedDate,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.72),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _buildWeatherWidgetModeButton(),
+              IconButton(
+                onPressed: () => _shiftSelectedDay(1),
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.chevron_right, color: Colors.white),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_weatherWidgetMode == _WeatherWidgetMode.future)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(flex: 5, child: buildSummaryColumn()),
+                const SizedBox(width: 16),
+                Expanded(
+                  flex: 6,
+                  child: _buildFutureForecastList(
+                    forecast,
+                    minForecastTemp,
+                    maxForecastTemp,
+                  ),
+                ),
+              ],
+            )
+          else ...[
+            buildHourlySummary(),
+            const SizedBox(height: 16),
+            _buildHourlyWeatherStrip(hourlyForecast),
+            if (_weatherWidgetMode == _WeatherWidgetMode.futureAndHourly) ...[
+              const SizedBox(height: 16),
+              Container(
+                height: 1,
+                color: Colors.white.withValues(alpha: 0.12),
+              ),
+              const SizedBox(height: 12),
+              _buildFutureForecastList(
+                forecast,
+                minForecastTemp,
+                maxForecastTemp,
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildDayTabPolished() {
     final dayTasks = _tasksForSelectedDay;
     final allDayTasks = _allDaySelectedTasks;
@@ -2076,13 +2758,33 @@ class _CalendarScreenState extends State<CalendarScreen> {
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                child: _buildTodayHeroCard(
-                  isToday: isToday,
-                  formattedDate: formattedDate,
-                  totalTasks: dayTasks.length,
-                  completedTasks: completedTasks.length,
-                  selectedDayWeather: selectedDayWeather,
-                  forecast: forecast,
+                child: Stack(
+                  children: [
+                    if (_weatherWidgetMode == _WeatherWidgetMode.future)
+                      _buildTodayHeroCard(
+                        isToday: isToday,
+                        formattedDate: formattedDate,
+                        totalTasks: dayTasks.length,
+                        completedTasks: completedTasks.length,
+                        selectedDayWeather: selectedDayWeather,
+                        forecast: forecast,
+                      )
+                    else
+                      _buildTodayHeroCardV2(
+                        isToday: isToday,
+                        formattedDate: formattedDate,
+                        totalTasks: dayTasks.length,
+                        completedTasks: completedTasks.length,
+                        selectedDayWeather: selectedDayWeather,
+                        forecast: forecast,
+                      ),
+                    if (_weatherWidgetMode == _WeatherWidgetMode.future)
+                      Positioned(
+                        top: 14,
+                        right: 52,
+                        child: _buildWeatherWidgetModeButton(),
+                      ),
+                  ],
                 ),
               ),
             ),
