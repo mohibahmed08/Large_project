@@ -2,6 +2,7 @@ const crypto     = require('crypto');
 const https      = require('https');
 const { ObjectId } = require('mongodb');
 const { DateTime, FixedOffsetZone, IANAZone } = require('luxon');
+const { verificationEmailHtml, emailChangeEmailHtml, reminderEmailHtml, passwordResetEmailHtml } = require('./emailTemplates');
 
 // Make an HTTPS request and resolve
 function httpsRequest(options, body)
@@ -338,6 +339,39 @@ async function sendWithResend(to, subject, html)
     }
 
 }
+
+// ─── Send FCM push notification via Firebase Admin REST API ─────────────────
+async function sendFcmPush(deviceToken, title, body, data = {})
+{
+    if(!process.env.FCM_SERVER_KEY || !deviceToken) return;
+
+    const payload = JSON.stringify({
+        to: deviceToken,
+        notification: { title, body, sound: 'default' },
+        data,
+        priority: 'high',
+    });
+
+    const options = {
+        hostname: 'fcm.googleapis.com',
+        path:     '/fcm/send',
+        method:   'POST',
+        headers:  {
+            'Content-Type':  'application/json',
+            'Authorization': `key=${process.env.FCM_SERVER_KEY}`,
+        },
+    };
+
+    try
+    {
+        await httpsRequest(options, payload);
+    }
+    catch(err)
+    {
+        console.error('[FCM] push error:', err.message);
+    }
+}
+
 
 function verifyEmailTransporter()
 {
@@ -1250,13 +1284,20 @@ async function sendTaskReminderEmail(user, task)
 
     await sendWithResend(
         user.email,
-        `Reminder: ${task.title || 'Upcoming task'}`,
-        `<h2>${task.title || 'Upcoming task'}</h2>
-         <p>Starts: ${startText}</p>
-         ${endText ? `<p>Ends: ${endText}</p>` : ''}
-         ${locationLine}
-         ${descriptionLine}`
+        `⏰ Reminder: ${task.title || 'Upcoming task'}`,
+        reminderEmailHtml(task, startText, endText)
     );
+
+    // Also send a push notification if the user has a registered device token
+    if(user.deviceToken)
+    {
+        const pushTitle = `⏰ ${task.title || 'Upcoming task'}`;
+        const pushBody  = startText + (endText ? ` → ${endText}` : '');
+        await sendFcmPush(user.deviceToken, pushTitle, pushBody, {
+            taskId: String(task._id || ''),
+            type:   'reminder',
+        });
+    }
 
     return true;
 }
@@ -2099,10 +2140,8 @@ exports.setApp = function(app, client)
             const verifyLink = `${process.env.SERVER_URL}/api/verifyemail?token=${verifyToken}`;
             await sendWithResend(
                 email,
-                'Verify your Calendar account',
-                `<h2>Welcome!</h2>
-                 <p>Click below to verify your email. Link expires in 24 hours.</p>
-                 <a href="${verifyLink}">Verify Email</a>`
+                'Verify your Calendar++ email ✅',
+                verificationEmailHtml(verifyLink)
             );
 
             res.status(201).json({ error: '' });
@@ -2155,7 +2194,147 @@ exports.setApp = function(app, client)
         }
     });
 
-    app.get('/api/verifyemailchange', async (req, res) =>
+    // ─── Forgot Password ────────────────────────────────────────────────────────
+    app.post('/api/forgotpassword', async (req, res) =>
+    {
+        const { email } = req.body;
+        if(!email)
+        {
+            res.status(400).json({ error: 'Email is required' });
+            return;
+        }
+
+        try
+        {
+            const db   = getDatabase(client);
+            const user = await db.collection('users').findOne({ email: email.toLowerCase().trim() });
+
+            // Always return 200 to avoid user enumeration attacks
+            if(!user)
+            {
+                res.status(200).json({ error: '' });
+                return;
+            }
+
+            const resetToken        = crypto.randomBytes(32).toString('hex');
+            const resetTokenExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+            await db.collection('users').updateOne(
+                { _id: user._id },
+                { $set: { resetToken, resetTokenExpires } }
+            );
+
+            const resetLink = `${process.env.CLIENT_ORIGIN || 'http://localhost:3000'}/resetpassword?token=${resetToken}`;
+            await sendWithResend(
+                user.email,
+                '&#128273; Reset your Calendar++ password',
+                passwordResetEmailHtml(resetLink)
+            );
+
+            res.status(200).json({ error: '' });
+        }
+        catch(error)
+        {
+            res.status(500).json({ error: error.toString() });
+        }
+    });
+
+    // ─── Reset Password ──────────────────────────────────────────────────────────
+    app.post('/api/resetpassword', async (req, res) =>
+    {
+        const { token, newPassword } = req.body;
+        if(!token || !newPassword)
+        {
+            res.status(400).json({ error: 'Token and new password are required' });
+            return;
+        }
+
+        if(newPassword.length < 6)
+        {
+            res.status(400).json({ error: 'Password must be at least 6 characters' });
+            return;
+        }
+
+        try
+        {
+            const db   = getDatabase(client);
+            const user = await db.collection('users').findOne(
+            {
+                resetToken: token,
+                resetTokenExpires: { $gt: new Date() },
+            });
+
+            if(!user)
+            {
+                res.status(400).json({ error: 'Invalid or expired reset link' });
+                return;
+            }
+
+            await db.collection('users').updateOne(
+                { _id: user._id },
+                {
+                    $set:   { password: hashPassword(newPassword) },
+                    $unset: { resetToken: '', resetTokenExpires: '' },
+                }
+            );
+
+            res.status(200).json({ error: '' });
+        }
+        catch(error)
+        {
+            res.status(500).json({ error: error.toString() });
+        }
+    });
+
+    // ─── Register Device Token (for push notifications) ─────────────────────
+    app.post('/api/registerdevicetoken', async (req, res) =>
+    {
+        const { userId } = verifyJwt(req, res);
+        if(!userId) return;
+
+        const { deviceToken, platform } = req.body;
+        if(!deviceToken)
+        {
+            res.status(400).json({ error: 'deviceToken is required' });
+            return;
+        }
+
+        try
+        {
+            const db = getDatabase(client);
+            await db.collection('users').updateOne(
+                { _id: new ObjectId(userId) },
+                { $set: { deviceToken, devicePlatform: platform || 'ios' } }
+            );
+            res.status(200).json({ error: '' });
+        }
+        catch(error)
+        {
+            res.status(500).json({ error: error.toString() });
+        }
+    });
+
+    app.delete('/api/registerdevicetoken', async (req, res) =>
+    {
+        const { userId } = verifyJwt(req, res);
+        if(!userId) return;
+
+        try
+        {
+            const db = getDatabase(client);
+            await db.collection('users').updateOne(
+                { _id: new ObjectId(userId) },
+                { $unset: { deviceToken: '', devicePlatform: '' } }
+            );
+            res.status(200).json({ error: '' });
+        }
+        catch(error)
+        {
+            res.status(500).json({ error: error.toString() });
+        }
+    });
+
+        app.get('/api/verifyemailchange', async (req, res) =>
     {
         const { token: emailChangeToken } = req.query;
 
@@ -2479,10 +2658,8 @@ exports.setApp = function(app, client)
 
             await sendWithResend(
                 normalizedEmail,
-                'Confirm your new Calendar++ email',
-                `<p>You requested an email change for Calendar++.</p>
-                 <p>Click below to confirm your new address. Link expires in 24 hours.</p>
-                 <a href="${verifyLink}">Confirm New Email</a>`
+                'Confirm your new Calendar++ email 📬',
+                emailChangeEmailHtml(verifyLink)
             );
 
             res.status(200).json({
