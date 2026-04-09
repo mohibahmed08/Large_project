@@ -159,7 +159,14 @@ class DayGrid extends StatelessWidget {
       onTap: () => onDayTap(day),
       child: Container(
         decoration: BoxDecoration(
-          color: const Color(0xFF12121F),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.white.withValues(alpha: isSelected ? 0.16 : 0.08),
+              const Color(0xFF12121F).withValues(alpha: 0.92),
+            ],
+          ),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isSelected
@@ -169,6 +176,15 @@ class DayGrid extends StatelessWidget {
                     : AppTheme.border,
             width: isSelected || isToday ? 2 : 1,
           ),
+          boxShadow: [
+            if (isSelected || isToday)
+              BoxShadow(
+                color: (isSelected ? AppTheme.accent : AppTheme.accentStrong)
+                    .withValues(alpha: 0.18),
+                blurRadius: 14,
+                offset: const Offset(0, 8),
+              ),
+          ],
         ),
         child: Stack(
           children: [

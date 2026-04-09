@@ -165,18 +165,21 @@ function reminderEmailHtml(task, startText, endText)
   });
 }
 
-function passwordResetEmailHtml(resetLink)
+function passwordResetEmailHtml({ openLink, webLink })
 {
   const content = `
     <h1 style="margin:0 0 12px;text-align:center;font-size:32px;line-height:1.15;color:#0f172a;">Reset your password</h1>
     <p style="margin:0;text-align:center;font-size:16px;line-height:1.6;color:#334155;">
       Use the button below to choose a new password for your <strong>Calendar++</strong> account.
     </p>
-    ${actionButton(resetLink, '&#128273; Reset My Password', '#ef4444')}
+    ${actionButton(openLink, '&#128273; Open Reset Screen', '#ef4444')}
+    <p style="margin:18px 0 0;text-align:center;font-size:13px;line-height:1.6;color:#64748b;">
+      On mobile, we&apos;ll try to open the Calendar++ app first. If that does not work, the reset page will open in your browser.
+    </p>
     <p style="margin:24px 0 0;text-align:center;font-size:13px;line-height:1.6;color:#64748b;">
       If you did not request a password reset, you can safely ignore this email.
     </p>
-    ${linkFallback(resetLink, '#ef4444')}
+    ${linkFallback(webLink, '#ef4444')}
   `;
 
   return emailBase({

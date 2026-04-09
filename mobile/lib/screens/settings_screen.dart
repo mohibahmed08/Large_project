@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import '../models/account_settings.dart';
 import '../models/user_model.dart';
 import '../services/account_service.dart';
+import '../services/biometric_auth_service.dart';
+import '../services/session_storage.dart';
 import '../theme/app_theme.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -22,6 +24,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final AccountService _accountService = AccountService();
+  final BiometricAuthService _biometricAuthService = BiometricAuthService();
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
   late UserSession _session;
@@ -30,6 +33,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isSaving = false;
   bool _isRegenerating = false;
   bool _reminderEnabled = false;
+  bool _biometricAvailable = false;
+  bool _biometricUnlockEnabled = false;
+  String _biometricLabel = 'Face ID';
   int _reminderMinutesBefore = 30;
   static const List<int> _reminderOptions = [0, 5, 10, 15, 30, 60, 120, 1440];
 
@@ -38,6 +44,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _session = widget.initialSession;
     _load();
+    _loadBiometricSettings();
   }
 
   @override
@@ -74,6 +81,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
         });
       }
     }
+  }
+
+  Future<void> _loadBiometricSettings() async {
+    final status = await _biometricAuthService.getStatus();
+    final enabled = await SessionStorage.isBiometricUnlockEnabled();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _biometricAvailable = status.supported;
+      _biometricLabel = status.label;
+      _biometricUnlockEnabled = enabled && status.supported;
+    });
+  }
+
+  Future<void> _setBiometricUnlock(bool enabled) async {
+    await SessionStorage.setBiometricUnlockEnabled(enabled);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _biometricUnlockEnabled = enabled;
+    });
+    _showSnackBar(
+      enabled
+          ? '$_biometricLabel unlock enabled.'
+          : '$_biometricLabel unlock disabled.',
+    );
   }
 
   Future<void> _save() async {
@@ -199,6 +234,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             style: const TextStyle(color: AppTheme.textMuted),
                           ),
                         ],
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'App security',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 12),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text('Use $_biometricLabel to unlock'),
+                          subtitle: Text(
+                            _biometricAvailable
+                                ? 'Require $_biometricLabel before opening your saved session.'
+                                : 'Biometric unlock becomes available on supported phones.',
+                            style: const TextStyle(color: AppTheme.textMuted),
+                          ),
+                          value: _biometricUnlockEnabled,
+                          onChanged: _biometricAvailable
+                              ? (value) {
+                                  _setBiometricUnlock(value);
+                                }
+                              : null,
+                        ),
                       ],
                     ),
                   ),

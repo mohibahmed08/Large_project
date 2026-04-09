@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:ui';
 
 import 'package:archive/archive.dart';
 import 'package:file_selector/file_selector.dart';
@@ -38,6 +39,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   final CalendarService _calendarService = CalendarService();
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _quickTaskController = TextEditingController();
   final PageController _monthPageController = PageController(initialPage: 1200);
 
   late UserSession _session;
@@ -54,6 +56,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   List<CalendarTask> _visibleTasks = [];
   bool _isLoading = true;
   bool _isSearching = false;
+  bool _isQuickAdding = false;
   int _selectedIndex = 0; // 0=Calendar, 1=Day, 2=AI
 
   List<String> get _existingGroups {
@@ -94,6 +97,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _liveActivityTimer?.cancel();
     _notificationOpenSubscription?.cancel();
     _searchController.dispose();
+    _quickTaskController.dispose();
     _monthPageController.dispose();
     super.dispose();
   }
@@ -404,7 +408,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
-  Future<void> _openTaskDialog({CalendarTask? task}) async {
+  Future<void> _openTaskDialog({
+    CalendarTask? task,
+    String? newTaskSource,
+    String? initialGroup,
+  }) async {
     final baseDate = task?.startDate ?? _selectedDate;
     final initialEndDate = task?.endDate ??
         (task?.startDate ?? _selectedDate).add(const Duration(hours: 1));
@@ -417,7 +425,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           initialDescription: task?.description ?? '',
           initialLocation: task?.location ?? '',
           initialColor: task?.color ?? '',
-          initialGroup: task?.group ?? _defaultGroupForNewTask,
+          initialGroup: task?.group ?? initialGroup ?? _defaultGroupForNewTask,
           existingGroups: _existingGroups,
           initialStartDate: baseDate,
           initialEndDate: initialEndDate,
@@ -441,7 +449,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         startDate: result.startDate,
         endDate: result.endDate,
         location: result.location,
-        source: task?.source ?? 'manual',
+        source: task?.source ?? newTaskSource ?? 'manual',
         color: result.color,
         group: result.group,
         isCompleted: task?.isCompleted ?? false,
@@ -790,6 +798,115 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ..sort((a, b) => (a.startDate ?? _selectedDate).compareTo(b.startDate ?? _selectedDate));
   }
 
+  List<CalendarTask> get _pendingSelectedTasks =>
+      _tasksForSelectedDay.where((task) => !task.isCompleted).toList();
+
+  List<CalendarTask> get _completedSelectedTasks =>
+      _tasksForSelectedDay.where((task) => task.isCompleted).toList();
+
+  List<CalendarTask> get _todoTasksForSelectedDay =>
+      _pendingSelectedTasks
+          .where((task) => task.source.toLowerCase() == 'task')
+          .toList();
+
+  List<CalendarTask> get _agendaTasksForSelectedDay =>
+      _pendingSelectedTasks
+          .where((task) => task.source.toLowerCase() != 'task')
+          .toList();
+
+  int get _selectedDayCompletedCount => _completedSelectedTasks.length;
+
+  int get _selectedDayPendingCount => _pendingSelectedTasks.length;
+
+  double get _selectedDayCompletionRatio {
+    final dayTasks = _tasksForSelectedDay;
+    if (dayTasks.isEmpty) {
+      return 0;
+    }
+    return _selectedDayCompletedCount / dayTasks.length;
+  }
+
+  String get _selectedDayHeroTitle {
+    return DateUtils.isSameDay(_selectedDate, DateTime.now()) ? 'Today' : 'Plan';
+  }
+
+  CalendarTask? get _nextSelectedTask {
+    final upcoming = _pendingSelectedTasks.toList()
+      ..sort(
+        (a, b) => (a.startDate ?? _selectedDate).compareTo(
+          b.startDate ?? _selectedDate,
+        ),
+      );
+    return upcoming.isEmpty ? null : upcoming.first;
+  }
+
+  String get _selectedDateLongLabel {
+    return '${_weekdayName(_selectedDate.weekday)}, ${_monthName(_selectedDate.month)} ${_selectedDate.day}, ${_selectedDate.year}';
+  }
+
+  DateTime _defaultQuickTaskStart() {
+    final now = DateTime.now();
+    if (DateUtils.isSameDay(now, _selectedDate)) {
+      final roundedMinute = now.minute <= 30 ? 30 : 0;
+      final roundedHour = now.minute <= 30 ? now.hour : now.hour + 1;
+      return DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        roundedHour,
+        roundedMinute,
+      );
+    }
+
+    return DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+      9,
+    );
+  }
+
+  Future<void> _addQuickTaskForSelectedDay() async {
+    final title = _quickTaskController.text.trim();
+    if (title.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isQuickAdding = true;
+    });
+
+    try {
+      final nextSession = await _calendarService.saveTask(
+        session: _session,
+        title: title,
+        startDate: _defaultQuickTaskStart(),
+        source: 'task',
+        group: '',
+        reminderEnabled: false,
+        reminderMinutesBefore: 30,
+      );
+      _cacheSession(nextSession);
+      _quickTaskController.clear();
+      await _loadMonth(showLoader: false);
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar('Added "$title" to $_selectedDateLongLabel.');
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isQuickAdding = false;
+        });
+      }
+    }
+  }
+
   String _taskGroupLabel(CalendarTask task) {
     final explicitGroup = task.group.trim();
     if (explicitGroup.isNotEmpty) {
@@ -930,7 +1047,139 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return '•';
   }
 
+  Widget _buildGlassPanel({
+    required Widget child,
+    EdgeInsetsGeometry padding = const EdgeInsets.all(18),
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(28),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(28),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withValues(alpha: 0.12),
+                AppTheme.surfaceAlt.withValues(alpha: 0.88),
+                AppTheme.surface.withValues(alpha: 0.94),
+              ],
+            ),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.10),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.18),
+                blurRadius: 22,
+                offset: const Offset(0, 14),
+              ),
+            ],
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTaskPreviewRow(CalendarTask task) {
+    final accentColor = _taskDisplayColor(task);
+    final timeText = task.startDate == null
+        ? 'Any time'
+        : task.endDate != null
+            ? '${_formatTime(task.startDate!)} - ${_formatTime(task.endDate!)}'
+            : _formatTime(task.startDate!);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () => _openTaskDialog(task: task),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: accentColor.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: accentColor.withValues(alpha: 0.25),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                color: accentColor,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    task.title.isEmpty ? '(Untitled)' : task.title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: task.isCompleted
+                          ? AppTheme.textMuted
+                          : AppTheme.textPrimary,
+                      decoration: task.isCompleted
+                          ? TextDecoration.lineThrough
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    timeText,
+                    style: TextStyle(
+                      color: accentColor,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  ),
+                  if (task.description.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      task.description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppTheme.textMuted,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (task.source.toLowerCase() == 'task')
+              Checkbox(
+                value: task.isCompleted,
+                activeColor: accentColor,
+                onChanged: (value) {
+                  if (value != null) {
+                    _toggleTask(task, value);
+                  }
+                },
+              )
+            else
+              Icon(
+                Icons.chevron_right,
+                color: Colors.white.withValues(alpha: 0.55),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildCalendarTab() {
+    return _buildCalendarTabRevamp();
     final today = DateTime.now();
 
     return _isLoading
@@ -1129,6 +1378,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _buildDayTab() {
+    return _buildDayTabRevamp();
     final dayTasks = _tasksForSelectedDay;
     final selectedDayWeather = _selectedDayWeather;
     final formattedDate = '${_monthName(_selectedDate.month)} ${_selectedDate.day}, ${_selectedDate.year}';
@@ -1348,6 +1598,710 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  Widget _buildCalendarTabRevamp() {
+    final today = DateTime.now();
+    final selectedDayWeather = _selectedDayWeather;
+    final previewTasks = _tasksForSelectedDay.take(3).toList();
+
+    return _isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : RefreshIndicator(
+            onRefresh: () => _loadMonth(showLoader: false),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+              children: [
+                _buildGlassPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _selectedDayHeroTitle,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineMedium
+                                      ?.copyWith(fontWeight: FontWeight.w800),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  _selectedDateLongLabel,
+                                  style: const TextStyle(
+                                    color: AppTheme.textMuted,
+                                    height: 1.35,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accent.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: AppTheme.accent.withValues(alpha: 0.28),
+                              ),
+                            ),
+                            child: const Text(
+                              'Liquid Glass',
+                              style: TextStyle(
+                                color: AppTheme.accent,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      TextField(
+                        controller: _searchController,
+                        onSubmitted: _searchTasks,
+                        decoration: InputDecoration(
+                          labelText: 'Search tasks',
+                          hintText: 'Title, description, or location',
+                          suffixIcon: _isSearching
+                              ? const Padding(
+                                  padding: EdgeInsets.all(12),
+                                  child: SizedBox(
+                                    height: 16,
+                                    width: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                )
+                              : IconButton(
+                                  onPressed: () => _searchTasks(
+                                    _searchController.text,
+                                  ),
+                                  icon: const Icon(Icons.search),
+                                ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          _InsightPill(
+                            label: 'Pending',
+                            value: '$_selectedDayPendingCount',
+                          ),
+                          _InsightPill(
+                            label: 'Completed',
+                            value: '$_selectedDayCompletedCount',
+                          ),
+                          if (selectedDayWeather != null)
+                            _InsightPill(
+                              label: _weatherLabel(
+                                selectedDayWeather['code'] as int?,
+                              ),
+                              value:
+                                  'H ${((selectedDayWeather['max'] as num?)?.round() ?? 0)}°',
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _buildGlassPanel(
+                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 18),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          IconButton.filledTonal(
+                            onPressed: () {
+                              _monthPageController.previousPage(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                              );
+                            },
+                            icon: const Icon(Icons.chevron_left),
+                            tooltip: 'Previous month',
+                          ),
+                          Expanded(
+                            child: Column(
+                              children: [
+                                Text(
+                                  '${_monthName(_currentDate.month)} ${_currentDate.year}',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleLarge
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 4),
+                                const Text(
+                                  'Swipe the grid or tap the arrows',
+                                  style: TextStyle(
+                                    color: AppTheme.textMuted,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton.filledTonal(
+                            onPressed: () {
+                              _monthPageController.nextPage(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                              );
+                            },
+                            icon: const Icon(Icons.chevron_right),
+                            tooltip: 'Next month',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _CalendarActionButton(
+                              icon: Icons.my_location_outlined,
+                              label: 'Today',
+                              onPressed: _goToToday,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _CalendarActionButton(
+                              icon: Icons.add_task,
+                              label: 'Task',
+                              onPressed: () => _openTaskDialog(
+                                newTaskSource: 'task',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _CalendarActionButton(
+                              icon: Icons.download_for_offline_outlined,
+                              label: 'Import',
+                              onPressed: _openImportDialog,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+                            .map(
+                              (day) => Expanded(
+                                child: Center(
+                                  child: Text(
+                                    day,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelLarge
+                                        ?.copyWith(
+                                          color: AppTheme.textMuted,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                  ),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        height: 332,
+                        child: PageView.builder(
+                          controller: _monthPageController,
+                          onPageChanged: (page) {
+                            final now = DateTime.now();
+                            final monthOffset = page - 1200;
+                            final newDate = DateTime(
+                              now.year,
+                              now.month + monthOffset,
+                              1,
+                            );
+                            setState(() {
+                              _currentDate = newDate;
+                            });
+                            _loadMonth(showLoader: false);
+                          },
+                          itemBuilder: (context, page) {
+                            final now = DateTime.now();
+                            final monthOffset = page - 1200;
+                            final pageMonth = DateTime(
+                              now.year,
+                              now.month + monthOffset,
+                              1,
+                            );
+                            final daysInPageMonth = DateTime(
+                              pageMonth.year,
+                              pageMonth.month + 1,
+                              0,
+                            ).day;
+                            final firstDay = DateTime(
+                                  pageMonth.year,
+                                  pageMonth.month,
+                                  1,
+                                ).weekday %
+                                7;
+
+                            return GridView.builder(
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: daysInPageMonth + firstDay,
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 7,
+                                crossAxisSpacing: 4,
+                                mainAxisSpacing: 4,
+                              ),
+                              itemBuilder: (context, index) {
+                                if (index < firstDay) {
+                                  return const SizedBox.shrink();
+                                }
+                                final day = index - firstDay + 1;
+                                final date = DateTime(
+                                  pageMonth.year,
+                                  pageMonth.month,
+                                  day,
+                                );
+                                return DayGrid(
+                                  day: day,
+                                  month: pageMonth.month,
+                                  year: pageMonth.year,
+                                  isToday: DateUtils.isSameDay(date, today),
+                                  isSelected:
+                                      DateUtils.isSameDay(date, _selectedDate),
+                                  weatherData: _weatherData,
+                                  tasks: _visibleTasks
+                                      .where(
+                                        (task) =>
+                                            DateUtils.isSameDay(
+                                              task.startDate,
+                                              date,
+                                            ),
+                                      )
+                                      .toList(),
+                                  onDayTap: (selectedDay) {
+                                    setState(() {
+                                      _selectedDate = DateTime(
+                                        pageMonth.year,
+                                        pageMonth.month,
+                                        selectedDay,
+                                      );
+                                    });
+                                  },
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _buildGlassPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Selected day',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleLarge
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _selectedDateLongLabel,
+                                  style: const TextStyle(
+                                    color: AppTheme.textMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _selectedIndex = 1;
+                              });
+                            },
+                            icon: const Icon(Icons.arrow_forward),
+                            label: const Text('Open Today'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _quickTaskController,
+                              onSubmitted: (_) => _addQuickTaskForSelectedDay(),
+                              decoration: const InputDecoration(
+                                labelText: 'Quick to-do',
+                                hintText: 'Add something for this day',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          FilledButton(
+                            onPressed:
+                                _isQuickAdding ? null : _addQuickTaskForSelectedDay,
+                            child: _isQuickAdding
+                                ? const SizedBox(
+                                    height: 18,
+                                    width: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text('Add'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      if (previewTasks.isEmpty)
+                        const Text(
+                          'Nothing is scheduled for this day yet. Add a task above or tap any date to start planning.',
+                          style: TextStyle(
+                            color: AppTheme.textMuted,
+                            height: 1.45,
+                          ),
+                        )
+                      else ...[
+                        Text(
+                          '${_tasksForSelectedDay.length} item${_tasksForSelectedDay.length == 1 ? '' : 's'} lined up',
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 12),
+                        ...previewTasks.map(_buildTaskPreviewRow),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+  }
+
+  Widget _buildDayTabRevamp() {
+    final dayTasks = _tasksForSelectedDay;
+    final todoTasks = _todoTasksForSelectedDay;
+    final agendaTasks = _agendaTasksForSelectedDay;
+    final completedTasks = _completedSelectedTasks;
+    final nextTask = _nextSelectedTask;
+    final selectedDayWeather = _selectedDayWeather;
+    final formattedDate =
+        '${_monthName(_selectedDate.month)} ${_selectedDate.day}, ${_selectedDate.year}';
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_selectedDayHeroTitle),
+        actions: [
+          if (!DateUtils.isSameDay(_selectedDate, DateTime.now()))
+            IconButton(
+              onPressed: _goToToday,
+              icon: const Icon(Icons.my_location_outlined),
+              tooltip: 'Jump to today',
+            ),
+          IconButton(
+            onPressed: _openSettings,
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Settings',
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _openTaskDialog(),
+        label: const Text('Add Item'),
+        icon: const Icon(Icons.add),
+      ),
+      body: RefreshIndicator(
+        onRefresh: () => _loadMonth(showLoader: false),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 108),
+          children: [
+            _buildGlassPanel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    formattedDate,
+                    style: Theme.of(context)
+                        .textTheme
+                        .headlineSmall
+                        ?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    dayTasks.isEmpty
+                        ? 'A fresh page for the day.'
+                        : '${
+                            dayTasks.length
+                          } items planned with ${(_selectedDayCompletionRatio * 100).round()}% already done.',
+                    style: const TextStyle(
+                      color: AppTheme.textMuted,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      value: _selectedDayCompletionRatio,
+                      minHeight: 10,
+                      backgroundColor: Colors.white.withValues(alpha: 0.08),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      _InsightPill(label: 'To-do', value: '${todoTasks.length}'),
+                      _InsightPill(
+                        label: 'Agenda',
+                        value: '${agendaTasks.length}',
+                      ),
+                      _InsightPill(
+                        label: 'Done',
+                        value: '${completedTasks.length}',
+                      ),
+                      if (selectedDayWeather != null)
+                        _InsightPill(
+                          label: _weatherLabel(
+                            selectedDayWeather['code'] as int?,
+                          ),
+                          value:
+                              '${((selectedDayWeather['max'] as num?)?.round() ?? 0)}° / ${((selectedDayWeather['min'] as num?)?.round() ?? 0)}°',
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _buildGlassPanel(
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  SizedBox(
+                    width: 156,
+                    child: _CalendarActionButton(
+                      icon: Icons.check_circle_outline,
+                      label: 'New Task',
+                      onPressed: () => _openTaskDialog(newTaskSource: 'task'),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 156,
+                    child: _CalendarActionButton(
+                      icon: Icons.event_outlined,
+                      label: 'New Event',
+                      onPressed: () => _openTaskDialog(newTaskSource: 'event'),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 156,
+                    child: _CalendarActionButton(
+                      icon: Icons.auto_awesome_outlined,
+                      label: 'Ask AI',
+                      onPressed: () {
+                        setState(() {
+                          _selectedIndex = 2;
+                        });
+                      },
+                    ),
+                  ),
+                  SizedBox(
+                    width: 156,
+                    child: _CalendarActionButton(
+                      icon: Icons.link_outlined,
+                      label: 'Import',
+                      onPressed: _openImportDialog,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            _buildGlassPanel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Quick to-do',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Capture a task without opening the full editor. It lands on the selected day automatically.',
+                    style: TextStyle(
+                      color: AppTheme.textMuted,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _quickTaskController,
+                          onSubmitted: (_) => _addQuickTaskForSelectedDay(),
+                          decoration: const InputDecoration(
+                            labelText: 'Task title',
+                            hintText: 'Pay rent, call mom, send recap...',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      FilledButton(
+                        onPressed:
+                            _isQuickAdding ? null : _addQuickTaskForSelectedDay,
+                        child: _isQuickAdding
+                            ? const SizedBox(
+                                height: 18,
+                                width: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('Add'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (nextTask != null) ...[
+              const SizedBox(height: 14),
+              _buildGlassPanel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Next up',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildTaskPreviewRow(nextTask),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 14),
+            if (dayTasks.isEmpty)
+              _buildGlassPanel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Nothing scheduled yet',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Use the quick task field above or the add button to start shaping the day.',
+                      style: TextStyle(
+                        color: AppTheme.textMuted,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else ...[
+              if (todoTasks.isNotEmpty) ...[
+                _buildGlassPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'To-do list',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 12),
+                      ...todoTasks.map(_buildTaskPreviewRow),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
+              if (agendaTasks.isNotEmpty) ...[
+                _buildGlassPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Agenda',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 12),
+                      ...agendaTasks.map(_buildTaskPreviewRow),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
+              if (completedTasks.isNotEmpty)
+                _buildGlassPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Completed',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 12),
+                      ...completedTasks.map(_buildTaskPreviewRow),
+                    ],
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   String _formatTime(DateTime dt) {
     final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
     final minute = dt.minute.toString().padLeft(2, '0');
@@ -1451,7 +2405,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           NavigationDestination(
             icon: Icon(Icons.today_outlined),
             selectedIcon: Icon(Icons.today),
-            label: 'Day',
+            label: 'Today',
           ),
           NavigationDestination(
             icon: Icon(Icons.auto_awesome_outlined),
@@ -1480,5 +2434,94 @@ class _CalendarScreenState extends State<CalendarScreen> {
     ];
 
     return months[month - 1];
+  }
+
+  String _weekdayName(int weekday) {
+    const weekdays = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+
+    return weekdays[weekday - 1];
+  }
+}
+
+class _InsightPill extends StatelessWidget {
+  const _InsightPill({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.08),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppTheme.textMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: const TextStyle(
+              color: AppTheme.textPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CalendarActionButton extends StatelessWidget {
+  const _CalendarActionButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.tonalIcon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18),
+      label: Text(label),
+      style: FilledButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        backgroundColor: Colors.white.withValues(alpha: 0.08),
+        foregroundColor: AppTheme.textPrimary,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+        ),
+      ),
+    );
   }
 }

@@ -6,6 +6,7 @@ class SessionStorage {
   SessionStorage._();
 
   static const _jwtTokenKey = 'jwtToken';
+  static const _biometricUnlockEnabledKey = 'biometricUnlockEnabled';
   static const _liveActivityIdKey = 'liveActivityId';
   static const _liveActivityTaskIdKey = 'liveActivityTaskId';
 
@@ -17,6 +18,16 @@ class SessionStorage {
   static Future<String> readToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_jwtTokenKey) ?? '';
+  }
+
+  static Future<void> setBiometricUnlockEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_biometricUnlockEnabledKey, enabled);
+  }
+
+  static Future<bool> isBiometricUnlockEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_biometricUnlockEnabledKey) ?? false;
   }
 
   static Future<void> clear() async {

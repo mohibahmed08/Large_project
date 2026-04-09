@@ -96,6 +96,76 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _handleForgotPassword() async {
+    final emailController = TextEditingController(
+      text: _emailController.text.trim(),
+    );
+
+    final email = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reset password'),
+        content: TextField(
+          controller: emailController,
+          autofocus: true,
+          keyboardType: TextInputType.emailAddress,
+          decoration: const InputDecoration(
+            labelText: 'Email',
+            hintText: 'you@example.com',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(
+              dialogContext,
+              emailController.text.trim(),
+            ),
+            child: const Text('Send link'),
+          ),
+        ],
+      ),
+    );
+    emailController.dispose();
+
+    if (!mounted) {
+      return;
+    }
+
+    final normalizedEmail = (email ?? '').trim();
+    if (normalizedEmail.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await _authService.requestPasswordReset(normalizedEmail);
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar(
+        'If an account exists for $normalizedEmail, a password reset link has been sent.',
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted && _isLoading) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
   void _openCalendar(UserSession session) {
     // Request push permission and register token after login (non-blocking)
     PushNotificationService.requestPermission();
@@ -272,6 +342,17 @@ class _LoginScreenState extends State<LoginScreen> {
                               return null;
                             },
                           ),
+                          if (_isLogin) ...[
+                            const SizedBox(height: 6),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed:
+                                    _isLoading ? null : _handleForgotPassword,
+                                child: const Text('Forgot password?'),
+                              ),
+                            ),
+                          ],
                           if (!_isLogin) ...[
                             const SizedBox(height: 12),
                             TextFormField(
