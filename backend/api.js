@@ -470,6 +470,103 @@ function buildCalendarFeedUrls(user)
     };
 }
 
+function trimTrailingSlash(value)
+{
+    return String(value || '').trim().replace(/\/+$/, '');
+}
+
+function buildResetLinks(resetToken)
+{
+    const encodedToken = encodeURIComponent(resetToken);
+    const serverUrl    = trimTrailingSlash(process.env.SERVER_URL || 'http://localhost:5000');
+    const clientOrigin = trimTrailingSlash(process.env.CLIENT_ORIGIN || 'http://localhost:3000');
+    const mobileBase   = String(process.env.MOBILE_RESET_URL_BASE || 'calendarplusplus://reset-password').trim();
+    const separator    = mobileBase.includes('?') ? '&' : '?';
+
+    return {
+        appLink:  `${mobileBase}${separator}token=${encodedToken}`,
+        webLink:  `${clientOrigin}/resetpassword?token=${encodedToken}`,
+        openLink: `${serverUrl}/api/open-resetpassword?token=${encodedToken}`,
+    };
+}
+
+function renderOpenResetPage({ appLink, webLink })
+{
+    return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Open Calendar++</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(180deg, #111827, #020617);
+        color: #f8fafc;
+        font-family: Arial, Helvetica, sans-serif;
+        padding: 24px;
+      }
+      .panel {
+        max-width: 420px;
+        width: 100%;
+        padding: 28px;
+        border-radius: 24px;
+        background: rgba(15, 23, 42, 0.86);
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        box-shadow: 0 18px 45px rgba(0, 0, 0, 0.32);
+        text-align: center;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 30px;
+      }
+      p {
+        margin: 0;
+        line-height: 1.6;
+        color: #cbd5e1;
+      }
+      .button {
+        display: inline-block;
+        margin-top: 22px;
+        padding: 14px 22px;
+        border-radius: 14px;
+        background: #ef4444;
+        color: #fff;
+        font-weight: 700;
+        text-decoration: none;
+      }
+      .link {
+        display: inline-block;
+        margin-top: 14px;
+        color: #93c5fd;
+        word-break: break-all;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="panel">
+      <h1>Opening Calendar++</h1>
+      <p>If the app is installed, your reset link will open there first. If not, we&apos;ll send you to the browser fallback in a moment.</p>
+      <a class="button" href="${appLink}">Open in app</a>
+      <div>
+        <a class="link" href="${webLink}">Use browser instead</a>
+      </div>
+    </div>
+    <script>
+      const appLink = ${JSON.stringify(appLink)};
+      const webLink = ${JSON.stringify(webLink)};
+      window.location.replace(appLink);
+      window.setTimeout(() => {
+        window.location.replace(webLink);
+      }, 1400);
+    </script>
+  </body>
+</html>`;
+}
+
 function buildSettingsPayload(user)
 {
     const reminderDefaults = normalizeReminderSettings(user?.reminderDefaults || {}, {
@@ -2221,6 +2318,19 @@ exports.setApp = function(app, client)
     });
 
     // ─── Forgot Password ────────────────────────────────────────────────────────
+    app.get('/api/open-resetpassword', async (req, res) =>
+    {
+        const token = String(req.query.token || '').trim();
+        if(!token)
+        {
+            res.status(400).send('Reset token is missing.');
+            return;
+        }
+
+        const links = buildResetLinks(token);
+        res.type('html').send(renderOpenResetPage(links));
+    });
+
     app.post('/api/forgotpassword', async (req, res) =>
     {
         const { email } = req.body;
@@ -2250,11 +2360,11 @@ exports.setApp = function(app, client)
                 { $set: { resetToken, resetTokenExpires } }
             );
 
-            const resetLink = `${process.env.CLIENT_ORIGIN || 'http://localhost:3000'}/resetpassword?token=${resetToken}`;
+            const resetLinks = buildResetLinks(resetToken);
             await sendWithResend(
                 user.email,
                 '&#128273; Reset your Calendar++ password',
-                passwordResetEmailHtml(resetLink)
+                passwordResetEmailHtml(resetLinks)
             );
 
             res.status(200).json({ error: '' });
