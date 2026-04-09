@@ -116,8 +116,10 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
         return;
       }
 
+      // biometricOnly: true — we want Face ID / Touch ID, not device passcode.
       final unlocked = await _biometricAuthService.authenticate(
         reason: 'Use $_biometricLabel to unlock Calendar++.',
+        allowDeviceCredential: false,
       );
       if (!mounted) {
         return;
@@ -163,8 +165,10 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
       _unlockMessage = null;
     });
 
+    // biometricOnly — Face ID/Touch ID only, no passcode fallback here.
     final unlocked = await _biometricAuthService.authenticate(
       reason: 'Use $_biometricLabel to unlock Calendar++.',
+      allowDeviceCredential: false,
     );
     if (!mounted) {
       return;

@@ -1,11 +1,35 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../services/biometric_auth_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/session_storage.dart';
 import '../theme/app_theme.dart';
 import 'calendar_screen.dart';
+
+// ── Post-login "Use Face ID next time?" sheet ──────────────────────────────
+/// Shows a bottom sheet prompting the user to enable biometric unlock.
+/// Only shown when biometrics are available and NOT already enabled.
+Future<void> maybeSuggestBiometricSetup(BuildContext context) async {
+  final biometricService = BiometricAuthService();
+  final status = await biometricService.getStatus();
+  if (!status.supported) return;
+
+  final alreadyEnabled = await SessionStorage.isBiometricUnlockEnabled();
+  if (alreadyEnabled) return;
+
+  if (!context.mounted) return;
+
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _BiometricSetupSheet(biometricLabel: status.label),
+  );
+}
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -17,6 +41,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _authService = AuthService();
+  final _biometricAuthService = BiometricAuthService();
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -26,6 +51,72 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLogin = true;
   bool _isLoading = false;
   bool _showPassword = false;
+
+  // Biometric-login state — only shown when a saved session token exists
+  // and Face ID / Touch ID is available on the device.
+  bool _biometricAvailable = false;
+  bool _hasSavedSession = false;
+  String _biometricLabel = 'Face ID';
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_checkBiometricAvailability());
+  }
+
+  Future<void> _checkBiometricAvailability() async {
+    final token = await SessionStorage.readToken();
+    final hasSaved = token.isNotEmpty;
+    final status = await _biometricAuthService.getStatus();
+    if (!mounted) return;
+    setState(() {
+      _hasSavedSession = hasSaved;
+      _biometricAvailable = status.supported;
+      _biometricLabel = status.label;
+    });
+
+    // Auto-prompt Face ID when returning to the login screen with a saved
+    // session — mirrors the behaviour users expect from apps like 1Password.
+    if (hasSaved && status.supported) {
+      unawaited(_loginWithBiometrics(auto: true));
+    }
+  }
+
+  /// Attempt to log in using the stored JWT + biometric confirmation.
+  Future<void> _loginWithBiometrics({bool auto = false}) async {
+    if (_isLoading) return;
+
+    final token = await SessionStorage.readToken();
+    if (token.isEmpty) {
+      if (!auto) _showSnackBar('No saved session found.');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    final authenticated = await _biometricAuthService.authenticate(
+      reason: 'Use $_biometricLabel to sign in to Calendar++.',
+      allowDeviceCredential: false, // biometric-only — no passcode fallback
+    );
+
+    if (!mounted) return;
+
+    if (authenticated) {
+      try {
+        final session = UserSession.fromAccessToken(token);
+        setState(() => _isLoading = false);
+        _openCalendar(session);
+      } catch (_) {
+        setState(() => _isLoading = false);
+        _showSnackBar('Saved session is invalid. Please sign in with your password.');
+      }
+    } else {
+      setState(() => _isLoading = false);
+      if (!auto) {
+        _showSnackBar('$_biometricLabel did not complete.');
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -173,7 +264,9 @@ class _LoginScreenState extends State<LoginScreen> {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => CalendarScreen(initialSession: session),
+        builder: (ctx) => _BiometricOnboardingWrapper(
+          session: session,
+        ),
       ),
     );
   }
@@ -183,6 +276,9 @@ class _LoginScreenState extends State<LoginScreen> {
       SnackBar(content: Text(message)),
     );
   }
+
+  bool get _showBiometricButton =>
+      _isLogin && _biometricAvailable && _hasSavedSession;
 
   @override
   Widget build(BuildContext context) {
@@ -261,6 +357,65 @@ class _LoginScreenState extends State<LoginScreen> {
                               style: Theme.of(context).textTheme.titleLarge,
                             ),
                           ),
+
+                          // ── Face ID / Touch ID quick-login ───────────────
+                          if (_showBiometricButton) ...[
+                            const SizedBox(height: 20),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: _isLoading
+                                    ? null
+                                    : () => _loginWithBiometrics(),
+                                icon: Icon(
+                                  _biometricLabel.toLowerCase().contains('face')
+                                      ? Icons.face_unlock_outlined
+                                      : Icons.fingerprint,
+                                  color: AppTheme.accent,
+                                ),
+                                label: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  child: Text(
+                                    'Sign in with $_biometricLabel',
+                                    style: const TextStyle(
+                                      color: AppTheme.accent,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  side: BorderSide(
+                                    color: AppTheme.accent.withValues(alpha: 0.5),
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                const Expanded(child: Divider()),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                  ),
+                                  child: Text(
+                                    'or sign in with password',
+                                    style: TextStyle(
+                                      color: AppTheme.textMuted,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                const Expanded(child: Divider()),
+                              ],
+                            ),
+                          ],
+
                           const SizedBox(height: 18),
                           if (!_isLogin) ...[
                             TextFormField(
@@ -410,6 +565,115 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
+
+// ── Wrapper that shows the CalendarScreen then prompts for Face ID setup ──────
+class _BiometricOnboardingWrapper extends StatefulWidget {
+  const _BiometricOnboardingWrapper({required this.session});
+  final UserSession session;
+
+  @override
+  State<_BiometricOnboardingWrapper> createState() =>
+      _BiometricOnboardingWrapperState();
+}
+
+class _BiometricOnboardingWrapperState
+    extends State<_BiometricOnboardingWrapper> {
+  @override
+  void initState() {
+    super.initState();
+    // Show the prompt shortly after the calendar appears so it feels natural.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (mounted) {
+          unawaited(maybeSuggestBiometricSetup(context));
+        }
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CalendarScreen(initialSession: widget.session);
+  }
+}
+
+// ── Bottom sheet content ──────────────────────────────────────────────────────
+class _BiometricSetupSheet extends StatelessWidget {
+  const _BiometricSetupSheet({required this.biometricLabel});
+  final String biometricLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final faceIcon = biometricLabel.toLowerCase().contains('face')
+        ? Icons.face_unlock_outlined
+        : Icons.fingerprint;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 34),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: AppTheme.accent.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(faceIcon, color: AppTheme.accent, size: 28),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Sign in faster with $biometricLabel',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: AppTheme.textPrimary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Use $biometricLabel to unlock Calendar++ instantly next time — no password needed.',
+            style: const TextStyle(color: AppTheme.textMuted, height: 1.45),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              icon: Icon(faceIcon),
+              label: Text('Enable $biometricLabel'),
+              onPressed: () async {
+                await SessionStorage.setBiometricUnlockEnabled(true);
+                if (context.mounted) Navigator.pop(context);
+              },
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                'Not now',
+                style: TextStyle(color: AppTheme.textMuted),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _AuthTabButton extends StatelessWidget {
   const _AuthTabButton({

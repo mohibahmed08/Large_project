@@ -62,7 +62,13 @@ class BiometricAuthService {
     }
   }
 
-  Future<bool> authenticate({required String reason}) async {
+  /// Authenticate with biometrics only (Face ID / Touch ID).
+  /// Pass [allowDeviceCredential: true] only when you explicitly want to
+  /// fall back to PIN/password (e.g. when the user taps "Use password instead").
+  Future<bool> authenticate({
+    required String reason,
+    bool allowDeviceCredential = false,
+  }) async {
     if (kIsWeb) {
       return false;
     }
@@ -70,8 +76,10 @@ class BiometricAuthService {
     try {
       return await _localAuthentication.authenticate(
         localizedReason: reason,
-        options: const AuthenticationOptions(
-          biometricOnly: false,
+        options: AuthenticationOptions(
+          // Only allow the biometric sensor; do NOT fall back to device
+          // passcode/password unless the caller explicitly requests it.
+          biometricOnly: !allowDeviceCredential,
           stickyAuth: true,
           useErrorDialogs: true,
         ),

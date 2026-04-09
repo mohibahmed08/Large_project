@@ -9,8 +9,6 @@ class DayGrid extends StatelessWidget {
     required this.day,
     required this.isToday,
     required this.isSelected,
-    required this.month,
-    required this.year,
     required this.tasks,
     required this.onDayTap,
     this.weatherData,
@@ -19,73 +17,11 @@ class DayGrid extends StatelessWidget {
   final int day;
   final bool isToday;
   final bool isSelected;
-  final int month;
-  final int year;
   final List<CalendarTask> tasks;
   final Map<String, dynamic>? weatherData;
   final ValueChanged<int> onDayTap;
 
   int get taskCount => tasks.length;
-
-  String getWeatherText() {
-    if (weatherData == null) {
-      return '';
-    }
-
-    try {
-      final List codes = weatherData!['hourly']['weathercode'];
-      final today = DateUtils.dateOnly(DateTime.now());
-      final cellDate = DateTime(year, month, day);
-      final diffDays = cellDate.difference(today).inDays;
-
-      if (diffDays < 0) {
-        return '';
-      }
-      if ((diffDays * 24 + 24) > codes.length) {
-        return '';
-      }
-
-      final start = diffDays * 24;
-      final dayCodes = codes.sublist(start, start + 24);
-      final count = <int, int>{};
-
-      for (final code in dayCodes) {
-        count[code as int] = (count[code] ?? 0) + 1;
-      }
-
-      var mostCommon = dayCodes.first as int;
-      var maxCount = 0;
-      count.forEach((key, value) {
-        if (value > maxCount) {
-          maxCount = value;
-          mostCommon = key;
-        }
-      });
-
-      return weatherCodeToText(mostCommon);
-    } catch (_) {
-      return '';
-    }
-  }
-
-  String weatherCodeToText(int code) {
-    if (code == 0) return 'Sunny';
-    if (code == 1) return 'Mostly';
-    if (code == 2) return 'Partly';
-    if (code == 3) return 'Cloudy';
-    if (code == 45 || code == 48) return 'Foggy';
-    if (code == 51 || code == 53 || code == 55) return 'Drizzle';
-    if (code == 56 || code == 57) return 'Ice';
-    if (code == 61 || code == 63 || code == 65) return 'Rain';
-    if (code == 66 || code == 67) return 'Sleet';
-    if (code == 71 || code == 73 || code == 75) return 'Snow';
-    if (code == 77) return 'Flurries';
-    if (code == 80 || code == 81 || code == 82) return 'Showers';
-    if (code == 85 || code == 86) return 'Snow';
-    if (code == 95) return 'Storm';
-    if (code == 96 || code == 99) return 'Hail';
-    return '';
-  }
 
   Color _taskBaseColor(CalendarTask task) {
     final normalized = task.color.trim().replaceFirst('#', '');
@@ -141,7 +77,6 @@ class DayGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final weatherText = getWeatherText();
     final groupColor = taskCount > 0 ? _groupMajorityColor(tasks) : const Color(0xFF64B5F6);
     final previewColors = <Color>[];
     for (final task in tasks) {
@@ -155,111 +90,72 @@ class DayGrid extends StatelessWidget {
       }
     }
 
+    // Compact cell: day number centred, today ring, selected fill, 3 dot max
     return GestureDetector(
       onTap: () => onDayTap(day),
       child: Container(
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Colors.white.withValues(alpha: isSelected ? 0.16 : 0.08),
-              const Color(0xFF12121F).withValues(alpha: 0.92),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isSelected
-                ? AppTheme.accent           // blue – consistent with theme
-                : isToday
-                    ? AppTheme.accentStrong // stronger blue for today
-                    : AppTheme.border,
-            width: isSelected || isToday ? 2 : 1,
-          ),
-          boxShadow: [
-            if (isSelected || isToday)
-              BoxShadow(
-                color: (isSelected ? AppTheme.accent : AppTheme.accentStrong)
-                    .withValues(alpha: 0.18),
-                blurRadius: 14,
-                offset: const Offset(0, 8),
-              ),
-          ],
+          color: isSelected
+              ? AppTheme.accent.withValues(alpha: 0.22)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: isSelected
+              ? Border.all(color: AppTheme.accent, width: 1.5)
+              : isToday
+                  ? Border.all(color: AppTheme.accentStrong, width: 1.5)
+                  : null,
         ),
-        child: Stack(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (weatherText.isNotEmpty)
-              Positioned(
-                top: 6,
-                left: 8,
-                child: Text(
-                  weatherText,
-                  style: const TextStyle(fontSize: 10, color: Colors.white70),
-                ),
-              ),
-            Positioned(
-              top: 6,
-              right: 8,
+            // Day number
+            Container(
+              width: 28,
+              height: 28,
+              alignment: Alignment.center,
+              decoration: isToday && !isSelected
+                  ? BoxDecoration(
+                      color: AppTheme.accentStrong,
+                      shape: BoxShape.circle,
+                    )
+                  : null,
               child: Text(
                 '$day',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: isToday || isSelected
+                      ? FontWeight.w800
+                      : FontWeight.w500,
+                  color: isToday && !isSelected
+                      ? Colors.white
+                      : isSelected
+                          ? AppTheme.accent
+                          : AppTheme.textPrimary,
                 ),
               ),
             ),
-            if (taskCount > 0)
-              Positioned(
-                bottom: 6,
-                left: 8,
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: groupColor,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        '$taskCount',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    ...previewColors.take(3).map(
-                      (color) => Container(
-                        width: 8,
-                        height: 8,
-                        margin: const EdgeInsets.only(right: 3),
+            const SizedBox(height: 3),
+            // Up to 3 colour dots for tasks
+            if (previewColors.isNotEmpty)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: previewColors
+                    .take(3)
+                    .map(
+                      (c) => Container(
+                        width: 5,
+                        height: 5,
+                        margin: const EdgeInsets.symmetric(horizontal: 1),
                         decoration: BoxDecoration(
-                          color: color,
+                          color: c,
                           shape: BoxShape.circle,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            if (taskCount > 0)
-              Positioned(
-                bottom: 6,
-                right: 8,
-                child: Text(
-                  tasks.first.group.isNotEmpty
-                      ? tasks.first.group
-                      : tasks.first.source.toUpperCase(),
-                  style: const TextStyle(fontSize: 8, color: Colors.white54),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
+                    )
+                    .toList(),
+              )
+            else
+              const SizedBox(height: 8),
           ],
         ),
       ),
