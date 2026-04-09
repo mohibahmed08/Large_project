@@ -2142,63 +2142,26 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget _buildWeatherWidgetModeButton() {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
+        color: Colors.white.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF081120).withValues(alpha: 0.16),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
       ),
       child: PopupMenuButton<_WeatherWidgetMode>(
         initialValue: _weatherWidgetMode,
         tooltip: 'Weather layout',
         onSelected: (mode) => unawaited(_setWeatherWidgetMode(mode)),
         padding: EdgeInsets.zero,
-        splashRadius: 20,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
-        color: const Color(0xFF203756),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.widgets_outlined,
-                color: Colors.white.withValues(alpha: 0.92),
-                size: 16,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                _weatherWidgetMenuLabel(_weatherWidgetMode),
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.94),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Icon(
-                Icons.expand_more_rounded,
-                color: Colors.white.withValues(alpha: 0.82),
-                size: 16,
-              ),
-            ],
-          ),
+        splashRadius: 18,
+        icon: Icon(
+          Icons.widgets_outlined,
+          color: Colors.white.withValues(alpha: 0.88),
+          size: 18,
         ),
         itemBuilder: (context) => _WeatherWidgetMode.values
             .map(
               (mode) => PopupMenuItem<_WeatherWidgetMode>(
                 value: mode,
-                child: Text(
-                  _weatherWidgetMenuLabel(mode),
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
+                child: Text(_weatherWidgetMenuLabel(mode)),
               ),
             )
             .toList(),

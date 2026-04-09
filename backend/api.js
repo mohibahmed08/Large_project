@@ -1,6 +1,7 @@
 const crypto     = require('crypto');
 const https      = require('https');
 const path       = require('path');
+const fs         = require('fs');
 const jwt        = require('jsonwebtoken');
 const { ObjectId } = require('mongodb');
 const { DateTime, FixedOffsetZone, IANAZone } = require('luxon');
@@ -355,36 +356,82 @@ function pushDebug(message, details)
     console.log(`${prefix} ${message}`, details);
 }
 
-async function sendFcmPush(deviceToken, title, body, data = {})
+let firebaseMessagingInstance = null;
+
+function getFirebaseMessaging()
 {
-    if(!process.env.FCM_SERVER_KEY)
+    if(firebaseMessagingInstance)
     {
-        pushDebug('Skipping push send because FCM_SERVER_KEY is missing.');
-        return;
+        return firebaseMessagingInstance;
     }
 
+    let admin;
+    try
+    {
+        admin = require('firebase-admin');
+    }
+    catch(error)
+    {
+        pushDebug('Skipping push send because firebase-admin is not installed.', {
+            error: error.message,
+        });
+        return null;
+    }
+
+    if(admin.apps.length === 0)
+    {
+        const explicitServiceAccountPath = String(process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '').trim();
+
+        try
+        {
+            if(explicitServiceAccountPath)
+            {
+                const resolvedPath = path.isAbsolute(explicitServiceAccountPath)
+                    ? explicitServiceAccountPath
+                    : path.resolve(__dirname, explicitServiceAccountPath);
+                const serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
+                admin.initializeApp({
+                    credential: admin.credential.cert(serviceAccount),
+                });
+                pushDebug('Initialized Firebase Admin with FIREBASE_SERVICE_ACCOUNT_PATH.', {
+                    path: resolvedPath,
+                });
+            }
+            else
+            {
+                admin.initializeApp({
+                    credential: admin.credential.applicationDefault(),
+                });
+                pushDebug('Initialized Firebase Admin with application default credentials.');
+            }
+        }
+        catch(error)
+        {
+            pushDebug('Skipping push send because Firebase Admin credentials could not be initialized.', {
+                error: error.message,
+                hasExplicitPath: Boolean(explicitServiceAccountPath),
+            });
+            return null;
+        }
+    }
+
+    firebaseMessagingInstance = admin.messaging();
+    return firebaseMessagingInstance;
+}
+
+async function sendFcmPush(deviceToken, title, body, data = {})
+{
     if(!deviceToken)
     {
         pushDebug('Skipping push send because device token is missing.');
         return;
     }
 
-    const payload = JSON.stringify({
-        to: deviceToken,
-        notification: { title, body, sound: 'default' },
-        data,
-        priority: 'high',
-    });
-
-    const options = {
-        hostname: 'fcm.googleapis.com',
-        path:     '/fcm/send',
-        method:   'POST',
-        headers:  {
-            'Content-Type':  'application/json',
-            'Authorization': `key=${process.env.FCM_SERVER_KEY}`,
-        },
-    };
+    const messaging = getFirebaseMessaging();
+    if(!messaging)
+    {
+        return;
+    }
 
     try
     {
@@ -394,10 +441,32 @@ async function sendFcmPush(deviceToken, title, body, data = {})
             hasBody: Boolean(body),
             dataKeys: Object.keys(data || {}),
         });
-        const result = await httpsRequest(options, payload);
+
+        const normalizedData = Object.fromEntries(
+            Object.entries(data || {}).map(([key, value]) => [key, String(value)])
+        );
+
+        const result = await messaging.send({
+            token: deviceToken,
+            notification: { title, body },
+            data: normalizedData,
+            android: {
+                priority: 'high',
+                notification: {
+                    sound: 'default',
+                    channelId: 'calendar_reminders',
+                },
+            },
+            apns: {
+                payload: {
+                    aps: {
+                        sound: 'default',
+                    },
+                },
+            },
+        });
         pushDebug('FCM push response received.', {
-            status: result?.status,
-            body: result?.body,
+            messageId: result,
         });
     }
     catch(err)
