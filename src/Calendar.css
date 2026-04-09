@@ -649,6 +649,140 @@
 }
 
 /* .calendar-scroll-container {
-  flex: 1;          
-  overflow-y: auto; 
+  flex: 1;
+  overflow-y: auto;
 } */
+
+/* ── Today button ─────────────────────────────────────────── */
+.calendar-today-btn {
+  margin-left: auto;
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(96, 165, 250, 0.38);
+  background: rgba(96, 165, 250, 0.1);
+  color: #93c5fd;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.calendar-today-btn:hover {
+  background: rgba(96, 165, 250, 0.2);
+  border-color: rgba(96, 165, 250, 0.6);
+}
+
+/* ── Hide-completed toggle in day modal header ────────────── */
+.calendar-day-modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.calendar-day-hide-completed-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  user-select: none;
+  white-space: nowrap;
+}
+.calendar-day-hide-completed-toggle input[type="checkbox"] {
+  accent-color: #60a5fa;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+.calendar-day-hide-completed-toggle:hover {
+  color: #cbd5e1;
+}
+
+/* ── Inline task card row (checkbox + body) ───────────────── */
+.calendar-day-card-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.calendar-day-card-body {
+  flex: 1;
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+  min-width: 0;
+}
+
+/* Inline completion checkbox button */
+.calendar-day-complete-btn {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  border-radius: 4px;
+  border: 2px solid var(--btn-color, #60a5fa);
+  background: transparent;
+  color: var(--btn-color, #60a5fa);
+  font-size: 0.7rem;
+  font-weight: 900;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s;
+  padding: 0;
+}
+.calendar-day-complete-btn.checked {
+  background: var(--btn-color, #60a5fa);
+  color: #0f172a;
+}
+.calendar-day-complete-btn:hover:not(.checked) {
+  background: rgba(96, 165, 250, 0.12);
+}
+
+/* Completed card fade */
+.calendar-day-card.completed {
+  opacity: 0.5;
+}
+.calendar-day-card-title.strikethrough {
+  text-decoration: line-through;
+  color: #94a3b8;
+}
+
+/* Location meta line */
+.calendar-day-card-meta {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: #94a3b8;
+}
+
+/* Expandable description button */
+.calendar-day-card-expand-btn {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #60a5fa;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.calendar-day-card-expand-btn:hover {
+  color: #93c5fd;
+}
+
+/* End-time in time display */
+.calendar-day-card-time {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--task-accent);
+  margin-bottom: 2px;
+}

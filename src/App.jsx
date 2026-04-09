@@ -2,7 +2,7 @@ import './App.css';
 import { useEffect, useState } from 'react';
 
 import Calendar from './Calendar.jsx';
-import Login from './login.jsx';
+import Login, { ResetPasswordPage } from './login.jsx';
 
 import leftOpenIcon from './icons/panel-left-open.svg';
 import leftCloseIcon from './icons/panel-left-close.svg';
@@ -785,6 +785,13 @@ function App() {
     const profileFirstName = accountSettings?.firstName || currentSession?.firstName || 'John';
     const profileLastName = accountSettings?.lastName || currentSession?.lastName || 'Doe';
     const profileInitials = `${profileFirstName.charAt(0)}${profileLastName.charAt(0)}`.toUpperCase();
+
+    // Handle /resetpassword?token=... route before anything else
+    const isResetRoute = window.location.pathname === '/resetpassword' &&
+                         new URLSearchParams(window.location.search).has('token');
+    if (isResetRoute) {
+        return <ResetPasswordPage />;
+    }
 
     return (
         <>

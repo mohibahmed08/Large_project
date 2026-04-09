@@ -17,7 +17,7 @@
 
   user-select: none; /* prevent text highlighting */
 
-  padding: 10px 0;
+  padding: 10px 16px;
   background-color: rgba(26, 26, 46, 0.5); /* lighter than full black */
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);     /* Safari */

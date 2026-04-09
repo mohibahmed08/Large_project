@@ -35,6 +35,12 @@ const ITEM_COLOR_OPTIONS = [
     '#A855F7',
     '#EF4444',
     '#14B8A6',
+    '#0EA5E9',
+    '#F43F5E',
+    '#84CC16',
+    '#FACC15',
+    '#2DD4BF',
+    '#818CF8',
 ];
 
 const ITEM_TYPE_META = {
@@ -370,6 +376,33 @@ function currentTimeContext() {
     };
 }
 
+const DESCRIPTION_COLLAPSE_CHARS = 120;
+
+function DayCardDescription({ text }) {
+    const [expanded, setExpanded] = useState(false);
+    const rendered = renderCalendarMarkdown(text);
+    const normalized = text.trim();
+    const lineCount = normalized.split(/\r?\n/).length;
+    const isLong = normalized.length > 120 || lineCount > 2;
+
+    if (!isLong) {
+        return <div className="calendar-day-card-copy">{rendered}</div>;
+    }
+
+    return (
+        <div className="calendar-day-card-copy">
+            {expanded ? rendered : renderCalendarMarkdown(text.slice(0, DESCRIPTION_COLLAPSE_CHARS) + '…')}
+            <button
+                type="button"
+                className="calendar-day-card-expand-btn"
+                onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
+            >
+                {expanded ? 'Show less' : 'Show more'}
+            </button>
+        </div>
+    );
+}
+
 function Calendar({
     singleMonth,
     setBackground,
@@ -410,6 +443,7 @@ function Calendar({
         weather: [],
         weatherLoading: false,
         feedback: '',
+        hideCompleted: false,
     });
     const [importState, setImportState] = useState({
         open: false,
@@ -1113,6 +1147,41 @@ function Calendar({
         }
     };
 
+    const toggleTaskComplete = async (task) => {
+        if (!session?.userId || !session?.jwtToken || !apiRoot) return;
+        try {
+            const [startHour, startMinute] = [new Date(task.dueDate).getHours(), new Date(task.dueDate).getMinutes()];
+            const [endHour, endMinute] = [new Date(task.endDate || task.dueDate).getHours(), new Date(task.endDate || task.dueDate).getMinutes()];
+            const response = await fetch(`${apiRoot}/savecalendar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: session.userId,
+                    jwtToken: session.jwtToken,
+                    taskId: task._id,
+                    title: task.title,
+                    description: task.description || '',
+                    location: task.location || '',
+                    group: task.group || '',
+                    color: task.color || '',
+                    dueDate: new Date(task.dueDate).toISOString(),
+                    endDate: new Date(task.endDate || task.dueDate).toISOString(),
+                    source: task.source,
+                    isCompleted: !task.isCompleted,
+                    reminderEnabled: task.reminderEnabled || false,
+                    reminderMinutesBefore: Number(task.reminderMinutesBefore || 30),
+                    ...currentTimeContext(),
+                }),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Could not update task.');
+            onSessionRefresh?.(data.jwtToken);
+            refreshCalendar();
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
     const saveDaySuggestion = async (suggestion) => {
         if (!session?.userId || !session?.jwtToken) {
             return;
@@ -1189,12 +1258,36 @@ function Calendar({
 
     const editorMeta = editorState ? ITEM_TYPE_META[editorState.itemType] || ITEM_TYPE_META.event : null;
 
+    // Keyboard: Escape closes topmost open modal
+    useEffect(() => {
+        const handleKeyDown = (event) => {
+            if (event.key !== 'Escape') return;
+            if (editorState) {
+                closeEditor();
+            } else if (importState.open) {
+                setImportState((prev) => ({ ...prev, open: false }));
+            } else if (dayModalState.open) {
+                setDayModalState((prev) => ({ ...prev, open: false }));
+            }
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [editorState, importState.open, dayModalState.open]);
+
+    const goToToday = () => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        setSelectedDate(today);
+        setCurrentMonthIndex(0);
+    };
+
     return (
         <div className="calendar-calendar-background">
             <div className="calendar-month-interactable-header">
                 {singleMonth && <img onClick={() => setCurrentMonthIndex(currentMonthIndex - 1)} className="calendar-month-arrow" src={UpArrow} alt="Previous month" />}
                 <h1 className="calendar-month-month-name">{monthName} {year}</h1>
                 {singleMonth && <img onClick={() => setCurrentMonthIndex(currentMonthIndex + 1)} className="calendar-month-arrow" src={DownArrow} alt="Next month" />}
+                <button type="button" className="calendar-today-btn" onClick={goToToday}>Today</button>
             </div>
 
             <div className="calendar-weekdays">
@@ -1243,11 +1336,19 @@ function Calendar({
                                 <h2>{selectedDate.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}</h2>
                             </div>
                             <div className="calendar-day-modal-header-actions">
+                                <label className="calendar-day-hide-completed-toggle">
+                                    <input
+                                        type="checkbox"
+                                        checked={dayModalState.hideCompleted}
+                                        onChange={(e) => setDayModalState((prev) => ({ ...prev, hideCompleted: e.target.checked }))}
+                                    />
+                                    <span>Hide completed</span>
+                                </label>
                                 <button type="button" className="calendar-task-close-btn" onClick={() => openCreateModal(lastModalType || 'event', selectedDate)}>
                                     Add item
                                 </button>
                                 <button type="button" className="calendar-task-close-btn" onClick={() => setDayModalState((prev) => ({ ...prev, open: false }))}>
-                                    Close
+                                    ✕
                                 </button>
                             </div>
                         </div>
@@ -1296,42 +1397,65 @@ function Calendar({
                         <div className="calendar-day-modal-body">
                             <div className="calendar-day-column">
                                 <div className="calendar-day-column-header">
-                                    <h3>Tasks for the day</h3>
+                                    <h3>Schedule</h3>
                                     <span>{selectedDayTasks.length} scheduled</span>
                                 </div>
                                 <div className="calendar-day-list">
-                                    {selectedDayTasks.length > 0 ? groupedSelectedDayTasks.map(({ groupName, tasks, color }) => (
+                                    {selectedDayTasks.length > 0 ? groupedSelectedDayTasks.map(({ groupName, tasks, color }) => {
+                                        const visibleTasks = dayModalState.hideCompleted
+                                            ? tasks.filter((t) => !t.isCompleted)
+                                            : tasks;
+                                        if (visibleTasks.length === 0) return null;
+                                        return (
                                         <div key={groupName} className="calendar-day-group">
                                             <div className="calendar-day-group-header" style={{ '--group-color': color }}>
                                                 <span className="calendar-day-group-title">{groupName}</span>
-                                                <span className="calendar-day-group-count">{tasks.length}</span>
+                                                <span className="calendar-day-group-count">{visibleTasks.length}</span>
                                             </div>
                                             <div className="calendar-day-group-list">
-                                                {tasks.map((task) => (
-                                                    (() => {
+                                                {visibleTasks.map((task) => {
                                                         const displayColor = taskDisplayColor(task, color);
+                                                        const isTask = normalizeItemType(task) === 'task';
                                                         return (
-                                                    <button
+                                                    <div
                                                         key={task._id || `${task.title}-${task.dueDate}`}
-                                                        type="button"
-                                                        className={`calendar-day-card ${normalizeItemType(task)}`}
+                                                        className={`calendar-day-card ${normalizeItemType(task)}${task.isCompleted ? ' completed' : ''}`}
                                                         style={{ '--task-accent': displayColor }}
-                                                        onClick={() => openEditModal(task, selectedDate)}
                                                     >
-                                                        <div className="calendar-day-card-time">{formatTaskTime(task.dueDate)}</div>
-                                                        <div className="calendar-day-card-title">{task.title || 'Untitled'}</div>
-                                                        {task.description && (
-                                                            <div className="calendar-day-card-copy">
-                                                                {renderCalendarMarkdown(task.description)}
-                                                            </div>
-                                                        )}
-                                                    </button>
+                                                        <div className="calendar-day-card-row">
+                                                            {isTask && (
+                                                                <button
+                                                                    type="button"
+                                                                    className={`calendar-day-complete-btn${task.isCompleted ? ' checked' : ''}`}
+                                                                    onClick={(e) => { e.stopPropagation(); toggleTaskComplete(task); }}
+                                                                    aria-label={task.isCompleted ? 'Mark incomplete' : 'Mark complete'}
+                                                                    style={{ '--btn-color': displayColor }}
+                                                                >
+                                                                    {task.isCompleted ? '✓' : ''}
+                                                                </button>
+                                                            )}
+                                                            <button
+                                                                type="button"
+                                                                className="calendar-day-card-body"
+                                                                onClick={() => openEditModal(task, selectedDate)}
+                                                            >
+                                                                <div className="calendar-day-card-time">{formatTaskTime(task.dueDate)}{task.endDate && task.endDate !== task.dueDate ? ` – ${formatTaskTime(task.endDate)}` : ''}</div>
+                                                                <div className={`calendar-day-card-title${task.isCompleted ? ' strikethrough' : ''}`}>{task.title || 'Untitled'}</div>
+                                                                {task.description && (
+                                                                    <DayCardDescription text={task.description} />
+                                                                )}
+                                                                {task.location && (
+                                                                    <div className="calendar-day-card-meta">📍 {task.location}</div>
+                                                                )}
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                         );
-                                                    })()
-                                                ))}
+                                                    })}
                                             </div>
                                         </div>
-                                    )) : (
+                                        );
+                                    }) : (
                                         <div className="calendar-day-empty">Nothing scheduled yet. Add an item or pull suggestions.</div>
                                     )}
                                     <button
@@ -1545,4 +1669,3 @@ function Calendar({
 }
 
 export default Calendar;
-

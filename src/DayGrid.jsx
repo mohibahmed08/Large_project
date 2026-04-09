@@ -62,6 +62,37 @@ function DayGrid({
         return 'event';
     };
 
+    const parseTaskColor = (colorValue) => {
+        const normalized = String(colorValue || '').trim().replace('#', '');
+        if (!normalized || (normalized.length !== 6 && normalized.length !== 8)) {
+            return '';
+        }
+
+        return `#${normalized.slice(0, 8)}`;
+    };
+
+    const fallbackTaskColor = (task) => {
+        const source = String(task?.source || '').toLowerCase();
+        if (source === 'ical') return '#94A3B8';
+        if (source === 'task') return '#22C55E';
+        if (source === 'plan') return '#A855F7';
+        return '#60A5FA';
+    };
+
+    const toRgba = (hexColor, alpha) => {
+        const normalized = String(hexColor || '').trim().replace('#', '');
+        if (normalized.length !== 6) {
+            return `rgba(96, 165, 250, ${alpha})`;
+        }
+
+        const red = parseInt(normalized.slice(0, 2), 16);
+        const green = parseInt(normalized.slice(2, 4), 16);
+        const blue = parseInt(normalized.slice(4, 6), 16);
+        return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+    };
+
+    const taskDisplayColor = (task) => parseTaskColor(task?.color) || fallbackTaskColor(task);
+
     //RETURN DOM
     return (
         <>
@@ -81,6 +112,10 @@ function DayGrid({
                             <li
                                 className = {`day-grid-event-pill ${eventPillClass(task)}`}
                                 key = {task._id || `${task.title}-${task.dueDate}`}
+                                style={{
+                                    '--pill-accent': taskDisplayColor(task),
+                                    '--pill-bg': toRgba(taskDisplayColor(task), 0.18),
+                                }}
                                 onClick={(event) => {
                                     event.stopPropagation();
                                     onSelectTask?.(task, targetDate);
