@@ -2667,6 +2667,50 @@ function describeAssistantTool(toolName)
     }
 }
 
+function splitAssistantReplyForStreaming(text)
+{
+    const source = String(text || '').trim();
+    if(!source) return [];
+
+    const sentenceParts = source.match(/[^.!?\n]+(?:[.!?]+|$)|[^\n]+/g) || [source];
+    const chunks = [];
+
+    for(const part of sentenceParts)
+    {
+        const sentence = part.trim();
+        if(!sentence) continue;
+
+        if(sentence.length <= 80)
+        {
+            chunks.push(sentence);
+            continue;
+        }
+
+        const words = sentence.split(/\s+/);
+        let buffer = '';
+        for(const word of words)
+        {
+            const next = buffer ? `${buffer} ${word}` : word;
+            if(next.length > 80 && buffer)
+            {
+                chunks.push(buffer);
+                buffer = word;
+            }
+            else
+            {
+                buffer = next;
+            }
+        }
+
+        if(buffer)
+        {
+            chunks.push(buffer);
+        }
+    }
+
+    return chunks;
+}
+
 async function runCalendarAssistant(apiKey, db, userId, messages, context)
 {
     const tools = buildCalendarAssistantTools();
@@ -4212,7 +4256,12 @@ Suggest practical, realistic calendar events that complement the existing tasks 
                  Treat times mentioned by the user as local to the user unless they say otherwise.
                  When calling calendar tools, provide ISO datetimes. If you only know a local wall-clock time, include the user's local offset if possible.
                  The schedule shown in this prompt is only a summary. If the user asks about future events or anything beyond the visible summary, use the calendar tools to search broader ranges before answering.
-                 Your final reply should sound conversational, warm, and natural rather than robotic. Keep it concise, but talk like a helpful person.
+                 Your final reply should sound conversational, warm, and natural rather than robotic.
+                 Keep replies short and text-message friendly.
+                 Prefer 1 to 4 short sentences or a very short list when needed.
+                 Do not use markdown headings, tables, or long formatted sections.
+                 If you include a link, keep it brief and readable.
+                 When creating tasks from casual phrasing, normalize them into polished calendar items. For example, use title case like "Dinner" instead of "dinner", and use a sensible group like Personal when the user did not specify one.
 
 Today is ${formatDateForUser(now, timeOptions)}.
 ${localTimeLine}
@@ -4383,7 +4432,12 @@ Help the user manage their schedule, suggest events, answer questions about thei
                  Treat times mentioned by the user as local to the user unless they say otherwise.
                  When calling calendar tools, provide ISO datetimes. If you only know a local wall-clock time, include the user's local offset if possible.
                  The schedule shown in this prompt is only a summary. If the user asks about future events or anything beyond the visible summary, use the calendar tools to search broader ranges before answering.
-                 Your final reply should sound conversational, warm, and natural rather than robotic. Keep it concise, but talk like a helpful person.
+                 Your final reply should sound conversational, warm, and natural rather than robotic.
+                 Keep replies short and text-message friendly.
+                 Prefer 1 to 4 short sentences or a very short list when needed.
+                 Do not use markdown headings, tables, or long formatted sections.
+                 If you include a link, keep it brief and readable.
+                 When creating tasks from casual phrasing, normalize them into polished calendar items. For example, use title case like "Dinner" instead of "dinner", and use a sensible group like Personal when the user did not specify one.
 
 Today is ${formatDateForUser(now, timeOptions)}.
 ${localTimeLine}
@@ -4412,6 +4466,7 @@ Help the user manage their schedule, suggest events, answer questions about thei
             const writeEvent = (payload) =>
             {
                 res.write(`${JSON.stringify(payload)}\n`);
+                res.flush?.();
             };
 
             const assistantResult = await runCalendarAssistant(
@@ -4440,7 +4495,11 @@ Help the user manage their schedule, suggest events, answer questions about thei
 
             if(!assistantResult.streamedFinal && assistantResult.reply)
             {
-                writeEvent({ type: 'delta', delta: assistantResult.reply });
+                const replyChunks = splitAssistantReplyForStreaming(assistantResult.reply);
+                for(const chunk of replyChunks)
+                {
+                    writeEvent({ type: 'delta', delta: `${chunk} ` });
+                }
             }
 
             writeEvent({

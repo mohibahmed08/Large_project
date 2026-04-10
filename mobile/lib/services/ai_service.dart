@@ -23,6 +23,14 @@ class AiChatResult {
 class AiChatStreamEvent {
   AiChatStreamEvent.delta(this.delta)
       : type = AiChatStreamEventType.delta,
+        status = '',
+        session = null,
+        error = null,
+        calendarChanged = false;
+
+  AiChatStreamEvent.status(this.status)
+      : type = AiChatStreamEventType.status,
+        delta = '',
         session = null,
         error = null,
         calendarChanged = false;
@@ -30,16 +38,19 @@ class AiChatStreamEvent {
   AiChatStreamEvent.done(this.session, {required this.calendarChanged})
       : type = AiChatStreamEventType.done,
         delta = '',
+        status = '',
         error = null;
 
   AiChatStreamEvent.error(this.error)
       : type = AiChatStreamEventType.error,
         delta = '',
+        status = '',
         session = null,
         calendarChanged = false;
 
   final AiChatStreamEventType type;
   final String delta;
+  final String status;
   final UserSession? session;
   final String? error;
   final bool calendarChanged;
@@ -47,6 +58,7 @@ class AiChatStreamEvent {
 
 enum AiChatStreamEventType {
   delta,
+  status,
   done,
   error,
 }
@@ -150,6 +162,11 @@ class AiService {
           final delta = payload['delta']?.toString() ?? '';
           if (delta.isNotEmpty) {
             yield AiChatStreamEvent.delta(delta);
+          }
+        } else if (type == 'status') {
+          final status = payload['status']?.toString() ?? '';
+          if (status.isNotEmpty) {
+            yield AiChatStreamEvent.status(status);
           }
         } else if (type == 'done') {
           yield AiChatStreamEvent.done(

@@ -97,13 +97,14 @@ function normalizeSuggestions(rawSuggestions) {
 function normalizeAssistantMarkdown(text) {
     return String(text || '')
         .replace(/\r\n?/g, '\n')
-        .replace(/\]\s*\n\s*\(/g, '](');
+        .replace(/\]\s*\n\s*\(/g, '](')
+        .replace(/^\s{0,3}#{1,6}\s+/gm, '');
 }
 
 function renderInlineMarkdown(text) {
     const source = normalizeAssistantMarkdown(text);
     const nodes = [];
-    const pattern = /(\*\*[^*]+\*\*|__[^_]+__|(?<!\*)\*[^*\n]+\*(?!\*)|(?<!_)_[^_\n]+_(?!_)|`[^`\n]+`|\[[^\]]+\]\s*\((https?:\/\/[^\s)]+)\))/g;
+    const pattern = /(\*\*[^*]+\*\*|__[^_]+__|(?<!\*)\*[^*\n]+\*(?!\*)|(?<!_)_[^_\n]+_(?!_)|`[^`\n]+`|\[[^\]]+\]\s*\((https?:\/\/[^\s)]+)\)|https?:\/\/[^\s<]+)/g;
     let lastIndex = 0;
     let match;
 
@@ -138,6 +139,17 @@ function renderInlineMarkdown(text) {
                         rel="noreferrer"
                     >
                         {linkMatch[1]}
+                    </a>
+                );
+            } else if (/^https?:\/\/[^\s<]+$/.test(token)) {
+                nodes.push(
+                    <a
+                        key={`url-${match.index}`}
+                        href={token}
+                        target="_blank"
+                        rel="noreferrer"
+                    >
+                        {token}
                     </a>
                 );
             } else {
@@ -636,7 +648,7 @@ function App() {
 
         const nextMessages = [...messages, { role: 'user', text: trimmed }];
         setAiMode('chat');
-        setMessages([...nextMessages, { role: 'assistant', text: '' }]);
+        setMessages([...nextMessages, { role: 'assistant', text: '', status: 'Thinking...' }]);
         setAiInput('');
         setAiLoading(true);
 
@@ -699,11 +711,33 @@ function App() {
                             updated[lastIndex] = {
                                 ...previous,
                                 text: `${previous.text}${payload.delta}`,
+                                status: '',
+                            };
+                            return updated;
+                        });
+                    } else if (payload.type === 'status' && payload.status) {
+                        setMessages((prev) => {
+                            const updated = [...prev];
+                            const lastIndex = updated.length - 1;
+                            const previous = updated[lastIndex];
+                            updated[lastIndex] = {
+                                ...previous,
+                                status: payload.status,
                             };
                             return updated;
                         });
                     } else if (payload.type === 'done') {
                         updateToken(payload.jwtToken);
+                        setMessages((prev) => {
+                            const updated = [...prev];
+                            const lastIndex = updated.length - 1;
+                            const previous = updated[lastIndex];
+                            updated[lastIndex] = {
+                                ...previous,
+                                status: '',
+                            };
+                            return updated;
+                        });
                         if (payload.calendarChanged) {
                             refreshCalendar();
                         }
@@ -975,10 +1009,16 @@ function App() {
                                                     {messages.map((message, index) => (
                                                         <div
                                                             key={`${message.role}-${index}`}
-                                                            className={`ai-message ${message.role === 'user' ? 'user' : 'assistant'}`}
+                                                            className={`ai-message ${message.role === 'user' ? 'user' : 'assistant'}${message.role === 'assistant' && !message.text && message.status ? ' status-loading' : ''}`}
                                                         >
                                                             {message.role === 'assistant'
-                                                                ? renderAssistantMessage(message.text)
+                                                                ? (
+                                                                    message.text
+                                                                        ? renderAssistantMessage(message.text)
+                                                                        : message.status
+                                                                            ? <span className="ai-status-text">{message.status}...</span>
+                                                                            : ''
+                                                                )
                                                                 : message.text}
                                                         </div>
                                                     ))}
