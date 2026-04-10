@@ -32,6 +32,7 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
   String? _unlockMessage;
   bool _isLoading = true;
   bool _isUnlocking = false;
+  bool _showLoginScreen = false;
 
   @override
   void initState() {
@@ -79,6 +80,7 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
       setState(() {
         _session = null;
         _lockedSession = null;
+        _showLoginScreen = false;
         _isLoading = false;
       });
       return;
@@ -86,16 +88,19 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
 
     try {
       final session = UserSession.fromAccessToken(storedToken);
-      final biometricEnabled =
+      final biometricUnlockEnabled =
           await SessionStorage.isBiometricUnlockEnabled();
+      final biometricLoginEnabled =
+          await SessionStorage.isBiometricLoginEnabled();
       if (!mounted) {
         return;
       }
 
-      if (!biometricEnabled) {
+      if (!biometricUnlockEnabled && !biometricLoginEnabled) {
         setState(() {
           _session = session;
           _lockedSession = null;
+          _showLoginScreen = false;
           _isLoading = false;
         });
         return;
@@ -111,6 +116,17 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
         setState(() {
           _session = session;
           _lockedSession = null;
+          _showLoginScreen = false;
+          _isLoading = false;
+        });
+        return;
+      }
+
+      if (biometricLoginEnabled && !biometricUnlockEnabled) {
+        setState(() {
+          _session = null;
+          _lockedSession = null;
+          _showLoginScreen = true;
           _isLoading = false;
         });
         return;
@@ -120,6 +136,7 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
       setState(() {
         _session = null;
         _lockedSession = session;
+        _showLoginScreen = false;
         _unlockMessage =
             'Use $_biometricLabel to open your saved session, or choose password login instead.';
         _isLoading = false;
@@ -130,13 +147,14 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
         }
       });
     } catch (_) {
-      await SessionStorage.clear();
+      await SessionStorage.clearSession();
       if (!mounted) {
         return;
       }
       setState(() {
         _session = null;
         _lockedSession = null;
+        _showLoginScreen = false;
         _isLoading = false;
       });
     }
@@ -180,13 +198,14 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
   }
 
   Future<void> _usePasswordInstead() async {
-    await SessionStorage.clear();
+    await SessionStorage.clearSession();
     if (!mounted) {
       return;
     }
     setState(() {
       _session = null;
       _lockedSession = null;
+      _showLoginScreen = false;
       _unlockMessage = null;
     });
   }
@@ -196,6 +215,7 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
       _resetToken = null;
       _session = null;
       _lockedSession = null;
+      _showLoginScreen = false;
       _unlockMessage = null;
       _isLoading = true;
     });
@@ -223,6 +243,10 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
 
     if (_lockedSession != null) {
       return _buildLockedState();
+    }
+
+    if (_showLoginScreen) {
+      return const LoginScreen();
     }
 
     return const LoginScreen();

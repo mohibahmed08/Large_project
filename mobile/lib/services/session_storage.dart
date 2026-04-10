@@ -8,6 +8,7 @@ class SessionStorage {
   static const _jwtTokenKey = 'jwtToken';
   static const _biometricUnlockEnabledKey = 'biometricUnlockEnabled';
   static const _biometricLoginEnabledKey = 'biometricLoginEnabled';
+  static const _biometricLoginTokenKey = 'biometricLoginToken';
   static const _liveActivityIdKey = 'liveActivityId';
   static const _liveActivityTaskIdKey = 'liveActivityTaskId';
   static const _weatherWidgetModeKey = 'weatherWidgetMode';
@@ -15,6 +16,10 @@ class SessionStorage {
   static Future<void> saveSession(UserSession session) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_jwtTokenKey, session.accessToken);
+
+    if (prefs.getBool(_biometricLoginEnabledKey) ?? false) {
+      await prefs.setString(_biometricLoginTokenKey, session.accessToken);
+    }
   }
 
   static Future<String> readToken() async {
@@ -42,6 +47,21 @@ class SessionStorage {
     return prefs.getBool(_biometricLoginEnabledKey) ?? false;
   }
 
+  static Future<void> saveBiometricLoginSession(UserSession session) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_biometricLoginTokenKey, session.accessToken);
+  }
+
+  static Future<String> readBiometricLoginToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_biometricLoginTokenKey) ?? '';
+  }
+
+  static Future<void> clearBiometricLoginSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_biometricLoginTokenKey);
+  }
+
   static Future<void> setWeatherWidgetMode(String mode) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_weatherWidgetModeKey, mode);
@@ -52,9 +72,15 @@ class SessionStorage {
     return prefs.getString(_weatherWidgetModeKey) ?? 'future';
   }
 
+  static Future<void> clearSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_jwtTokenKey);
+  }
+
   static Future<void> clear() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_jwtTokenKey);
+    await prefs.remove(_biometricLoginTokenKey);
   }
 
   static Future<void> saveLiveActivity({

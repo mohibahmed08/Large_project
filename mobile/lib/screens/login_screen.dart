@@ -14,13 +14,19 @@ import 'calendar_screen.dart';
 // ── Post-login "Use Face ID next time?" sheet ──────────────────────────────
 /// Shows a bottom sheet prompting the user to enable biometric unlock.
 /// Only shown when biometrics are available and NOT already enabled.
-Future<void> maybeSuggestBiometricSetup(BuildContext context) async {
+Future<void> maybeSuggestBiometricSetup(
+  BuildContext context, {
+  required UserSession session,
+}) async {
   final biometricService = BiometricAuthService();
   final status = await biometricService.getStatus();
   if (!status.supported) return;
 
-  final alreadyEnabled = await SessionStorage.isBiometricUnlockEnabled();
-  if (alreadyEnabled) return;
+  final biometricUnlockEnabled =
+      await SessionStorage.isBiometricUnlockEnabled();
+  final biometricLoginEnabled =
+      await SessionStorage.isBiometricLoginEnabled();
+  if (biometricUnlockEnabled || biometricLoginEnabled) return;
 
   if (!context.mounted) return;
 
@@ -28,7 +34,10 @@ Future<void> maybeSuggestBiometricSetup(BuildContext context) async {
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => _BiometricSetupSheet(biometricLabel: status.label),
+    builder: (_) => _BiometricSetupSheet(
+      biometricLabel: status.label,
+      session: session,
+    ),
   );
 }
 
@@ -118,12 +127,12 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _showPassword = false;
 
-  // Biometric-login state — only shown when a saved session token exists
-  // and Face ID / Touch ID is available on the device.
+  // Biometric sign-in state for the logged-out login screen.
   bool _biometricAvailable = false;
-  bool _hasSavedSession = false;
+  bool _hasBiometricLoginSession = false;
   bool _biometricLoginEnabled = false;
   String _biometricLabel = 'Face ID';
+  bool _autoBiometricAttempted = false;
 
   @override
   void initState() {
@@ -132,31 +141,40 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _checkBiometricAvailability() async {
-    final token = await SessionStorage.readToken();
-    final hasSaved = token.isNotEmpty;
+    final token = await SessionStorage.readBiometricLoginToken();
+    final hasBiometricLoginSession = token.isNotEmpty;
     final biometricLoginEnabled =
         await SessionStorage.isBiometricLoginEnabled();
     final status = await _biometricAuthService.getStatus();
     if (!mounted) return;
     setState(() {
-      _hasSavedSession = hasSaved;
+      _hasBiometricLoginSession = hasBiometricLoginSession;
       _biometricAvailable = status.supported;
       _biometricLoginEnabled = biometricLoginEnabled;
       _biometricLabel = status.label;
     });
 
-    if (hasSaved && status.supported && biometricLoginEnabled) {
-      unawaited(_loginWithBiometrics(auto: true));
+    if (hasBiometricLoginSession &&
+        status.supported &&
+        biometricLoginEnabled &&
+        !_autoBiometricAttempted) {
+      _autoBiometricAttempted = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        unawaited(_loginWithBiometrics(auto: true));
+      });
     }
   }
 
-  /// Attempt to log in using the stored JWT + biometric confirmation.
+  /// Attempt to sign in using the biometric-login token + biometric confirmation.
   Future<void> _loginWithBiometrics({bool auto = false}) async {
     if (_isLoading) return;
 
-    final token = await SessionStorage.readToken();
+    final token = await SessionStorage.readBiometricLoginToken();
     if (token.isEmpty) {
-      if (!auto) _showSnackBar('No saved session found.');
+      if (!auto) _showSnackBar('No saved Face ID sign-in session found.');
       return;
     }
 
@@ -172,11 +190,18 @@ class _LoginScreenState extends State<LoginScreen> {
     if (authenticated) {
       try {
         final session = UserSession.fromAccessToken(token);
+        await SessionStorage.saveSession(session);
         setState(() => _isLoading = false);
         _openCalendar(session);
       } catch (_) {
+        await SessionStorage.clearBiometricLoginSession();
         setState(() => _isLoading = false);
-        _showSnackBar('Saved session is invalid. Please sign in with your password.');
+        setState(() {
+          _hasBiometricLoginSession = false;
+        });
+        _showSnackBar(
+          'Saved Face ID sign-in session is invalid. Please sign in with your password.',
+        );
       }
     } else {
       setState(() => _isLoading = false);
@@ -212,6 +237,9 @@ class _LoginScreenState extends State<LoginScreen> {
           _passwordController.text,
         );
         await SessionStorage.saveSession(session);
+        if (await SessionStorage.isBiometricLoginEnabled()) {
+          await SessionStorage.saveBiometricLoginSession(session);
+        }
         if (!mounted) {
           return;
         }
@@ -348,7 +376,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool get _showBiometricButton =>
       _isLogin &&
       _biometricAvailable &&
-      _hasSavedSession &&
+      _hasBiometricLoginSession &&
       _biometricLoginEnabled;
 
   @override
@@ -656,7 +684,12 @@ class _BiometricOnboardingWrapperState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future.delayed(const Duration(milliseconds: 800), () {
         if (mounted) {
-          unawaited(maybeSuggestBiometricSetup(context));
+          unawaited(
+            maybeSuggestBiometricSetup(
+              context,
+              session: widget.session,
+            ),
+          );
         }
       });
     });
@@ -670,8 +703,12 @@ class _BiometricOnboardingWrapperState
 
 // ── Bottom sheet content ──────────────────────────────────────────────────────
 class _BiometricSetupSheet extends StatelessWidget {
-  const _BiometricSetupSheet({required this.biometricLabel});
+  const _BiometricSetupSheet({
+    required this.biometricLabel,
+    required this.session,
+  });
   final String biometricLabel;
+  final UserSession session;
 
   @override
   Widget build(BuildContext context) {
@@ -738,6 +775,7 @@ class _BiometricSetupSheet extends StatelessWidget {
                   return;
                 }
                 await SessionStorage.setBiometricLoginEnabled(true);
+                await SessionStorage.saveBiometricLoginSession(session);
                 if (!context.mounted) {
                   return;
                 }

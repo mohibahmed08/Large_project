@@ -198,6 +198,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     }
     await SessionStorage.setBiometricLoginEnabled(enabled);
+    if (enabled) {
+      await SessionStorage.saveBiometricLoginSession(_session);
+    } else {
+      await SessionStorage.clearBiometricLoginSession();
+    }
     if (!mounted) {
       return;
     }

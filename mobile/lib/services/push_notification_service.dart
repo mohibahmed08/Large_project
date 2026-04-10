@@ -218,7 +218,7 @@ class PushNotificationService {
   // ── Remove token on logout ────────────────────────────────────────────────
   static Future<void> removeDeviceToken() async {
     if (!_firebaseReady) {
-      await SessionStorage.clear();
+      await SessionStorage.clearSession();
       return;
     }
 
@@ -238,7 +238,7 @@ class PushNotificationService {
     } catch (e) {
       if (kDebugMode) debugPrint('[Push] removeDeviceToken error: $e');
     } finally {
-      await SessionStorage.clear();
+      await SessionStorage.clearSession();
     }
   }
 }
