@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 
 import Calendar from './Calendar.jsx';
 import Login, { ResetPasswordPage } from './login.jsx';
-import { DEFAULT_WEATHER_LOCATION, requestWeatherLocation } from './weatherLocation.js';
+import { requestWeatherLocation } from './weatherLocation.js';
 
 import leftOpenIcon from './icons/panel-left-open.svg';
 import leftCloseIcon from './icons/panel-left-close.svg';
@@ -279,9 +279,7 @@ function App() {
     const [aiMode, setAiMode] = useState('chat');
     const [location, setLocation] = useState(null);
     const [isLocating, setIsLocating] = useState(false);
-    const [locationNotice, setLocationNotice] = useState(
-        `Location is off, so weather defaults to ${DEFAULT_WEATHER_LOCATION.label}.`
-    );
+    const [locationNotice, setLocationNotice] = useState('set to UCF');
     const [messages, setMessages] = useState([
         { role: 'assistant', text: 'Ask about your day or grab event suggestions.' },
     ]);
@@ -603,7 +601,7 @@ function App() {
                 return coords;
             }
 
-            setLocationNotice(`Location is off, so weather defaults to ${DEFAULT_WEATHER_LOCATION.label}.`);
+            setLocationNotice('set to UCF');
             return coords;
         } finally {
             setIsLocating(false);
