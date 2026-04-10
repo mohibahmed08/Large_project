@@ -100,13 +100,141 @@ function extractResponseText(responseBody)
     return textParts.join('\n').trim();
 }
 
-async function createOpenAIResponse(apiKey, input, options = {})
+function sleep(ms)
+{
+    return new Promise((resolve) =>
+    {
+        setTimeout(resolve, ms);
+    });
+}
+
+function readOptionalEnv(name)
+{
+    const value = String(process.env[name] || '').trim();
+    return value || '';
+}
+
+function readPositiveIntEnv(name, fallback, options = {})
 {
     const {
-        model = process.env.OPENAI_MODEL || 'gpt-4.1-mini',
+        min = 1,
+        max = Number.MAX_SAFE_INTEGER,
+    } = options;
+    const rawValue = readOptionalEnv(name);
+    if(!rawValue)
+    {
+        return fallback;
+    }
+
+    const parsed = Number.parseInt(rawValue, 10);
+    if(!Number.isFinite(parsed))
+    {
+        return fallback;
+    }
+
+    return Math.max(min, Math.min(parsed, max));
+}
+
+function getConfiguredOpenAIModel(explicitModel = '')
+{
+    const model = String(explicitModel || readOptionalEnv('OPENAI_MODEL') || 'gpt-4.1').trim();
+    return model || 'gpt-4.1';
+}
+
+function getConfiguredOpenAIReasoningEffort(explicitEffort)
+{
+    const effort = String(
+        explicitEffort !== undefined
+            ? explicitEffort
+            : readOptionalEnv('OPENAI_REASONING_EFFORT')
+    ).trim().toLowerCase();
+
+    return ['minimal', 'low', 'medium', 'high'].includes(effort)
+        ? effort
+        : '';
+}
+
+function getAssistantMaxToolRounds()
+{
+    return readPositiveIntEnv('OPENAI_MAX_TOOL_ROUNDS', 10, { min: 1, max: 20 });
+}
+
+function getOpenAIMaxRetries()
+{
+    return readPositiveIntEnv('OPENAI_MAX_RETRIES', 3, { min: 1, max: 6 });
+}
+
+function isRetryableOpenAIStatus(status)
+{
+    return status === 408 || status === 409 || status === 429 || status >= 500;
+}
+
+function isRetryableOpenAINetworkError(error)
+{
+    const message = String(error?.message || error || '').toLowerCase();
+    return [
+        'timed out',
+        'timeout',
+        'econnreset',
+        'socket hang up',
+        'eai_again',
+        'etimedout',
+        'ehostunreach',
+        'ecancelled',
+    ].some((phrase) => message.includes(phrase));
+}
+
+function buildOpenAIRequestVariants(options = {})
+{
+    const primaryModel = getConfiguredOpenAIModel(options.model);
+    const fallbackModel = readOptionalEnv('OPENAI_FALLBACK_MODEL');
+    const reasoningEffort = getConfiguredOpenAIReasoningEffort(options.reasoningEffort);
+    const variants = [
+        {
+            model: primaryModel,
+            reasoningEffort,
+        },
+    ];
+
+    if(reasoningEffort)
+    {
+        variants.push({
+            model: primaryModel,
+            reasoningEffort: '',
+        });
+    }
+
+    if(fallbackModel && fallbackModel !== primaryModel)
+    {
+        variants.push({
+            model: fallbackModel,
+            reasoningEffort: '',
+        });
+    }
+
+    const seenVariants = new Set();
+    return variants.filter((variant) =>
+    {
+        const key = `${variant.model}:${variant.reasoningEffort || ''}`;
+        if(seenVariants.has(key))
+        {
+            return false;
+        }
+
+        seenVariants.add(key);
+        return true;
+    });
+}
+
+function buildOpenAIRequestBody(input, options = {})
+{
+    const {
+        model = getConfiguredOpenAIModel(),
         instructions = '',
         useWebSearch = false,
         tools = [],
+        stream = false,
+        reasoningEffort = '',
     } = options;
 
     const requestBody = {
@@ -114,9 +242,21 @@ async function createOpenAIResponse(apiKey, input, options = {})
         input,
     };
 
+    if(stream)
+    {
+        requestBody.stream = true;
+    }
+
     if(instructions)
     {
         requestBody.instructions = instructions;
+    }
+
+    if(reasoningEffort)
+    {
+        requestBody.reasoning = {
+            effort: reasoningEffort,
+        };
     }
 
     if(useWebSearch)
@@ -130,26 +270,85 @@ async function createOpenAIResponse(apiKey, input, options = {})
         requestBody.tool_choice = 'auto';
     }
 
-    const bodyStr = JSON.stringify(requestBody);
-    const result  = await httpsRequest(
-    {
-        hostname: 'api.openai.com',
-        path:     '/v1/responses',
-        method:   'POST',
-        headers:
-        {
-            'Content-Type':   'application/json',
-            'Authorization':  `Bearer ${apiKey}`,
-            'Content-Length': Buffer.byteLength(bodyStr),
-        },
-    }, bodyStr);
+    return requestBody;
+}
 
-    if(result.status !== 200)
+async function createOpenAIResponse(apiKey, input, options = {})
+{
+    const maxRetries = getOpenAIMaxRetries();
+    const variants = buildOpenAIRequestVariants(options);
+    const onStatus = typeof options.onStatus === 'function' ? options.onStatus : null;
+    let lastError = null;
+
+    for(let variantIndex = 0; variantIndex < variants.length; variantIndex += 1)
     {
-        throw new Error(`OpenAI error ${result.status}: ${JSON.stringify(result.body)}`);
+        const variant = variants[variantIndex];
+        if(variantIndex > 0)
+        {
+            onStatus?.(
+                variant.model === variants[0].model
+                    ? 'Retrying with a simpler reasoning pass'
+                    : 'Retrying with a backup model'
+            );
+        }
+
+        const requestBody = buildOpenAIRequestBody(input, {
+            ...options,
+            ...variant,
+        });
+        const bodyStr = JSON.stringify(requestBody);
+
+        for(let attempt = 1; attempt <= maxRetries; attempt += 1)
+        {
+            try
+            {
+                const result = await httpsRequest(
+                {
+                    hostname: 'api.openai.com',
+                    path:     '/v1/responses',
+                    method:   'POST',
+                    headers:
+                    {
+                        'Content-Type':   'application/json',
+                        'Authorization':  `Bearer ${apiKey}`,
+                        'Content-Length': Buffer.byteLength(bodyStr),
+                    },
+                }, bodyStr);
+
+                if(result.status === 200)
+                {
+                    return result.body;
+                }
+
+                lastError = new Error(`OpenAI error ${result.status}: ${JSON.stringify(result.body)}`);
+                lastError.status = result.status;
+
+                if(isRetryableOpenAIStatus(result.status) && attempt < maxRetries)
+                {
+                    onStatus?.('Retrying after a temporary model error');
+                    await sleep(Math.min(4000, 350 * (2 ** (attempt - 1))));
+                    continue;
+                }
+
+                break;
+            }
+            catch(error)
+            {
+                lastError = error;
+
+                if(isRetryableOpenAINetworkError(error) && attempt < maxRetries)
+                {
+                    onStatus?.('Retrying after a temporary connection issue');
+                    await sleep(Math.min(4000, 350 * (2 ** (attempt - 1))));
+                    continue;
+                }
+
+                break;
+            }
+        }
     }
 
-    return result.body;
+    throw lastError || new Error('OpenAI request failed');
 }
 
 // OpenAI Responses API call with optional web search.
@@ -168,29 +367,12 @@ async function callOpenAI(apiKey, input, options = {})
 
 async function streamOpenAI(apiKey, input, options = {}, handlers = {})
 {
-    const {
-        model = process.env.OPENAI_MODEL || 'gpt-4.1-mini',
-        instructions = '',
-        useWebSearch = false,
-    } = options;
-
-    const requestBody = {
-        model,
-        input,
+    const requestBody = buildOpenAIRequestBody(input, {
+        ...options,
+        model: getConfiguredOpenAIModel(options.model),
+        reasoningEffort: getConfiguredOpenAIReasoningEffort(options.reasoningEffort),
         stream: true,
-    };
-
-    if(instructions)
-    {
-        requestBody.instructions = instructions;
-    }
-
-    if(useWebSearch)
-    {
-        requestBody.tools = [{ type: 'web_search' }];
-        requestBody.tool_choice = 'auto';
-    }
-
+    });
     const bodyStr = JSON.stringify(requestBody);
 
     await new Promise((resolve, reject) =>
@@ -2716,12 +2898,47 @@ async function runCalendarAssistant(apiKey, db, userId, messages, context)
     const tools = buildCalendarAssistantTools();
     let input = [...context.prefixMessages, ...messages];
     let calendarChanged = false;
-    const seenToolCalls = new Set();
+    const toolCallOutputs = new Map();
     const useWebSearch = shouldUseAssistantWebSearch(messages);
     const handlers = context.handlers || {};
+    const maxToolRounds = getAssistantMaxToolRounds();
 
-    for(let iteration = 0; iteration < 6; iteration += 1)
+    const finalizeReply = async (finalOptions) =>
     {
+        handlers.onStatus?.('Writing your reply');
+
+        if(context.streamFinal)
+        {
+            try
+            {
+                const streamed = await streamOpenAIToText(apiKey, input, finalOptions, handlers);
+                return {
+                    reply: streamed.text,
+                    calendarChanged,
+                    streamedFinal: true,
+                };
+            }
+            catch
+            {
+                handlers.onStatus?.('Recovering your reply');
+            }
+        }
+
+        const reply = await callOpenAI(apiKey, input, {
+            ...finalOptions,
+            onStatus: handlers.onStatus,
+        });
+
+        return {
+            reply,
+            calendarChanged,
+            streamedFinal: false,
+        };
+    };
+
+    for(let iteration = 0; iteration < maxToolRounds; iteration += 1)
+    {
+        handlers.onStatus?.(iteration === 0 ? 'Reviewing your request' : 'Planning the next step');
         const response = await createOpenAIResponse(
             apiKey,
             input,
@@ -2729,6 +2946,7 @@ async function runCalendarAssistant(apiKey, db, userId, messages, context)
                 instructions: context.systemPrompt,
                 useWebSearch,
                 tools,
+                onStatus: handlers.onStatus,
             }
         );
 
@@ -2738,51 +2956,26 @@ async function runCalendarAssistant(apiKey, db, userId, messages, context)
 
         if(functionCalls.length === 0)
         {
-            return {
-                reply: extractResponseText(response),
-                calendarChanged,
-                streamedFinal: false,
-            };
-        }
-
-        const repeatedCalls = functionCalls.filter((toolCall) =>
-        {
-            const signature = `${toolCall.name}:${toolCall.arguments || ''}`;
-            if(seenToolCalls.has(signature))
+            const reply = extractResponseText(response);
+            if(reply)
             {
-                return true;
-            }
-
-            seenToolCalls.add(signature);
-            return false;
-        });
-
-        if(repeatedCalls.length === functionCalls.length)
-        {
-            const finalOptions = {
-                instructions: `${context.systemPrompt}
-
-Use the existing tool results already in the conversation and answer the user directly now.
-Do not call more tools unless the user asks for a new action.`,
-                useWebSearch: false,
-            };
-
-            if(context.streamFinal)
-            {
-                const streamed = await streamOpenAIToText(apiKey, input, finalOptions, handlers);
+                handlers.onStatus?.('Writing your reply');
                 return {
-                    reply: streamed.text,
+                    reply,
                     calendarChanged,
-                    streamedFinal: true,
+                    streamedFinal: false,
                 };
             }
 
-            const reply = await callOpenAI(apiKey, input, finalOptions);
-
+            input = [...input, ...(Array.isArray(response.output) ? response.output : [])];
             return {
-                reply,
-                calendarChanged,
-                streamedFinal: false,
+                ...(await finalizeReply({
+                    instructions: `${context.systemPrompt}
+
+Answer the user directly now using the context already gathered.
+Do not call any more tools in this response.`,
+                    useWebSearch: false,
+                })),
             };
         }
 
@@ -2790,41 +2983,54 @@ Do not call more tools unless the user asks for a new action.`,
 
         for(const toolCall of functionCalls)
         {
+            const signature = `${toolCall.name}:${toolCall.arguments || ''}`;
             let output;
-            try
+
+            if(toolCallOutputs.has(signature))
             {
-                handlers.onStatus?.(describeAssistantTool(toolCall.name));
-                output = await executeCalendarAssistantTool(
-                    db,
-                    userId,
-                    toolCall,
-                    {
-                        utcOffsetMinutes: context.utcOffsetMinutes,
-                        timeZone: context.timeZone,
-                    }
-                );
-                if(
-                    (
-                        toolCall.name === 'create_calendar_task' ||
-                        toolCall.name === 'create_recurring_calendar_tasks' ||
-                        toolCall.name === 'update_calendar_task' ||
-                        toolCall.name === 'delete_calendar_task' ||
-                        toolCall.name === 'bulk_update_calendar_tasks' ||
-                        toolCall.name === 'bulk_delete_calendar_tasks'
-                    ) &&
-                    !output?.error
-                )
+                handlers.onStatus?.('Reusing earlier calendar results');
+                output = toolCallOutputs.get(signature);
+            }
+            else
+            {
+                try
                 {
-                    calendarChanged = true;
+                    handlers.onStatus?.(describeAssistantTool(toolCall.name));
+                    output = await executeCalendarAssistantTool(
+                        db,
+                        userId,
+                        toolCall,
+                        {
+                            utcOffsetMinutes: context.utcOffsetMinutes,
+                            timeZone: context.timeZone,
+                        }
+                    );
+                    if(
+                        (
+                            toolCall.name === 'create_calendar_task' ||
+                            toolCall.name === 'create_recurring_calendar_tasks' ||
+                            toolCall.name === 'update_calendar_task' ||
+                            toolCall.name === 'delete_calendar_task' ||
+                            toolCall.name === 'bulk_update_calendar_tasks' ||
+                            toolCall.name === 'bulk_delete_calendar_tasks'
+                        ) &&
+                        !output?.error
+                    )
+                    {
+                        calendarChanged = true;
+                    }
                 }
+                catch(error)
+                {
+                    output = {
+                        error: String(error?.message || error || 'Tool call failed'),
+                        ok: false,
+                    };
+                }
+
+                toolCallOutputs.set(signature, output);
             }
-            catch(error)
-            {
-                output = {
-                    error: String(error?.message || error || 'Tool call failed'),
-                    ok: false,
-                };
-            }
+
             input.push({
                 type: 'function_call_output',
                 call_id: toolCall.call_id,
@@ -2834,35 +3040,17 @@ Do not call more tools unless the user asks for a new action.`,
 
         input.push({
             role: 'system',
-            content: 'Use the tool results above to answer the user directly. If a tool returned an error, recover gracefully: either use web search, ask a brief clarification question, or explain that you could not identify the exact calendar item. Do not repeat the same tool call with the same arguments.',
+            content: 'Use the tool results above to answer the user directly. If a tool returned an error, recover gracefully: search the calendar or web if that will help, infer the obvious next step when the target is clear, and ask only the smallest follow-up question when a key detail is still ambiguous. Never claim you cannot access or directly edit the calendar when the available tools cover the request. Do not repeat the same tool call with the same arguments.',
         });
     }
 
-    const finalOptions = {
+    return finalizeReply({
         instructions: `${context.systemPrompt}
 
 Answer the user directly using the tool results already gathered.
 Do not call any more tools in this response.`,
         useWebSearch: false,
-    };
-
-    if(context.streamFinal)
-    {
-        const streamed = await streamOpenAIToText(apiKey, input, finalOptions, handlers);
-        return {
-            reply: streamed.text,
-            calendarChanged,
-            streamedFinal: true,
-        };
-    }
-
-    const reply = await callOpenAI(apiKey, input, finalOptions);
-
-    return {
-        reply,
-        calendarChanged,
-        streamedFinal: false,
-    };
+    });
 }
 
 exports.setApp = function(app, client)
@@ -4249,6 +4437,9 @@ Suggest practical, realistic calendar events that complement the existing tasks 
                  Do not claim you lack real-time access if web search would help; use it instead.
                  Questions about store, restaurant, venue, or campus building hours are not calendar-edit requests. Use web search for those unless the user clearly refers to one of their scheduled items.
                  When the user asks to create, edit, move, reschedule, complete, or delete calendar tasks, use the available calendar tools.
+                 Never say you cannot directly edit the calendar when the request is covered by the available tools. Either make the change or explain the exact missing detail that still prevents it.
+                 For move, reschedule, and update requests, search the calendar first when needed and carry out the edit whenever the intended event and new timing can be reasonably inferred from the conversation.
+                 Ask a follow-up question only when the target item or the new date/time is still genuinely ambiguous after checking the calendar.
                  When the user asks for repeating tasks like "every Monday and Wednesday until June", use the recurring calendar tool instead of many one-off creates.
                  Think carefully before editing or deleting. If the exact task id is not already known from tool results, search or list first. You may use an exact id, or a unique title/reference if it clearly identifies a single task. Do not invent task ids.
                  You can also enable email reminders when the user asks for a reminder before a task.
@@ -4425,6 +4616,9 @@ Help the user manage their schedule, suggest events, answer questions about thei
                  Do not claim you lack real-time access if web search would help; use it instead.
                  Questions about store, restaurant, venue, or campus building hours are not calendar-edit requests. Use web search for those unless the user clearly refers to one of their scheduled items.
                  When the user asks to create, edit, move, reschedule, complete, or delete calendar tasks, use the available calendar tools.
+                 Never say you cannot directly edit the calendar when the request is covered by the available tools. Either make the change or explain the exact missing detail that still prevents it.
+                 For move, reschedule, and update requests, search the calendar first when needed and carry out the edit whenever the intended event and new timing can be reasonably inferred from the conversation.
+                 Ask a follow-up question only when the target item or the new date/time is still genuinely ambiguous after checking the calendar.
                  When the user asks for repeating tasks like "every Monday and Wednesday until June", use the recurring calendar tool instead of many one-off creates.
                  Think carefully before editing or deleting. If the exact task id is not already known from tool results, search or list first. You may use an exact id, or a unique title/reference if it clearly identifies a single task. Do not invent task ids.
                  You can also enable email reminders when the user asks for a reminder before a task.

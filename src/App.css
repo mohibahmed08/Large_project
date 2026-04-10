@@ -426,12 +426,20 @@
   font-style: italic;
   font-weight: 600;
   letter-spacing: 0.01em;
-  color: transparent;
-  background: linear-gradient(90deg, rgba(226, 232, 240, 0.65) 0%, #ffffff 45%, rgba(125, 211, 252, 0.95) 60%, rgba(226, 232, 240, 0.65) 100%);
-  background-size: 220% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
+  color: #e6edf8;
+  text-shadow: 0 0 18px rgba(125, 211, 252, 0.12);
   animation: ai-status-text-shimmer 1.8s ease-in-out infinite;
+}
+
+@supports ((background-clip: text) or (-webkit-background-clip: text)) {
+  .ai-status-text {
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    background: linear-gradient(90deg, rgba(226, 232, 240, 0.65) 0%, #ffffff 45%, rgba(125, 211, 252, 0.95) 60%, rgba(226, 232, 240, 0.65) 100%);
+    background-size: 220% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+  }
 }
 
 @keyframes ai-status-text-shimmer {

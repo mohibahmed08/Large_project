@@ -94,6 +94,25 @@ function normalizeSuggestions(rawSuggestions) {
     return items;
 }
 
+function displayAssistantStatus(status) {
+    const trimmed = String(status || '').trim();
+    if (!trimmed) {
+        return '';
+    }
+
+    return (trimmed.endsWith('...') || /[.!?]$/.test(trimmed)) ? trimmed : `${trimmed}...`;
+}
+
+function waitForNextPaint() {
+    return new Promise((resolve) => {
+        const schedule =
+            typeof window.requestAnimationFrame === 'function'
+                ? window.requestAnimationFrame.bind(window)
+                : (callback) => window.setTimeout(callback, 16);
+        schedule(() => resolve());
+    });
+}
+
 function normalizeAssistantMarkdown(text) {
     return String(text || '')
         .replace(/\r\n?/g, '\n')
@@ -641,6 +660,25 @@ function App() {
         }
     };
 
+    const updateStreamingAssistantMessage = (updater) => {
+        setMessages((prev) => {
+            const updated = [...prev];
+            const lastIndex = updated.length - 1;
+            const previous = updated[lastIndex];
+            const seed = previous?.role === 'assistant'
+                ? previous
+                : { role: 'assistant', text: '', status: '' };
+            const nextMessage = updater(seed);
+
+            if (previous?.role === 'assistant') {
+                updated[lastIndex] = nextMessage;
+                return updated;
+            }
+
+            return [...updated, nextMessage];
+        });
+    };
+
     const sendChat = async () => {
         const trimmed = aiInput.trim();
         const session = getSession();
@@ -648,7 +686,7 @@ function App() {
 
         const nextMessages = [...messages, { role: 'user', text: trimmed }];
         setAiMode('chat');
-        setMessages([...nextMessages, { role: 'assistant', text: '', status: 'Thinking...' }]);
+        setMessages([...nextMessages, { role: 'assistant', text: '', status: 'Thinking' }]);
         setAiInput('');
         setAiLoading(true);
 
@@ -702,42 +740,31 @@ function App() {
                         continue;
                     }
 
-                    const payload = JSON.parse(trimmedLine);
+                    let payload;
+                    try {
+                        payload = JSON.parse(trimmedLine);
+                    } catch {
+                        continue;
+                    }
+
                     if (payload.type === 'delta' && payload.delta) {
-                        setMessages((prev) => {
-                            const updated = [...prev];
-                            const lastIndex = updated.length - 1;
-                            const previous = updated[lastIndex];
-                            updated[lastIndex] = {
-                                ...previous,
-                                text: `${previous.text}${payload.delta}`,
-                                status: '',
-                            };
-                            return updated;
-                        });
+                        updateStreamingAssistantMessage((previous) => ({
+                            ...previous,
+                            text: `${previous.text}${payload.delta}`,
+                            status: '',
+                        }));
                     } else if (payload.type === 'status' && payload.status) {
-                        setMessages((prev) => {
-                            const updated = [...prev];
-                            const lastIndex = updated.length - 1;
-                            const previous = updated[lastIndex];
-                            updated[lastIndex] = {
-                                ...previous,
-                                status: payload.status,
-                            };
-                            return updated;
-                        });
+                        updateStreamingAssistantMessage((previous) => ({
+                            ...previous,
+                            status: payload.status,
+                        }));
+                        await waitForNextPaint();
                     } else if (payload.type === 'done') {
                         updateToken(payload.jwtToken);
-                        setMessages((prev) => {
-                            const updated = [...prev];
-                            const lastIndex = updated.length - 1;
-                            const previous = updated[lastIndex];
-                            updated[lastIndex] = {
-                                ...previous,
-                                status: '',
-                            };
-                            return updated;
-                        });
+                        updateStreamingAssistantMessage((previous) => ({
+                            ...previous,
+                            status: '',
+                        }));
                         if (payload.calendarChanged) {
                             refreshCalendar();
                         }
@@ -749,10 +776,16 @@ function App() {
 
             const finalLine = buffer.trim();
             if (finalLine) {
-                const payload = JSON.parse(finalLine);
-                if (payload.type === 'done') {
+                let payload;
+                try {
+                    payload = JSON.parse(finalLine);
+                } catch {
+                    payload = null;
+                }
+
+                if (payload?.type === 'done') {
                     updateToken(payload.jwtToken);
-                } else if (payload.type === 'error') {
+                } else if (payload?.type === 'error') {
                     throw new Error(payload.error || 'Streaming failed.');
                 }
             }
@@ -1016,7 +1049,7 @@ function App() {
                                                                     message.text
                                                                         ? renderAssistantMessage(message.text)
                                                                         : message.status
-                                                                            ? <span className="ai-status-text">{message.status}...</span>
+                                                                            ? <span className="ai-status-text">{displayAssistantStatus(message.status)}</span>
                                                                             : ''
                                                                 )
                                                                 : message.text}
