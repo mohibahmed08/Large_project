@@ -6,14 +6,14 @@ import 'package:geolocator/geolocator.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../services/biometric_auth_service.dart';
-import '../services/push_notification_service.dart';
 import '../services/session_storage.dart';
 import '../theme/app_theme.dart';
 import 'calendar_screen.dart';
 
-// ── Post-login "Use Face ID next time?" sheet ──────────────────────────────
-/// Shows a bottom sheet prompting the user to enable biometric unlock.
-/// Only shown when biometrics are available and NOT already enabled.
+// ── Post-login biometric sign-in prompt ────────────────────────────────────
+/// Shows a bottom sheet prompting the user to enable biometric sign-in
+/// on the login screen only. Only shown when neither biometric mode
+/// is already enabled.
 Future<void> maybeSuggestBiometricSetup(
   BuildContext context, {
   required UserSession session,
@@ -354,9 +354,6 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _openCalendar(UserSession session) {
-    // Request push permission and register token after login (non-blocking)
-    PushNotificationService.requestPermission();
-
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -739,7 +736,7 @@ class _BiometricSetupSheet extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            'Sign in faster with $biometricLabel',
+            'Show $biometricLabel on the login screen',
             style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w800,
@@ -749,7 +746,7 @@ class _BiometricSetupSheet extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Use $biometricLabel as a faster sign-in option the next time you open Calendar++.',
+            'Use $biometricLabel as a sign-in option on the login screen only. This is separate from the app-unlock setting in Settings.',
             style: const TextStyle(color: AppTheme.textMuted, height: 1.45),
             textAlign: TextAlign.center,
           ),

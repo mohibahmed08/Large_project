@@ -32,6 +32,9 @@ class LiveActivityService {
     } on PlatformException catch (e) {
       if (kDebugMode) debugPrint('[LiveActivity] isSupported error: $e');
       return false;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[LiveActivity] isSupported fatal: $e');
+      return false;
     }
   }
 
@@ -43,6 +46,7 @@ class LiveActivityService {
     required String title,
     required DateTime startTime,
     DateTime? endTime,
+    String? description,
     String? location,
   }) async {
     if (!Platform.isIOS) return null;
@@ -53,12 +57,16 @@ class LiveActivityService {
         'title':     title,
         'startTime': startTime.millisecondsSinceEpoch.toDouble(),
         if (endTime != null) 'endTime': endTime.millisecondsSinceEpoch.toDouble(),
+        ...?(description == null ? null : {'description': description}),
         ...?(location == null ? null : {'location': location}),
       });
       if (kDebugMode) debugPrint('[LiveActivity] started: $id');
       return id;
     } on PlatformException catch (e) {
       if (kDebugMode) debugPrint('[LiveActivity] startActivity error: $e');
+      return null;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[LiveActivity] startActivity fatal: $e');
       return null;
     }
   }
@@ -69,6 +77,7 @@ class LiveActivityService {
     required String title,
     required DateTime startTime,
     DateTime? endTime,
+    String? description,
     String? location,
     bool isCompleted = false,
   }) async {
@@ -79,11 +88,14 @@ class LiveActivityService {
         'title':       title,
         'startTime':   startTime.millisecondsSinceEpoch.toDouble(),
         if (endTime != null) 'endTime': endTime.millisecondsSinceEpoch.toDouble(),
+        ...?(description == null ? null : {'description': description}),
         ...?(location == null ? null : {'location': location}),
         'isCompleted': isCompleted,
       });
     } on PlatformException catch (e) {
       if (kDebugMode) debugPrint('[LiveActivity] updateActivity error: $e');
+    } catch (e) {
+      if (kDebugMode) debugPrint('[LiveActivity] updateActivity fatal: $e');
     }
   }
 
@@ -97,6 +109,8 @@ class LiveActivityService {
       if (kDebugMode) debugPrint('[LiveActivity] ended: $activityId');
     } on PlatformException catch (e) {
       if (kDebugMode) debugPrint('[LiveActivity] endActivity error: $e');
+    } catch (e) {
+      if (kDebugMode) debugPrint('[LiveActivity] endActivity fatal: $e');
     }
   }
 
@@ -107,6 +121,8 @@ class LiveActivityService {
       if (kDebugMode) debugPrint('[LiveActivity] ended all activities');
     } on PlatformException catch (e) {
       if (kDebugMode) debugPrint('[LiveActivity] endAllActivities error: $e');
+    } catch (e) {
+      if (kDebugMode) debugPrint('[LiveActivity] endAllActivities fatal: $e');
     }
   }
 }

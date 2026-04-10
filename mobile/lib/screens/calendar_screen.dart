@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
@@ -11,10 +11,12 @@ import 'package:http/http.dart' as http;
 import '../models/task_model.dart';
 import '../models/user_model.dart';
 import '../services/ai_service.dart';
+import '../services/app_link_service.dart';
 import '../services/calendar_service.dart';
 import '../services/live_activity_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/session_storage.dart';
+import '../services/widget_sync_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/day_grid.dart';
 import 'ai_screen.dart';
@@ -22,17 +24,10 @@ import 'login_screen.dart';
 import 'settings_screen.dart';
 import 'task_editor_screen.dart';
 
-enum _WeatherWidgetMode {
-  future,
-  futureAndHourly,
-  hourly,
-}
+enum _WeatherWidgetMode { future, futureAndHourly, hourly }
 
 class CalendarScreen extends StatefulWidget {
-  const CalendarScreen({
-    super.key,
-    required this.initialSession,
-  });
+  const CalendarScreen({super.key, required this.initialSession});
 
   final UserSession initialSession;
 
@@ -41,7 +36,10 @@ class CalendarScreen extends StatefulWidget {
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
-  static const Duration _liveActivityUpcomingWindow = Duration(hours: 12);
+  static const Duration _liveActivityFutureWindow = Duration(hours: 4);
+  static const Duration _liveActivityMinimumUpcomingWindow = Duration(
+    minutes: 10,
+  );
 
   final AiService _aiService = AiService();
   final CalendarService _calendarService = CalendarService();
@@ -52,6 +50,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   late UserSession _session;
   Timer? _liveActivityTimer;
+  StreamSubscription<String>? _appLinkTaskSubscription;
   StreamSubscription<Map<String, dynamic>>? _notificationOpenSubscription;
   String? _liveActivityId;
   String? _liveActivityTaskId;
@@ -65,9 +64,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
   List<CalendarTask> _tasks = [];
   List<CalendarTask> _visibleTasks = [];
   bool _isLoading = true;
+  bool _iosSideEffectsStarted = false;
   int _selectedIndex = 0; // 0=Calendar, 1=Day, 2=AI
   _WeatherWidgetMode _weatherWidgetMode = _WeatherWidgetMode.future;
   final Set<String> _expandedDayTaskIds = <String>{};
+
+  void _debugLog(String message) {
+    if (kDebugMode) {
+      debugPrint('[CalendarStartup] $message');
+    }
+  }
 
   List<String> get _existingGroups {
     final counts = <String, int>{};
@@ -88,24 +94,30 @@ class _CalendarScreenState extends State<CalendarScreen> {
   void initState() {
     super.initState();
     _session = widget.initialSession;
+    _debugLog('initState start');
     unawaited(SessionStorage.saveSession(_session));
-    unawaited(_restoreLiveActivityState());
-    _liveActivityTimer = Timer.periodic(
-      const Duration(minutes: 1),
-      (_) => unawaited(_syncLiveActivity()),
-    );
-    _notificationOpenSubscription =
-        PushNotificationService.notificationOpens.listen((data) {
-      unawaited(_handleNotificationOpen(data));
+    _notificationOpenSubscription = PushNotificationService.notificationOpens
+        .listen((data) {
+          unawaited(_handleNotificationOpen(data));
+        });
+    _appLinkTaskSubscription = AppLinkService.taskOpens.listen((taskId) {
+      unawaited(_openTaskById(taskId));
     });
     _loadMonth(showLoader: true);
     _fetchWeather();
     unawaited(_restoreWeatherWidgetMode());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final pendingTaskId = AppLinkService.takePendingTaskId();
+      if (pendingTaskId != null) {
+        unawaited(_openTaskById(pendingTaskId));
+      }
+    });
   }
 
   @override
   void dispose() {
     _liveActivityTimer?.cancel();
+    _appLinkTaskSubscription?.cancel();
     _notificationOpenSubscription?.cancel();
     _searchController.dispose();
     _quickTaskController.dispose();
@@ -120,36 +132,100 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return;
     }
 
+    await _openTaskById(taskId, openedFromNotification: true);
+  }
+
+  Future<void> _openTaskById(
+    String taskId, {
+    bool openedFromNotification = false,
+  }) async {
+    AppLinkService.clearPendingTaskId(taskId);
     CalendarTask? task = _taskById(taskId);
     if (task == null) {
       await _loadMonth(showLoader: false);
       task = _taskById(taskId);
     }
 
-    if (!mounted || task?.startDate == null) {
+    if (!mounted || task == null) {
       return;
     }
 
-    final selectedDay = DateUtils.dateOnly(task!.startDate!);
-    setState(() {
-      _selectedDate = selectedDay;
-      _currentDate = DateTime(selectedDay.year, selectedDay.month, 1);
-      _selectedIndex = 1;
-    });
+    if (task.startDate != null) {
+      final selectedDay = DateUtils.dateOnly(task.startDate!);
+      setState(() {
+        _selectedDate = selectedDay;
+        _currentDate = DateTime(selectedDay.year, selectedDay.month, 1);
+        _selectedIndex = 1;
+      });
 
-    final now = DateTime.now();
-    final monthOffset =
-        (selectedDay.year - now.year) * 12 + (selectedDay.month - now.month);
-    _monthPageController.jumpToPage(1200 + monthOffset);
+      final now = DateTime.now();
+      final monthOffset =
+          (selectedDay.year - now.year) * 12 + (selectedDay.month - now.month);
+      _monthPageController.jumpToPage(1200 + monthOffset);
+    } else {
+      setState(() {
+        _selectedIndex = 1;
+      });
+    }
+    final resolvedTask = task;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      unawaited(
+        _showTaskDetailsSheet(
+          resolvedTask,
+          openedFromNotification: openedFromNotification,
+        ),
+      );
+    });
   }
 
-  Future<void> _restoreLiveActivityState() async {
-    _liveActivitySupported = await LiveActivityService.isSupported();
+  Future<void> _initializeLiveActivityState() async {
+    _debugLog('live activity init start');
+    try {
+      _liveActivitySupported = await LiveActivityService.isSupported();
+    } catch (_) {
+      _liveActivitySupported = false;
+    }
+
     final saved = await SessionStorage.readLiveActivity();
     _liveActivityId = saved.activityId;
     _liveActivityTaskId = saved.taskId;
     _liveActivityReady = true;
-    await _syncLiveActivity();
+    _debugLog(
+      'live activity init ready supported=$_liveActivitySupported restored=${_liveActivityId != null && _liveActivityTaskId != null}',
+    );
+    await _syncLiveActivitySafely();
+  }
+
+  Future<void> _startIosSideEffectsIfNeeded() async {
+    if (_iosSideEffectsStarted) {
+      return;
+    }
+    _iosSideEffectsStarted = true;
+    _debugLog('starting deferred iOS side effects');
+
+    unawaited(PushNotificationService.requestPermission());
+    unawaited(_initializeLiveActivityState());
+    _liveActivityTimer ??= Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => unawaited(_syncLiveActivitySafely()),
+    );
+  }
+
+  Future<void> _syncLiveActivitySafely() async {
+    try {
+      _debugLog('live activity sync start');
+      await _syncLiveActivity();
+      _debugLog('live activity sync done');
+    } catch (_) {
+      _debugLog('live activity sync failed and was cleared');
+      _liveActivityId = null;
+      _liveActivityTaskId = null;
+      await SessionStorage.clearLiveActivity();
+    }
   }
 
   String _liveActivityTaskType(CalendarTask task) {
@@ -173,33 +249,61 @@ class _CalendarScreenState extends State<CalendarScreen> {
         DateTime.now();
   }
 
+  Duration _liveActivityUpcomingWindowForTask(CalendarTask task) {
+    final reminderWindow =
+        task.reminderEnabled && task.reminderMinutesBefore > 0
+        ? Duration(minutes: task.reminderMinutesBefore)
+        : Duration.zero;
+
+    return reminderWindow > _liveActivityMinimumUpcomingWindow
+        ? reminderWindow
+        : _liveActivityMinimumUpcomingWindow;
+  }
+
+  String? _liveActivityDescriptionPreview(CalendarTask task) {
+    final trimmed = task.description.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    if (trimmed.length <= 90) {
+      return trimmed;
+    }
+    return '${trimmed.substring(0, 87).trimRight()}...';
+  }
+
   CalendarTask? _liveActivityCandidate() {
     final now = DateTime.now();
-    final candidates = _tasks.where((task) {
-      if (task.isCompleted || task.startDate == null) {
-        return false;
-      }
+    final candidates =
+        _tasks.where((task) {
+          if (task.isCompleted || task.startDate == null) {
+            return false;
+          }
 
-      final start = task.startDate!;
-      final end = _effectiveEndDate(task);
-      final isOngoing = !now.isBefore(start) && !now.isAfter(end);
-      final isUpcoming = start.isAfter(now) &&
-          start.difference(now) <= _liveActivityUpcomingWindow;
+          final start = task.startDate!;
+          final end = _effectiveEndDate(task);
+          final isOngoing = !now.isBefore(start) && !now.isAfter(end);
+          final isFuture =
+              start.isAfter(now) &&
+              start.difference(now) <= _liveActivityFutureWindow;
+          final isUpcoming =
+              start.isAfter(now) &&
+              start.difference(now) <= _liveActivityUpcomingWindowForTask(task);
 
-      return isOngoing || isUpcoming;
-    }).toList()
-      ..sort((a, b) {
-        final aStart = a.startDate!;
-        final bStart = b.startDate!;
-        final aOngoing = !now.isBefore(aStart) && !now.isAfter(_effectiveEndDate(a));
-        final bOngoing = !now.isBefore(bStart) && !now.isAfter(_effectiveEndDate(b));
+          return isOngoing || isUpcoming || isFuture;
+        }).toList()..sort((a, b) {
+          final aStart = a.startDate!;
+          final bStart = b.startDate!;
+          final aOngoing =
+              !now.isBefore(aStart) && !now.isAfter(_effectiveEndDate(a));
+          final bOngoing =
+              !now.isBefore(bStart) && !now.isAfter(_effectiveEndDate(b));
 
-        if (aOngoing != bOngoing) {
-          return aOngoing ? -1 : 1;
-        }
+          if (aOngoing != bOngoing) {
+            return aOngoing ? -1 : 1;
+          }
 
-        return aStart.compareTo(bStart);
-      });
+          return aStart.compareTo(bStart);
+        });
 
     return candidates.isEmpty ? null : candidates.first;
   }
@@ -211,6 +315,266 @@ class _CalendarScreenState extends State<CalendarScreen> {
       }
     }
     return null;
+  }
+
+  Future<void> _showTaskDetailsSheet(
+    CalendarTask task, {
+    bool openedFromNotification = false,
+  }) async {
+    if (!mounted) {
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0F172A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) {
+        final accentColor = _taskDisplayColor(task);
+        final fullDescription = task.description.trim();
+        final location = task.location.trim();
+        final showReminderBadge =
+            task.reminderEnabled && task.reminderDelivery != 'email';
+
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              16,
+              20,
+              20 + MediaQuery.of(sheetContext).viewInsets.bottom,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  if (openedFromNotification)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: accentColor.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: accentColor.withValues(alpha: 0.30),
+                        ),
+                      ),
+                      child: Text(
+                        'Opened from reminder',
+                        style: TextStyle(
+                          color: accentColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  if (openedFromNotification) const SizedBox(height: 14),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 14,
+                        height: 14,
+                        margin: const EdgeInsets.only(top: 6),
+                        decoration: BoxDecoration(
+                          color: accentColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              task.title.trim().isEmpty
+                                  ? 'Untitled item'
+                                  : task.title.trim(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w800,
+                                height: 1.1,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _taskDateTimeSummary(task),
+                              style: TextStyle(
+                                color: accentColor,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (fullDescription.isNotEmpty) ...[
+                    const SizedBox(height: 18),
+                    Text(
+                      fullDescription,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.88),
+                        fontSize: 15,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                  if (location.isNotEmpty) ...[
+                    const SizedBox(height: 18),
+                    _buildTaskMetaRow(
+                      icon: Icons.place_outlined,
+                      label: location,
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+                  _buildTaskMetaRow(
+                    icon: Icons.category_outlined,
+                    label: _taskSourceLabel(task.source),
+                  ),
+                  if (task.group.trim().isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    _buildTaskMetaRow(
+                      icon: Icons.folder_outlined,
+                      label: task.group.trim(),
+                    ),
+                  ],
+                  if (showReminderBadge) ...[
+                    const SizedBox(height: 10),
+                    _buildTaskMetaRow(
+                      icon: Icons.notifications_active_outlined,
+                      label: _reminderSummary(task),
+                    ),
+                  ],
+                  const SizedBox(height: 22),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            Navigator.pop(sheetContext);
+                            _openTaskDialog(task: task);
+                          },
+                          child: const Text('Edit'),
+                        ),
+                      ),
+                      if (task.source.toLowerCase() == 'task') ...[
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () {
+                              Navigator.pop(sheetContext);
+                              _toggleTask(task, !task.isCompleted);
+                            },
+                            child: Text(
+                              task.isCompleted ? 'Mark Active' : 'Complete',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTaskMetaRow({
+    required IconData icon,
+    required String label,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: Colors.white.withValues(alpha: 0.72)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.82),
+              fontSize: 14,
+              height: 1.35,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _taskDateTimeSummary(CalendarTask task) {
+    if (task.startDate == null) {
+      return 'No scheduled time';
+    }
+
+    final start = task.startDate!;
+    final dateText = '${start.month}/${start.day}/${start.year}';
+    if (_isAllDayTask(task)) {
+      return '$dateText • All day';
+    }
+    if (task.endDate != null) {
+      return '$dateText • ${_formatTime(start)} - ${_formatTime(task.endDate!)}';
+    }
+    return '$dateText • ${_formatTime(start)}';
+  }
+
+  String _taskSourceLabel(String source) {
+    switch (source.toLowerCase()) {
+      case 'plan':
+        return 'Plan';
+      case 'event':
+        return 'Event';
+      case 'ical':
+        return 'Imported calendar';
+      case 'task':
+        return 'Task';
+      case 'manual':
+      default:
+        return 'Manual item';
+    }
+  }
+
+  String _reminderSummary(CalendarTask task) {
+    final timingLabel = switch (task.reminderMinutesBefore) {
+      0 => 'At time of event',
+      60 => '1 hour before',
+      1440 => '1 day before',
+      final minutes when minutes > 60 && minutes % 60 == 0 =>
+        '${minutes ~/ 60} hours before',
+      final minutes => '$minutes minutes before',
+    };
+
+    final deliveryLabel = switch (task.reminderDelivery) {
+      'both' => 'email and push',
+      'push' => 'push',
+      _ => 'email',
+    };
+
+    return '$timingLabel via $deliveryLabel';
   }
 
   Future<void> _syncLiveActivity() async {
@@ -232,10 +596,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
     final candidateStart = candidate.startDate!;
     final candidateEnd = candidate.endDate;
-    final candidateLocation =
-        candidate.location.trim().isEmpty ? null : candidate.location.trim();
-    final candidateTitle =
-        candidate.title.trim().isEmpty ? 'Untitled item' : candidate.title.trim();
+    final candidateLocation = candidate.location.trim().isEmpty
+        ? null
+        : candidate.location.trim();
+    final candidateDescription = _liveActivityDescriptionPreview(candidate);
+    final candidateTitle = candidate.title.trim().isEmpty
+        ? 'Untitled item'
+        : candidate.title.trim();
 
     if (_liveActivityId != null && _liveActivityTaskId == candidate.id) {
       await LiveActivityService.updateActivity(
@@ -243,6 +610,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         title: candidateTitle,
         startTime: candidateStart,
         endTime: candidateEnd,
+        description: candidateDescription,
         location: candidateLocation,
         isCompleted: candidate.isCompleted,
       );
@@ -262,6 +630,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       title: candidateTitle,
       startTime: candidateStart,
       endTime: candidateEnd,
+      description: candidateDescription,
       location: candidateLocation,
     );
 
@@ -314,6 +683,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Future<void> _loadMonth({bool showLoader = false}) async {
+    _debugLog('loadMonth start showLoader=$showLoader month=${_currentDate.year}-${_currentDate.month}');
     if (showLoader) {
       setState(() {
         _isLoading = true;
@@ -337,8 +707,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
         _tasks = result.tasks;
         _visibleTasks = result.tasks;
       });
-      unawaited(_syncLiveActivity());
+      _debugLog('loadMonth success tasks=${result.tasks.length}');
+      unawaited(_startIosSideEffectsIfNeeded());
+      if (_iosSideEffectsStarted) {
+        unawaited(_syncLiveActivitySafely());
+      }
     } catch (error) {
+      _debugLog('loadMonth error $error');
       if (!mounted) {
         return;
       }
@@ -358,11 +733,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
     DateTime? selectedDateOverride,
   }) async {
     final normalizedMonth = DateTime(month.year, month.month);
-    final daysInMonth =
-        DateTime(normalizedMonth.year, normalizedMonth.month + 1, 0).day;
+    final daysInMonth = DateTime(
+      normalizedMonth.year,
+      normalizedMonth.month + 1,
+      0,
+    ).day;
     final baseSelectedDate = selectedDateOverride ?? _selectedDate;
-    final nextSelectedDay =
-        baseSelectedDate.day > daysInMonth ? daysInMonth : baseSelectedDate.day;
+    final nextSelectedDay = baseSelectedDate.day > daysInMonth
+        ? daysInMonth
+        : baseSelectedDate.day;
     final nextSelectedDate = DateUtils.dateOnly(
       DateTime(normalizedMonth.year, normalizedMonth.month, nextSelectedDay),
     );
@@ -374,7 +753,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return;
     }
     final today = DateTime.now();
-    final monthOffset = (normalizedMonth.year - today.year) * 12 +
+    final monthOffset =
+        (normalizedMonth.year - today.year) * 12 +
         (normalizedMonth.month - today.month);
 
     setState(() {
@@ -416,6 +796,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Future<void> _fetchWeather() async {
+    _debugLog('weather fetch start');
     const fallbackLatitude = 28.5383;
     const fallbackLongitude = -81.3792;
 
@@ -429,6 +810,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           _weatherData = fallbackForecast;
           _weatherLocationName = 'Orlando, Florida';
         });
+        _debugLog('weather fallback loaded');
       }
     } catch (_) {
       // Keep going and still try device-location weather below.
@@ -468,6 +850,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         _weatherData = localForecast;
         _weatherLocationName = 'Current location';
       });
+      _debugLog('weather current location loaded');
     } catch (_) {
       // Keep the fallback weather if location lookup fails.
     }
@@ -481,8 +864,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
     DateTime? initialDate,
   }) async {
     final baseDate = task?.startDate ?? initialDate ?? _selectedDate;
-    final initialEndDate = task?.endDate ??
-        (task?.startDate ?? initialDate ?? _selectedDate).add(const Duration(hours: 1));
+    final initialEndDate =
+        task?.endDate ??
+        (task?.startDate ?? initialDate ?? _selectedDate).add(
+          const Duration(hours: 1),
+        );
 
     final result = await Navigator.push<TaskEditorResult>(
       context,
@@ -504,7 +890,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
     );
 
-    if (result == null || result.title.isEmpty) {
+    if (result == null) {
+      return;
+    }
+
+    if (result.action == TaskEditorAction.delete) {
+      if (task == null || task.id.trim().isEmpty) {
+        _showSnackBar('This item cannot be deleted yet.');
+        return;
+      }
+      await _deleteTask(task);
+      return;
+    }
+
+    if (result.title.isEmpty) {
       return;
     }
 
@@ -545,6 +944,60 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
+  Future<void> _deleteTask(CalendarTask task) async {
+    if (task.id.trim().isEmpty) {
+      _showSnackBar('This item cannot be deleted yet.');
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(task.source.toLowerCase() == 'task' ? 'Delete task?' : 'Delete item?'),
+        content: Text(
+          'This will permanently delete "${task.title.trim().isEmpty ? 'this item' : task.title.trim()}" from your calendar.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    try {
+      final nextSession = await _calendarService.deleteTask(
+        session: _session,
+        taskId: task.id,
+      );
+      _cacheSession(nextSession);
+      await _loadMonth();
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar(
+        task.source.toLowerCase() == 'task' ? 'Task deleted.' : 'Item deleted.',
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
   Future<void> _saveQuickAddFallback(String title) async {
     final nextSession = await _calendarService.saveTask(
       session: _session,
@@ -577,9 +1030,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
             'role': 'user',
             'content':
                 'Create exactly one calendar task for $selectedDateIso from this quick-add text: "$value". '
-                    'Infer a local time only if the user implied one. '
-                    'If no time is implied, make it an untimed or all-day task on that date. '
-                    'Do not ask follow-up questions.',
+                'Infer a local time only if the user implied one. '
+                'If no time is implied, make it an untimed or all-day task on that date. '
+                'Do not ask follow-up questions.',
           },
         ],
       );
@@ -687,10 +1140,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(
-              context,
-              (urlController.text.trim(), contentController.text.trim()),
-            ),
+            onPressed: () => Navigator.pop(context, (
+              urlController.text.trim(),
+              contentController.text.trim(),
+            )),
             child: const Text('Import'),
           ),
         ],
@@ -737,10 +1190,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     try {
       final file = await openFile(
         acceptedTypeGroups: [
-          const XTypeGroup(
-            label: 'Calendar files',
-            extensions: ['ics', 'zip'],
-          ),
+          const XTypeGroup(label: 'Calendar files', extensions: ['ics', 'zip']),
         ],
       );
 
@@ -842,6 +1292,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     } else if (_liveActivitySupported) {
       await LiveActivityService.endAllActivities();
     }
+    await WidgetSyncService.clear();
     await SessionStorage.clearLiveActivity();
     await PushNotificationService.removeDeviceToken();
     if (!mounted) {
@@ -855,9 +1306,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   DateTime _dateWithTime(DateTime base, String suggestedTime) {
@@ -891,7 +1342,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return end;
     }
 
-    final endsAtMidnight = end.hour == 0 &&
+    final endsAtMidnight =
+        end.hour == 0 &&
         end.minute == 0 &&
         end.second == 0 &&
         end.millisecond == 0 &&
@@ -974,7 +1426,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   List<CalendarTask> get _tasksForSelectedDay {
-    return _visibleTasks.where((task) => _taskFallsOnDate(task, _selectedDate)).toList()
+    return _visibleTasks
+        .where((task) => _taskFallsOnDate(task, _selectedDate))
+        .toList()
       ..sort(_compareDayTasks);
   }
 
@@ -985,7 +1439,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _tasksForSelectedDay.where((task) => task.isCompleted).toList();
 
   List<CalendarTask> get _allDaySelectedTasks =>
-      _pendingSelectedTasks.where(_isAllDayTask).toList()..sort(_compareDayTasks);
+      _pendingSelectedTasks.where(_isAllDayTask).toList()
+        ..sort(_compareDayTasks);
 
   List<CalendarTask> get _timedSelectedTasks =>
       _pendingSelectedTasks
@@ -1034,9 +1489,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return null;
     }
 
-    return Color(
-      normalized.length == 6 ? 0xFF000000 | parsed : parsed,
-    );
+    return Color(normalized.length == 6 ? 0xFF000000 | parsed : parsed);
   }
 
   Map<String, dynamic>? get _selectedDayWeather {
@@ -1046,7 +1499,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
 
     final target = _formatDate(_selectedDate);
-    final times = (daily['time'] as List?)?.map((item) => '$item').toList() ?? [];
+    final times =
+        (daily['time'] as List?)?.map((item) => '$item').toList() ?? [];
     final index = times.indexOf(target);
     if (index < 0) return null;
 
@@ -1067,7 +1521,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return const [];
     }
 
-    final times = (daily['time'] as List?)?.map((item) => '$item').toList() ?? const [];
+    final times =
+        (daily['time'] as List?)?.map((item) => '$item').toList() ?? const [];
     if (times.isEmpty) {
       return const [];
     }
@@ -1081,7 +1536,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final endIndex = (startIndex + 5).clamp(0, times.length);
     return List.generate(endIndex - startIndex, (offset) {
       final index = startIndex + offset;
-      num? readNum(String key) => (daily[key] as List?)?.elementAt(index) as num?;
+      num? readNum(String key) =>
+          (daily[key] as List?)?.elementAt(index) as num?;
       int? readInt(String key) =>
           ((daily[key] as List?)?.elementAt(index) as num?)?.toInt();
       return {
@@ -1099,8 +1555,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return const [];
     }
 
-    final times = (hourly['time'] as List?)?.map((item) => '$item').toList() ??
-        const [];
+    final times =
+        (hourly['time'] as List?)?.map((item) => '$item').toList() ?? const [];
     if (times.isEmpty) {
       return const [];
     }
@@ -1135,9 +1591,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       final upcoming = allEntries.where((entry) {
         final time = entry['time'] as DateTime?;
         return time != null &&
-            !time.isBefore(
-              DateTime(now.year, now.month, now.day, now.hour),
-            );
+            !time.isBefore(DateTime(now.year, now.month, now.day, now.hour));
       }).toList();
       return (upcoming.isNotEmpty ? upcoming : allEntries).take(6).toList();
     }
@@ -1152,10 +1606,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return preferredEntries.take(6).toList();
     }
 
-    return allEntries.where((entry) {
-      final time = entry['time'] as DateTime?;
-      return time != null && time.hour % 3 == 0;
-    }).take(6).toList();
+    return allEntries
+        .where((entry) {
+          final time = entry['time'] as DateTime?;
+          return time != null && time.hour % 3 == 0;
+        })
+        .take(6)
+        .toList();
   }
 
   String get _weatherLocationLabel {
@@ -1217,10 +1674,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final timeText = _isAllDayTask(task)
         ? 'All day'
         : task.startDate == null
-            ? 'Any time'
-            : task.endDate != null
-            ? '${_formatTime(task.startDate!)} - ${_formatTime(task.endDate!)}'
-            : _formatTime(task.startDate!);
+        ? 'Any time'
+        : task.endDate != null
+        ? '${_formatTime(task.startDate!)} - ${_formatTime(task.endDate!)}'
+        : _formatTime(task.startDate!);
 
     return InkWell(
       borderRadius: BorderRadius.circular(18),
@@ -1231,9 +1688,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         decoration: BoxDecoration(
           color: accentColor.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: accentColor.withValues(alpha: 0.25),
-          ),
+          border: Border.all(color: accentColor.withValues(alpha: 0.25)),
         ),
         child: Row(
           children: [
@@ -1336,9 +1791,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         Expanded(
                           child: Text(
                             '${_monthName(_displayMonth.month)} ${_displayMonth.year}',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
                           ),
                         ),
                         IconButton(
@@ -1419,10 +1873,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         final base = DateTime(today.year, today.month);
                         unawaited(
                           _setDisplayedMonth(
-                            DateTime(
-                              base.year,
-                              base.month + (page - 1200),
-                            ),
+                            DateTime(base.year, base.month + (page - 1200)),
                           ),
                         );
                       },
@@ -1432,9 +1883,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           base.year,
                           base.month + (page - 1200),
                         );
-                        final firstDay = DateTime(pageMonth.year, pageMonth.month, 1).weekday % 7;
-                        final daysInMonth =
-                            DateTime(pageMonth.year, pageMonth.month + 1, 0).day;
+                        final firstDay =
+                            DateTime(
+                              pageMonth.year,
+                              pageMonth.month,
+                              1,
+                            ).weekday %
+                            7;
+                        final daysInMonth = DateTime(
+                          pageMonth.year,
+                          pageMonth.month + 1,
+                          0,
+                        ).day;
                         final totalCells = firstDay + daysInMonth;
                         final rows = (totalCells / 7).ceil();
 
@@ -1443,11 +1903,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           gridDelegate:
                               const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 7,
-                            childAspectRatio: 0.9,
-                            mainAxisSpacing: 2,
-                            crossAxisSpacing: 2,
-                          ),
+                                crossAxisCount: 7,
+                                childAspectRatio: 0.9,
+                                mainAxisSpacing: 2,
+                                crossAxisSpacing: 2,
+                              ),
                           itemCount: rows * 7,
                           itemBuilder: (context, index) {
                             final dayNum = index - firstDay + 1;
@@ -1462,10 +1922,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             return DayGrid(
                               day: dayNum,
                               isToday: DateUtils.isSameDay(date, today),
-                              isSelected: DateUtils.isSameDay(date, _selectedDate),
+                              isSelected: DateUtils.isSameDay(
+                                date,
+                                _selectedDate,
+                              ),
                               weatherData: _weatherData,
                               tasks: _visibleTasks
-                                  .where((t) => DateUtils.isSameDay(t.startDate, date))
+                                  .where(
+                                    (t) =>
+                                        DateUtils.isSameDay(t.startDate, date),
+                                  )
                                   .toList(),
                               onDayTap: (selectedDay) {
                                 setState(() {
@@ -1503,11 +1969,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                 DateUtils.isSameDay(_selectedDate, today)
                                     ? 'Today'
                                     : '${_weekdayName(_selectedDate.weekday)}, '
-                                      '${_monthName(_selectedDate.month)} '
-                                      '${_selectedDate.day}',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleSmall
+                                          '${_monthName(_selectedDate.month)} '
+                                          '${_selectedDate.day}',
+                                style: Theme.of(context).textTheme.titleSmall
                                     ?.copyWith(fontWeight: FontWeight.w700),
                               ),
                               if (selectedDayWeather != null)
@@ -1545,7 +2009,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       decoration: InputDecoration(
                         hintText: 'Quick add…',
                         hintStyle: TextStyle(color: AppTheme.textMuted),
-                        prefixIcon: const Icon(Icons.add_circle_outline, size: 18),
+                        prefixIcon: const Icon(
+                          Icons.add_circle_outline,
+                          size: 18,
+                        ),
                         isDense: true,
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12,
@@ -1629,8 +2096,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                               ? 0
                               : completedTasks.length / dayTasks.length,
                           strokeWidth: 3,
-                          backgroundColor:
-                              Colors.white.withValues(alpha: 0.12),
+                          backgroundColor: Colors.white.withValues(alpha: 0.12),
                           color: AppTheme.accentStrong,
                         ),
                         Text(
@@ -1650,9 +2116,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       children: [
                         Text(
                           isToday ? 'Today' : formattedDate,
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleSmall
+                          style: Theme.of(context).textTheme.titleSmall
                               ?.copyWith(fontWeight: FontWeight.w700),
                         ),
                         if (selectedDayWeather != null)
@@ -1670,7 +2134,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   ),
                   IconButton(
                     icon: const Icon(Icons.add_circle_outline),
-                    onPressed: () => _openTaskDialog(initialDate: _selectedDate),
+                    onPressed: () =>
+                        _openTaskDialog(initialDate: _selectedDate),
                     tooltip: 'Add item',
                   ),
                 ],
@@ -1779,8 +2244,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       child: _buildTaskPreviewRow(task),
                     );
                   },
-                  childCount:
-                      todoTasks.where((t) => t.startDate == null).length,
+                  childCount: todoTasks
+                      .where((t) => t.startDate == null)
+                      .length,
                 ),
               ),
             ),
@@ -1828,7 +2294,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   void _shiftSelectedDay(int delta) {
-    final nextDate = DateUtils.dateOnly(_selectedDate.add(Duration(days: delta)));
+    final nextDate = DateUtils.dateOnly(
+      _selectedDate.add(Duration(days: delta)),
+    );
     final today = DateTime.now();
     final monthOffset =
         (nextDate.year - today.year) * 12 + (nextDate.month - today.month);
@@ -1869,10 +2337,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final timeText = _isAllDayTask(task)
         ? 'All day'
         : task.startDate == null
-            ? 'Any time'
-            : task.endDate != null
-                ? '${_formatTime(task.startDate!)} - ${_formatTime(task.endDate!)}'
-                : _formatTime(task.startDate!);
+        ? 'Any time'
+        : task.endDate != null
+        ? '${_formatTime(task.startDate!)} - ${_formatTime(task.endDate!)}'
+        : _formatTime(task.startDate!);
 
     return InkWell(
       borderRadius: BorderRadius.circular(18),
@@ -1883,9 +2351,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         decoration: BoxDecoration(
           color: accentColor.withValues(alpha: task.isCompleted ? 0.07 : 0.12),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: accentColor.withValues(alpha: 0.25),
-          ),
+          border: Border.all(color: accentColor.withValues(alpha: 0.25)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2072,8 +2538,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         final normalizedSpread = spread < 1 ? 1.0 : spread;
         final startFraction = minForecastTemp == null || minValue == null
             ? 0.0
-            : ((minValue - minForecastTemp) / normalizedSpread)
-                .clamp(0.0, 1.0);
+            : ((minValue - minForecastTemp) / normalizedSpread).clamp(0.0, 1.0);
         final widthFraction = minValue == null || maxValue == null
             ? 0.45
             : ((maxValue - minValue) / normalizedSpread).clamp(0.18, 1.0);
@@ -2203,11 +2668,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF3F475A),
-            Color(0xFF2A82BF),
-            Color(0xFF244D86),
-          ],
+          colors: [Color(0xFF3F475A), Color(0xFF2A82BF), Color(0xFF244D86)],
         ),
         border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
         boxShadow: [
@@ -2352,15 +2813,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           final normalizedSpread = spread < 1 ? 1.0 : spread;
                           final startFraction =
                               minForecastTemp == null || minValue == null
-                                  ? 0.0
-                                  : ((minValue - minForecastTemp) /
-                                          normalizedSpread)
-                                      .clamp(0.0, 1.0);
+                              ? 0.0
+                              : ((minValue - minForecastTemp) /
+                                        normalizedSpread)
+                                    .clamp(0.0, 1.0);
                           final widthFraction =
                               minValue == null || maxValue == null
-                                  ? 0.45
-                                  : ((maxValue - minValue) / normalizedSpread)
-                                      .clamp(0.18, 1.0);
+                              ? 0.45
+                              : ((maxValue - minValue) / normalizedSpread)
+                                    .clamp(0.18, 1.0);
 
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 8),
@@ -2371,10 +2832,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                   child: Text(
                                     date == null
                                         ? '--'
-                                        : _weekdayName(date.weekday)
-                                            .substring(0, 3),
+                                        : _weekdayName(
+                                            date.weekday,
+                                          ).substring(0, 3),
                                     style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.92),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.92,
+                                      ),
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
@@ -2394,7 +2858,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                     minTemp != null ? '$minTemp°' : '--',
                                     textAlign: TextAlign.right,
                                     style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.68),
+                                      color: Colors.white.withValues(
+                                        alpha: 0.68,
+                                      ),
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
@@ -2568,11 +3034,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF3F475A),
-            Color(0xFF2A82BF),
-            Color(0xFF244D86),
-          ],
+          colors: [Color(0xFF3F475A), Color(0xFF2A82BF), Color(0xFF244D86)],
         ),
         border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
         boxShadow: [
@@ -2647,10 +3109,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
             _buildHourlyWeatherStrip(hourlyForecast),
             if (_weatherWidgetMode == _WeatherWidgetMode.futureAndHourly) ...[
               const SizedBox(height: 16),
-              Container(
-                height: 1,
-                color: Colors.white.withValues(alpha: 0.12),
-              ),
+              Container(height: 1, color: Colors.white.withValues(alpha: 0.12)),
               const SizedBox(height: 12),
               _buildFutureForecastList(
                 forecast,
@@ -2786,7 +3245,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   ),
                 ),
               ),
-            if (allDayTasks.isEmpty && timedTasks.isEmpty && completedTasks.isEmpty)
+            if (allDayTasks.isEmpty &&
+                timedTasks.isEmpty &&
+                completedTasks.isEmpty)
               SliverFillRemaining(
                 hasScrollBody: false,
                 child: Center(
@@ -2819,7 +3280,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate(
-                    (context, index) => _buildDayTaskTile(completedTasks[index]),
+                    (context, index) =>
+                        _buildDayTaskTile(completedTasks[index]),
                     childCount: completedTasks.length,
                   ),
                 ),
@@ -2842,7 +3304,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
     int maxHour = 18;
     for (final task in timedTasks) {
       if (task.startDate != null) {
-        minHour = task.startDate!.hour < minHour ? task.startDate!.hour : minHour;
+        minHour = task.startDate!.hour < minHour
+            ? task.startDate!.hour
+            : minHour;
         final endHour = task.endDate != null
             ? task.endDate!.hour + (task.endDate!.minute > 0 ? 1 : 0)
             : task.startDate!.hour + 1;
@@ -2879,22 +3343,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         h == 0
                             ? '12a'
                             : h < 12
-                                ? '${h}a'
-                                : h == 12
-                                    ? '12p'
-                                    : '${h - 12}p',
+                            ? '${h}a'
+                            : h == 12
+                            ? '12p'
+                            : '${h - 12}p',
                         style: TextStyle(
                           fontSize: 10,
                           color: AppTheme.textMuted,
                         ),
                       ),
                     ),
-                    Expanded(
-                      child: Divider(
-                        height: 1,
-                        color: AppTheme.border,
-                      ),
-                    ),
+                    Expanded(child: Divider(height: 1, color: AppTheme.border)),
                   ],
                 ),
               ),
@@ -2919,7 +3378,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
             for (final task in timedTasks)
               if (task.startDate != null)
                 Positioned(
-                  top: ((task.startDate!.hour + task.startDate!.minute / 60.0) -
+                  top:
+                      ((task.startDate!.hour + task.startDate!.minute / 60.0) -
                           minHour) *
                       hourHeight,
                   left: 48,
@@ -2943,12 +3403,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: _taskDisplayColor(task)
-                            .withValues(alpha: 0.20),
+                        color: _taskDisplayColor(task).withValues(alpha: 0.20),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                          color: _taskDisplayColor(task)
-                              .withValues(alpha: 0.50),
+                          color: _taskDisplayColor(
+                            task,
+                          ).withValues(alpha: 0.50),
                         ),
                       ),
                       child: Text(
@@ -3036,22 +3496,23 @@ class _CalendarScreenState extends State<CalendarScreen> {
               });
             },
             onCalendarChanged: () => _loadMonth(),
-            onCreateTaskFromSuggestion: (title, description, suggestedTime) async {
-              final startDate = _dateWithTime(_selectedDate, suggestedTime);
-              final nextSession = await _calendarService.saveTask(
-                session: _session,
-                title: title,
-                description: description,
-                startDate: startDate,
-                color: '',
-                group: '',
-                reminderEnabled: false,
-                reminderMinutesBefore: 30,
-                reminderDelivery: 'email',
-              );
-              _cacheSession(nextSession);
-              await _loadMonth();
-            },
+            onCreateTaskFromSuggestion:
+                (title, description, suggestedTime) async {
+                  final startDate = _dateWithTime(_selectedDate, suggestedTime);
+                  final nextSession = await _calendarService.saveTask(
+                    session: _session,
+                    title: title,
+                    description: description,
+                    startDate: startDate,
+                    color: '',
+                    group: '',
+                    reminderEnabled: false,
+                    reminderMinutesBefore: 30,
+                    reminderDelivery: 'email',
+                  );
+                  _cacheSession(nextSession);
+                  await _loadMonth();
+                },
           ),
         ],
       ),
@@ -3205,10 +3666,7 @@ class _WeatherRangeBar extends StatelessWidget {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(999),
                     gradient: const LinearGradient(
-                      colors: [
-                        Color(0xFF8EE1E9),
-                        Color(0xFFF7C949),
-                      ],
+                      colors: [Color(0xFF8EE1E9), Color(0xFFF7C949)],
                     ),
                   ),
                 ),

@@ -41,20 +41,36 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: surface.withValues(alpha: 0.9),
+        fillColor: Colors.white.withValues(alpha: 0.08),
         labelStyle: const TextStyle(color: textMuted),
         hintStyle: const TextStyle(color: textMuted),
+        floatingLabelStyle: const TextStyle(
+          color: textPrimary,
+          fontWeight: FontWeight.w600,
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 16,
+        ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: border),
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: border),
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: accent),
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide(color: accent.withValues(alpha: 0.75)),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide(color: danger.withValues(alpha: 0.85)),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(20),
+          borderSide: BorderSide(color: danger.withValues(alpha: 0.95)),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(

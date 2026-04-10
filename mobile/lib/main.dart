@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:app_links/app_links.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'firebase_options.dart';
 import 'screens/app_bootstrap_screen.dart';
 import 'screens/reset_password_screen.dart';
+import 'services/app_link_service.dart';
 import 'services/push_notification_service.dart';
 import 'theme/app_theme.dart';
 
@@ -45,14 +45,14 @@ class _MyAppState extends State<MyApp> {
   Future<void> _initializeServices() async {
     try {
       // Initialize optional native services after the first frame can render.
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform,
+        );
+      }
       await PushNotificationService.init();
     } catch (error) {
-      if (kDebugMode) {
-        debugPrint('[Main] Firebase init skipped: $error');
-      }
+      debugPrint('[Main] Firebase/push init failed: $error');
     }
   }
 
@@ -67,6 +67,10 @@ class _MyAppState extends State<MyApp> {
       final initialUri = await _appLinks.getInitialLink().timeout(
         const Duration(seconds: 2),
       );
+      final initialTaskId = _extractTaskId(initialUri);
+      if (initialTaskId != null) {
+        AppLinkService.handleTaskId(initialTaskId);
+      }
       if (!mounted) {
         return;
       }
@@ -109,6 +113,11 @@ class _MyAppState extends State<MyApp> {
   }
 
   void _handleIncomingLink(Uri uri) {
+    final taskId = _extractTaskId(uri);
+    if (taskId != null) {
+      AppLinkService.handleTaskId(taskId);
+    }
+
     final token = _extractResetToken(uri);
     if (token == null || token.isEmpty) {
       return;
@@ -139,6 +148,31 @@ class _MyAppState extends State<MyApp> {
     );
   }
 
+  String? _extractTaskId(Uri? uri) {
+    if (uri == null) {
+      return null;
+    }
+
+    final taskIdFromQuery = uri.queryParameters['taskId']?.trim();
+    if (taskIdFromQuery != null && taskIdFromQuery.isNotEmpty) {
+      return taskIdFromQuery;
+    }
+
+    final host = uri.host.toLowerCase();
+    final segments = uri.pathSegments;
+    if (host == 'task' && segments.isNotEmpty) {
+      final taskId = segments.first.trim();
+      return taskId.isEmpty ? null : taskId;
+    }
+
+    if (segments.length >= 2 && segments.first.toLowerCase() == 'task') {
+      final taskId = segments[1].trim();
+      return taskId.isEmpty ? null : taskId;
+    }
+
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -148,9 +182,7 @@ class _MyAppState extends State<MyApp> {
       theme: AppTheme.build(),
       home: _initialLinkResolved
           ? AppBootstrapScreen(initialResetToken: _initialResetToken)
-          : const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            ),
+          : const Scaffold(body: Center(child: CircularProgressIndicator())),
     );
   }
 }

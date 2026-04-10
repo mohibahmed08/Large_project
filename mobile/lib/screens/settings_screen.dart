@@ -65,9 +65,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final action = await showModalBottomSheet<_BiometricRecoveryAction>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => _BiometricRecoverySheet(
-        biometricLabel: _biometricLabel,
-      ),
+      builder: (context) =>
+          _BiometricRecoverySheet(biometricLabel: _biometricLabel),
     );
 
     if (!mounted) {
@@ -280,9 +279,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   String _reminderLabel(int minutes) {
@@ -329,14 +328,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         const SizedBox(height: 12),
                         TextField(
                           controller: _firstNameController,
-                          decoration:
-                              const InputDecoration(labelText: 'First name'),
+                          decoration: const InputDecoration(
+                            labelText: 'First name',
+                          ),
                         ),
                         const SizedBox(height: 12),
                         TextField(
                           controller: _lastNameController,
-                          decoration:
-                              const InputDecoration(labelText: 'Last name'),
+                          decoration: const InputDecoration(
+                            labelText: 'Last name',
+                          ),
                         ),
                         const SizedBox(height: 12),
                         InputDecorator(
@@ -387,7 +388,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           title: Text('Show $_biometricLabel on login'),
                           subtitle: Text(
                             _biometricAvailable
-                                ? 'Offer $_biometricLabel as a quick sign-in option when a saved session exists.'
+                                ? 'Offer $_biometricLabel on the signed-out login screen only. This does not control the app-unlock prompt above.'
                                 : 'Biometric sign in becomes available on supported phones.',
                             style: const TextStyle(color: AppTheme.textMuted),
                           ),
@@ -428,8 +429,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         DropdownButtonFormField<int>(
                           initialValue:
                               _reminderOptions.contains(_reminderMinutesBefore)
-                                  ? _reminderMinutesBefore
-                                  : 30,
+                              ? _reminderMinutesBefore
+                              : 30,
                           onChanged: _reminderEnabled
                               ? (value) {
                                   if (value == null) return;
@@ -452,7 +453,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         const SizedBox(height: 12),
                         DropdownButtonFormField<String>(
-                          initialValue: _reminderDeliveryOptions.contains(
+                          initialValue:
+                              _reminderDeliveryOptions.contains(
                                 _reminderDelivery,
                               )
                               ? _reminderDelivery
@@ -517,8 +519,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               child: const Text('Copy webcal'),
                             ),
                             OutlinedButton(
-                              onPressed:
-                                  _isRegenerating ? null : _regenerateFeed,
+                              onPressed: _isRegenerating
+                                  ? null
+                                  : _regenerateFeed,
                               child: Text(
                                 _isRegenerating
                                     ? 'Regenerating...'
@@ -547,9 +550,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 enum _BiometricRecoveryAction { retry, settings }
 
 class _BiometricRecoverySheet extends StatelessWidget {
-  const _BiometricRecoverySheet({
-    required this.biometricLabel,
-  });
+  const _BiometricRecoverySheet({required this.biometricLabel});
 
   final String biometricLabel;
 
@@ -578,19 +579,14 @@ class _BiometricRecoverySheet extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             'If you dismissed or denied the biometric prompt earlier, you can try again now. If the system keeps blocking it, open system settings and allow $biometricLabel for Calendar++ first.',
-            style: const TextStyle(
-              color: AppTheme.textMuted,
-              height: 1.45,
-            ),
+            style: const TextStyle(color: AppTheme.textMuted, height: 1.45),
           ),
           const SizedBox(height: 18),
           SizedBox(
             width: double.infinity,
             child: FilledButton(
-              onPressed: () => Navigator.pop(
-                context,
-                _BiometricRecoveryAction.retry,
-              ),
+              onPressed: () =>
+                  Navigator.pop(context, _BiometricRecoveryAction.retry),
               child: Text('Try $biometricLabel again'),
             ),
           ),
@@ -598,10 +594,8 @@ class _BiometricRecoverySheet extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton(
-              onPressed: () => Navigator.pop(
-                context,
-                _BiometricRecoveryAction.settings,
-              ),
+              onPressed: () =>
+                  Navigator.pop(context, _BiometricRecoveryAction.settings),
               child: const Text('Open system settings'),
             ),
           ),

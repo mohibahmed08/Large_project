@@ -1,7 +1,13 @@
+import 'dart:ui';
+
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+
+enum TaskEditorAction { save, delete }
 
 class TaskEditorResult {
   const TaskEditorResult({
+    required this.action,
     required this.title,
     required this.description,
     required this.location,
@@ -14,6 +20,7 @@ class TaskEditorResult {
     required this.reminderDelivery,
   });
 
+  final TaskEditorAction action;
   final String title;
   final String description;
   final String location;
@@ -99,8 +106,9 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
   void initState() {
     super.initState();
     _titleController = TextEditingController(text: widget.initialTitle);
-    _descriptionController =
-        TextEditingController(text: widget.initialDescription);
+    _descriptionController = TextEditingController(
+      text: widget.initialDescription,
+    );
     _locationController = TextEditingController(text: widget.initialLocation);
     _groupController = TextEditingController(text: widget.initialGroup);
     _startDate = widget.initialStartDate;
@@ -109,9 +117,8 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
         : widget.initialEndDate;
     _reminderEnabled = widget.initialReminderEnabled;
     _reminderMinutesBefore = widget.initialReminderMinutesBefore;
-    _reminderDelivery = _reminderDeliveryOptions.contains(
-          widget.initialReminderDelivery,
-        )
+    _reminderDelivery =
+        _reminderDeliveryOptions.contains(widget.initialReminderDelivery)
         ? widget.initialReminderDelivery
         : 'email';
     _selectedColor = _colorOptions.contains(widget.initialColor.toUpperCase())
@@ -132,11 +139,27 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
 
   Future<void> _pickDate({required bool isStart}) async {
     final current = isStart ? _startDate : _endDate;
-    final picked = await showDatePicker(
+    final picked = await showCupertinoModalPopup<DateTime>(
       context: context,
-      initialDate: current,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
+      builder: (sheetContext) {
+        var draft = current;
+        return _GlassDatePickerSheet(
+          initialValue: current,
+          minimumDate: DateTime(2020),
+          maximumDate: DateTime(2100),
+          onChanged: (value) {
+            draft = DateTime(
+              value.year,
+              value.month,
+              value.day,
+              current.hour,
+              current.minute,
+            );
+          },
+          onCancel: () => Navigator.pop(sheetContext),
+          onConfirm: () => Navigator.pop(sheetContext, draft),
+        );
+      },
     );
 
     if (picked == null || !mounted) {
@@ -144,31 +167,38 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
     }
 
     setState(() {
-      final updated = DateTime(
-        picked.year,
-        picked.month,
-        picked.day,
-        current.hour,
-        current.minute,
-      );
-
       if (isStart) {
-        _startDate = updated;
+        _startDate = picked;
         if (_endDate.isBefore(_startDate)) {
           _endDate = _startDate;
         }
       } else {
-        _endDate = updated.isBefore(_startDate) ? _startDate : updated;
+        _endDate = picked.isBefore(_startDate) ? _startDate : picked;
       }
     });
   }
 
   Future<void> _pickTime({required bool isStart}) async {
     final current = isStart ? _startDate : _endDate;
-    final picked = await showTimePicker(
+    final picked = await showCupertinoModalPopup<DateTime>(
       context: context,
-      initialTime: TimeOfDay.fromDateTime(current),
-      initialEntryMode: TimePickerEntryMode.input,
+      builder: (sheetContext) {
+        var draft = current;
+        return _GlassTimePickerSheet(
+          initialValue: current,
+          onChanged: (value) {
+            draft = DateTime(
+              current.year,
+              current.month,
+              current.day,
+              value.hour,
+              value.minute,
+            );
+          },
+          onCancel: () => Navigator.pop(sheetContext),
+          onConfirm: () => Navigator.pop(sheetContext, draft),
+        );
+      },
     );
 
     if (picked == null || !mounted) {
@@ -176,21 +206,13 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
     }
 
     setState(() {
-      final updated = DateTime(
-        current.year,
-        current.month,
-        current.day,
-        picked.hour,
-        picked.minute,
-      );
-
       if (isStart) {
-        _startDate = updated;
+        _startDate = picked;
         if (_endDate.isBefore(_startDate)) {
           _endDate = _startDate;
         }
       } else {
-        _endDate = updated.isBefore(_startDate) ? _startDate : updated;
+        _endDate = picked.isBefore(_startDate) ? _startDate : picked;
       }
     });
   }
@@ -216,10 +238,57 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
     Navigator.pop(
       context,
       TaskEditorResult(
+        action: TaskEditorAction.save,
         title: title,
         description: _descriptionController.text.trim(),
         location: _locationController.text.trim(),
         color: normalizedColor,
+        group: _groupController.text.trim(),
+        startDate: _startDate,
+        endDate: _endDate,
+        reminderEnabled: _reminderEnabled,
+        reminderMinutesBefore: _reminderMinutesBefore,
+        reminderDelivery: _reminderDelivery,
+      ),
+    );
+  }
+
+  Future<void> _delete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete item?'),
+        content: const Text(
+          'This will permanently remove this item from your calendar.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    Navigator.pop(
+      context,
+      TaskEditorResult(
+        action: TaskEditorAction.delete,
+        title: _titleController.text.trim(),
+        description: _descriptionController.text.trim(),
+        location: _locationController.text.trim(),
+        color: _normalizeColor(_customColorController.text),
         group: _groupController.text.trim(),
         startDate: _startDate,
         endDate: _endDate,
@@ -294,9 +363,7 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.isEditing ? 'Edit Task' : 'Add Task'),
-      ),
+      appBar: AppBar(title: Text(widget.isEditing ? 'Edit Task' : 'Add Task')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -333,11 +400,16 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
               DropdownButtonFormField<String>(
                 initialValue:
                     widget.existingGroups.contains(_groupController.text)
-                        ? _groupController.text
-                        : null,
+                    ? _groupController.text
+                    : null,
                 decoration: const InputDecoration(
                   labelText: 'Use an existing group',
                 ),
+                borderRadius: BorderRadius.circular(20),
+                dropdownColor: const Color(0xFF182235),
+                icon: const Icon(CupertinoIcons.chevron_down, size: 18),
+                menuMaxHeight: 280,
+                style: _dropdownTextStyle(context),
                 items: widget.existingGroups
                     .map(
                       (group) => DropdownMenuItem<String>(
@@ -354,11 +426,8 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
                 },
               ),
             ],
-            const SizedBox(height: 20),
-            Text(
-              'Task color',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            const SizedBox(height: 24),
+            Text('Task color', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 10),
             Wrap(
               spacing: 10,
@@ -388,25 +457,27 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
                       ),
                     ),
                     child: option.isEmpty
-                        ? const Icon(Icons.block, color: Colors.white70, size: 18)
+                        ? const Icon(
+                            Icons.block,
+                            color: Colors.white70,
+                            size: 18,
+                          )
                         : isSelected
-                            ? const Icon(Icons.check, color: Colors.white, size: 18)
-                            : null,
+                        ? const Icon(Icons.check, color: Colors.white, size: 18)
+                        : null,
                   ),
                 );
               }).toList(),
             ),
-            const SizedBox(height: 20),
-            Text(
-              'Start',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            const SizedBox(height: 24),
+            Text('Start', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton(
                     onPressed: () => _pickDate(isStart: true),
+                    style: _dateTimeButtonStyle(context),
                     child: Text(_formatDate(_startDate)),
                   ),
                 ),
@@ -414,22 +485,21 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: () => _pickTime(isStart: true),
+                    style: _dateTimeButtonStyle(context),
                     child: Text(_formatTime(_startDate)),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            Text(
-              'End',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            const SizedBox(height: 18),
+            Text('End', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton(
                     onPressed: () => _pickDate(isStart: false),
+                    style: _dateTimeButtonStyle(context),
                     child: Text(_formatDate(_endDate)),
                   ),
                 ),
@@ -437,35 +507,69 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: () => _pickTime(isStart: false),
+                    style: _dateTimeButtonStyle(context),
                     child: Text(_formatTime(_endDate)),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 20),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Reminder'),
-              subtitle: const Text(
-                'Send a reminder before this task starts.',
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
               ),
-              value: _reminderEnabled,
-              onChanged: (value) {
-                setState(() {
-                  _reminderEnabled = value;
-                });
-              },
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text(
+                          'Reminder',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Send a reminder before this task starts.',
+                          style: TextStyle(color: Colors.white70, height: 1.3),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Transform.scale(
+                    scale: 0.94,
+                    child: CupertinoSwitch(
+                      value: _reminderEnabled,
+                      activeTrackColor: const Color(0xFF60A5FA),
+                      onChanged: (value) {
+                        setState(() {
+                          _reminderEnabled = value;
+                        });
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
             if (_reminderEnabled) ...[
               const SizedBox(height: 8),
               DropdownButtonFormField<int>(
-                initialValue:
-                    _reminderOptions.contains(_reminderMinutesBefore)
-                        ? _reminderMinutesBefore
-                        : 30,
-                decoration: const InputDecoration(
-                  labelText: 'Reminder timing',
-                ),
+                initialValue: _reminderOptions.contains(_reminderMinutesBefore)
+                    ? _reminderMinutesBefore
+                    : 30,
+                decoration: const InputDecoration(labelText: 'Reminder timing'),
+                borderRadius: BorderRadius.circular(20),
+                dropdownColor: const Color(0xFF182235),
+                icon: const Icon(CupertinoIcons.chevron_down, size: 18),
+                menuMaxHeight: 280,
+                style: _dropdownTextStyle(context),
                 items: _reminderOptions
                     .map(
                       (minutes) => DropdownMenuItem<int>(
@@ -489,6 +593,11 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Reminder delivery',
                 ),
+                borderRadius: BorderRadius.circular(20),
+                dropdownColor: const Color(0xFF182235),
+                icon: const Icon(CupertinoIcons.chevron_down, size: 18),
+                menuMaxHeight: 280,
+                style: _dropdownTextStyle(context),
                 items: _reminderDeliveryOptions
                     .map(
                       (value) => DropdownMenuItem<String>(
@@ -525,7 +634,240 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
               onPressed: _save,
               child: Text(widget.isEditing ? 'Save Changes' : 'Create Task'),
             ),
+            if (widget.isEditing) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton.icon(
+                  onPressed: _delete,
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Delete'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFFF87171),
+                  ),
+                ),
+              ),
+            ],
           ],
+        ),
+      ),
+    );
+  }
+
+  ButtonStyle _dateTimeButtonStyle(BuildContext context) {
+    return OutlinedButton.styleFrom(
+      backgroundColor: Colors.white.withValues(alpha: 0.08),
+      foregroundColor: Theme.of(context).colorScheme.onSurface,
+      side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+      textStyle: const TextStyle(fontWeight: FontWeight.w600),
+    );
+  }
+
+  TextStyle _dropdownTextStyle(BuildContext context) {
+    return Theme.of(context).textTheme.bodyLarge!.copyWith(
+      color: Theme.of(context).colorScheme.onSurface,
+      fontWeight: FontWeight.w600,
+    );
+  }
+}
+
+class _GlassTimePickerSheet extends StatelessWidget {
+  const _GlassTimePickerSheet({
+    required this.initialValue,
+    required this.onChanged,
+    required this.onCancel,
+    required this.onConfirm,
+  });
+
+  final DateTime initialValue;
+  final ValueChanged<DateTime> onChanged;
+  final VoidCallback onCancel;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(28),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+          child: Container(
+            height: 320,
+            decoration: BoxDecoration(
+              color: const Color(0xFF101828).withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10, bottom: 2),
+                    child: Container(
+                      width: 38,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.22),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+                    child: Row(
+                      children: [
+                        CupertinoButton(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          onPressed: onCancel,
+                          child: const Text(
+                            'Cancel',
+                            style: TextStyle(decoration: TextDecoration.none),
+                          ),
+                        ),
+                        const Spacer(),
+                        CupertinoButton(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          onPressed: onConfirm,
+                          child: const Text(
+                            'Done',
+                            style: TextStyle(decoration: TextDecoration.none),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Expanded(
+                    child: CupertinoTheme(
+                      data: const CupertinoThemeData(
+                        brightness: Brightness.dark,
+                        primaryColor: Color(0xFF60A5FA),
+                        textTheme: CupertinoTextThemeData(
+                          dateTimePickerTextStyle: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                          ),
+                        ),
+                      ),
+                      child: CupertinoDatePicker(
+                        mode: CupertinoDatePickerMode.time,
+                        initialDateTime: initialValue,
+                        use24hFormat: false,
+                        onDateTimeChanged: onChanged,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GlassDatePickerSheet extends StatelessWidget {
+  const _GlassDatePickerSheet({
+    required this.initialValue,
+    required this.minimumDate,
+    required this.maximumDate,
+    required this.onChanged,
+    required this.onCancel,
+    required this.onConfirm,
+  });
+
+  final DateTime initialValue;
+  final DateTime minimumDate;
+  final DateTime maximumDate;
+  final ValueChanged<DateTime> onChanged;
+  final VoidCallback onCancel;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(28),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+          child: Container(
+            height: 320,
+            decoration: BoxDecoration(
+              color: const Color(0xFF101828).withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10, bottom: 2),
+                    child: Container(
+                      width: 38,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.22),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+                    child: Row(
+                      children: [
+                        CupertinoButton(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          onPressed: onCancel,
+                          child: const Text(
+                            'Cancel',
+                            style: TextStyle(decoration: TextDecoration.none),
+                          ),
+                        ),
+                        const Spacer(),
+                        CupertinoButton(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          onPressed: onConfirm,
+                          child: const Text(
+                            'Done',
+                            style: TextStyle(decoration: TextDecoration.none),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Expanded(
+                    child: CupertinoTheme(
+                      data: const CupertinoThemeData(
+                        brightness: Brightness.dark,
+                        primaryColor: Color(0xFF60A5FA),
+                        textTheme: CupertinoTextThemeData(
+                          dateTimePickerTextStyle: TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                          ),
+                        ),
+                      ),
+                      child: CupertinoDatePicker(
+                        mode: CupertinoDatePickerMode.date,
+                        initialDateTime: initialValue,
+                        minimumDate: minimumDate,
+                        maximumDate: maximumDate,
+                        onDateTimeChanged: onChanged,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
