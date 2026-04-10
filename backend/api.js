@@ -306,6 +306,34 @@ async function streamOpenAI(apiKey, input, options = {}, handlers = {})
     });
 }
 
+async function streamOpenAIToText(apiKey, input, options = {}, handlers = {})
+{
+    let text = '';
+    let completedPayload = null;
+
+    await streamOpenAI(apiKey, input, options, {
+        onDelta(delta)
+        {
+            text += delta;
+            handlers.onDelta?.(delta);
+        },
+        onDone(payload)
+        {
+            completedPayload = payload;
+            handlers.onDone?.(payload);
+        },
+        onError(payload)
+        {
+            handlers.onError?.(payload);
+        },
+    });
+
+    return {
+        text: text.trim(),
+        response: completedPayload,
+    };
+}
+
 async function sendWithResend(to, subject, html)
 {
     const resendApiKey = process.env.RESEND_API_KEY;
@@ -700,6 +728,177 @@ function renderOpenResetPage({ appLink, webLink })
     </script>
   </body>
 </html>`;
+}
+
+function renderVerificationExpiredPage({ loginUrl, warningIconUrl, mascotUrl })
+{
+    return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Verification link expired</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background:
+          radial-gradient(circle at top left, rgba(96, 165, 250, 0.18), transparent 34%),
+          linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+        color: #0f172a;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+      .panel {
+        width: min(920px, 100%);
+        background: rgba(255, 255, 255, 0.94);
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 30px;
+        box-shadow: 0 25px 60px rgba(15, 23, 42, 0.16);
+        overflow: hidden;
+      }
+      .content {
+        display: grid;
+        grid-template-columns: minmax(220px, 280px) 1fr;
+        gap: 28px;
+        align-items: center;
+        padding: 38px;
+      }
+      .icon-wrap {
+        display: grid;
+        place-items: center;
+      }
+      .icon-wrap img {
+        width: min(240px, 100%);
+        height: auto;
+        display: block;
+      }
+      .copy h1 {
+        margin: 0 0 12px;
+        font-size: clamp(32px, 4vw, 48px);
+        line-height: 1.05;
+      }
+      .copy p {
+        margin: 0;
+        font-size: clamp(18px, 2.2vw, 22px);
+        line-height: 1.5;
+        color: #475569;
+        font-style: italic;
+      }
+      .mascot {
+        display: block;
+        width: min(360px, 100%);
+        height: auto;
+        margin: 28px auto 0;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 14px;
+        margin-top: 26px;
+      }
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 14px 22px;
+        border-radius: 16px;
+        background: linear-gradient(135deg, #2563eb, #1d4ed8);
+        color: #ffffff;
+        font-size: 16px;
+        font-weight: 700;
+        text-decoration: none;
+        box-shadow: 0 12px 24px rgba(37, 99, 235, 0.24);
+      }
+      .countdown {
+        font-size: 14px;
+        color: #64748b;
+      }
+      @media (max-width: 760px) {
+        .content {
+          grid-template-columns: 1fr;
+          text-align: center;
+          padding: 28px 22px;
+        }
+        .actions {
+          justify-content: center;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="panel">
+      <section class="content">
+        <div class="icon-wrap">
+          <img src="${warningIconUrl}" alt="Warning icon">
+        </div>
+        <div class="copy">
+          <h1>This verification link is no longer valid!</h1>
+          <p>Your account may already be verified, or the link may have expired. Redirecting to login in <span id="countdown">5</span> seconds.</p>
+          <img class="mascot" src="${mascotUrl}" alt="Calendar++ verification expired mascot">
+          <div class="actions">
+            <a class="button" href="${loginUrl}">Back to Login Now</a>
+            <span class="countdown">You can also wait for the automatic redirect.</span>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script>
+      const loginUrl = ${JSON.stringify(loginUrl)};
+      const countdownEl = document.getElementById('countdown');
+      let secondsRemaining = 5;
+
+      const interval = window.setInterval(() => {
+        secondsRemaining -= 1;
+        if (secondsRemaining <= 0) {
+          window.clearInterval(interval);
+          window.location.replace(loginUrl);
+          return;
+        }
+
+        countdownEl.textContent = String(secondsRemaining);
+      }, 1000);
+
+      window.setTimeout(() => {
+        window.location.replace(loginUrl);
+      }, 5000);
+    </script>
+  </body>
+</html>`;
+}
+
+async function resendVerificationEmail(db, user)
+{
+    const verifyToken = crypto.randomBytes(32).toString('hex');
+    const verifyTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    await db.collection('users').updateOne(
+        { _id: user._id },
+        {
+            $set: {
+                verifyToken,
+                verifyTokenExpires,
+            },
+        }
+    );
+
+    const serverUrl = trimTrailingSlash(process.env.SERVER_URL || 'http://localhost:5000');
+    const verifyLink = `${serverUrl}/api/verifyemail?token=${verifyToken}`;
+
+    await sendWithResend(
+        user.email,
+        'Verify your Calendar++ email',
+        verificationEmailHtml(verifyLink)
+    );
 }
 
 function buildSettingsPayload(user)
@@ -1798,6 +1997,37 @@ async function resolveAssistantTaskReference(db, userId, taskReference)
     throw new Error('Task not found. Search first or mention the exact title plus a date/group so I can identify it.');
 }
 
+async function resolveAssistantTaskReferences(db, userId, taskReferences)
+{
+    if(!Array.isArray(taskReferences) || taskReferences.length === 0)
+    {
+        throw new Error('taskIds must contain at least one task reference');
+    }
+
+    const resolvedTasks = [];
+    const seenIds = new Set();
+
+    for(const taskReference of taskReferences)
+    {
+        const resolvedTask = await resolveAssistantTaskReference(db, userId, taskReference);
+        const taskId = String(resolvedTask._id);
+        if(seenIds.has(taskId))
+        {
+            continue;
+        }
+
+        seenIds.add(taskId);
+        resolvedTasks.push(resolvedTask);
+    }
+
+    if(resolvedTasks.length === 0)
+    {
+        throw new Error('No matching tasks were found');
+    }
+
+    return resolvedTasks;
+}
+
 async function getUserCalendarSubscriptions(db, userId)
 {
     const user = await db.collection('users').findOne(
@@ -2034,6 +2264,34 @@ function buildCalendarAssistantTools()
         },
         {
             type: 'function',
+            name: 'bulk_update_calendar_tasks',
+            description: 'Update multiple existing calendar tasks for the current user with one shared change set. Prefer exact ids from tool results. If uncertain, search first and then pass the matched ids.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    taskIds: {
+                        type: 'array',
+                        description: 'List of exact task ids or unique task references to update.',
+                        items: { type: 'string' },
+                    },
+                    title: { type: 'string', description: 'Optional shared title to apply to every matched task.' },
+                    description: { type: 'string' },
+                    location: { type: 'string' },
+                    dueDate: { type: 'string', description: 'Optional shared ISO datetime for the new start time of every matched task.' },
+                    endDate: { type: 'string', description: 'Optional shared ISO datetime for the new end time of every matched task.' },
+                    color: { type: 'string', description: 'Optional hex color such as #60A5FA.' },
+                    group: { type: 'string', description: 'Optional user-facing group label such as School or Work.' },
+                    isCompleted: { type: 'boolean' },
+                    reminderEnabled: { type: 'boolean', description: 'Whether reminders are enabled for every matched task.' },
+                    reminderMinutesBefore: { type: 'number', description: 'Minutes before each task to send the reminder.' },
+                    reminderDelivery: { type: 'string', description: 'Reminder channel such as email, push, or both.' },
+                },
+                required: ['taskIds'],
+                additionalProperties: false,
+            },
+        },
+        {
+            type: 'function',
             name: 'delete_calendar_task',
             description: 'Delete an existing calendar task or event for the current user. Prefer an exact id from tool results, but a unique title or other unique reference can also work.',
             parameters: {
@@ -2042,6 +2300,23 @@ function buildCalendarAssistantTools()
                     taskId: { type: 'string', description: 'Prefer the exact task id from tool results, but a unique title or reference can also work. If uncertain, search first.' },
                 },
                 required: ['taskId'],
+                additionalProperties: false,
+            },
+        },
+        {
+            type: 'function',
+            name: 'bulk_delete_calendar_tasks',
+            description: 'Delete multiple existing calendar tasks or events for the current user. Prefer exact ids from tool results. If uncertain, search first and then pass the matched ids.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    taskIds: {
+                        type: 'array',
+                        description: 'List of exact task ids or unique task references to delete.',
+                        items: { type: 'string' },
+                    },
+                },
+                required: ['taskIds'],
                 additionalProperties: false,
             },
         },
@@ -2257,6 +2532,80 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
         };
     }
 
+    if(toolName === 'bulk_update_calendar_tasks')
+    {
+        const existingTasks = await resolveAssistantTaskReferences(db, userId, args.taskIds);
+        const updates = {};
+        if(args.title !== undefined) updates.title = String(args.title || '').trim();
+        if(args.description !== undefined) updates.description = String(args.description || '').trim();
+        if(args.location !== undefined) updates.location = String(args.location || '').trim();
+        if(args.color !== undefined) updates.color = normalizeTaskColor(args.color);
+        if(args.group !== undefined) updates.group = normalizeTaskGroup(args.group);
+        if(args.dueDate !== undefined)
+        {
+            const dueDate = parseDateTimeWithOffset(args.dueDate, utcOffsetMinutes, timeZone);
+            if(Number.isNaN(dueDate.getTime())) throw new Error('dueDate must be a valid ISO datetime');
+            updates.dueDate = dueDate;
+        }
+        if(args.endDate !== undefined)
+        {
+            const endDate = parseDateTimeWithOffset(args.endDate, utcOffsetMinutes, timeZone);
+            if(Number.isNaN(endDate.getTime())) throw new Error('endDate must be a valid ISO datetime');
+            updates.endDate = endDate;
+        }
+        if(args.isCompleted !== undefined) updates.isCompleted = args.isCompleted === true;
+        if(
+            args.dueDate !== undefined ||
+            args.endDate !== undefined ||
+            args.reminderEnabled !== undefined ||
+            args.reminderMinutesBefore !== undefined ||
+            args.reminderDelivery !== undefined
+        )
+        {
+            const reminderBaseTask = {
+                ...existingTasks[0],
+                ...updates,
+            };
+            Object.assign(updates, buildReminderFields(reminderBaseTask, {
+                reminderEnabled: args.reminderEnabled,
+                reminderMinutesBefore: args.reminderMinutesBefore,
+                reminderDelivery: args.reminderDelivery,
+            }, existingTasks[0]));
+        }
+
+        if(Object.keys(updates).length === 0)
+        {
+            return {
+                updated: false,
+                count: existingTasks.length,
+                tasks: existingTasks.map(normalizeTaskForTool),
+            };
+        }
+
+        const taskObjectIds = existingTasks.map(task => task._id);
+        await db.collection('tasks').updateMany(
+            {
+                _id: { $in: taskObjectIds },
+                user_id: new ObjectId(userId),
+            },
+            { $set: updates }
+        );
+
+        const updatedTasks = await db.collection('tasks')
+            .find({
+                _id: { $in: taskObjectIds },
+                user_id: new ObjectId(userId),
+            })
+            .sort({ dueDate: 1, _id: 1 })
+            .toArray();
+
+        return {
+            updated: true,
+            count: updatedTasks.length,
+            tasks: updatedTasks.map(normalizeTaskForTool),
+        };
+    }
+
     if(toolName === 'delete_calendar_task')
     {
         const existing = await resolveAssistantTaskReference(db, userId, args.taskId);
@@ -2273,7 +2622,49 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
         };
     }
 
+    if(toolName === 'bulk_delete_calendar_tasks')
+    {
+        const existingTasks = await resolveAssistantTaskReferences(db, userId, args.taskIds);
+        const taskObjectIds = existingTasks.map(task => task._id);
+
+        await db.collection('tasks').deleteMany({
+            _id: { $in: taskObjectIds },
+            user_id: new ObjectId(userId),
+        });
+
+        return {
+            deleted: true,
+            count: existingTasks.length,
+            tasks: existingTasks.map(normalizeTaskForTool),
+        };
+    }
+
     throw new Error(`Unsupported tool: ${toolName}`);
+}
+
+function describeAssistantTool(toolName)
+{
+    switch(toolName)
+    {
+        case 'search_calendar_tasks':
+            return 'Searching your calendar';
+        case 'list_calendar_tasks_in_range':
+            return 'Checking your schedule';
+        case 'create_calendar_task':
+            return 'Adding to your calendar';
+        case 'update_calendar_task':
+            return 'Updating your calendar';
+        case 'create_recurring_calendar_tasks':
+            return 'Creating recurring events';
+        case 'bulk_update_calendar_tasks':
+            return 'Updating multiple calendar items';
+        case 'delete_calendar_task':
+            return 'Removing a calendar item';
+        case 'bulk_delete_calendar_tasks':
+            return 'Removing multiple calendar items';
+        default:
+            return 'Working on your request';
+    }
 }
 
 async function runCalendarAssistant(apiKey, db, userId, messages, context)
@@ -2283,6 +2674,7 @@ async function runCalendarAssistant(apiKey, db, userId, messages, context)
     let calendarChanged = false;
     const seenToolCalls = new Set();
     const useWebSearch = shouldUseAssistantWebSearch(messages);
+    const handlers = context.handlers || {};
 
     for(let iteration = 0; iteration < 6; iteration += 1)
     {
@@ -2305,6 +2697,7 @@ async function runCalendarAssistant(apiKey, db, userId, messages, context)
             return {
                 reply: extractResponseText(response),
                 calendarChanged,
+                streamedFinal: false,
             };
         }
 
@@ -2322,21 +2715,30 @@ async function runCalendarAssistant(apiKey, db, userId, messages, context)
 
         if(repeatedCalls.length === functionCalls.length)
         {
-            const reply = await callOpenAI(
-                apiKey,
-                input,
-                {
-                    instructions: `${context.systemPrompt}
+            const finalOptions = {
+                instructions: `${context.systemPrompt}
 
 Use the existing tool results already in the conversation and answer the user directly now.
 Do not call more tools unless the user asks for a new action.`,
-                    useWebSearch,
-                }
-            );
+                useWebSearch: false,
+            };
+
+            if(context.streamFinal)
+            {
+                const streamed = await streamOpenAIToText(apiKey, input, finalOptions, handlers);
+                return {
+                    reply: streamed.text,
+                    calendarChanged,
+                    streamedFinal: true,
+                };
+            }
+
+            const reply = await callOpenAI(apiKey, input, finalOptions);
 
             return {
                 reply,
                 calendarChanged,
+                streamedFinal: false,
             };
         }
 
@@ -2347,6 +2749,7 @@ Do not call more tools unless the user asks for a new action.`,
             let output;
             try
             {
+                handlers.onStatus?.(describeAssistantTool(toolCall.name));
                 output = await executeCalendarAssistantTool(
                     db,
                     userId,
@@ -2361,7 +2764,9 @@ Do not call more tools unless the user asks for a new action.`,
                         toolCall.name === 'create_calendar_task' ||
                         toolCall.name === 'create_recurring_calendar_tasks' ||
                         toolCall.name === 'update_calendar_task' ||
-                        toolCall.name === 'delete_calendar_task'
+                        toolCall.name === 'delete_calendar_task' ||
+                        toolCall.name === 'bulk_update_calendar_tasks' ||
+                        toolCall.name === 'bulk_delete_calendar_tasks'
                     ) &&
                     !output?.error
                 )
@@ -2389,21 +2794,30 @@ Do not call more tools unless the user asks for a new action.`,
         });
     }
 
-    const reply = await callOpenAI(
-        apiKey,
-        input,
-        {
-            instructions: `${context.systemPrompt}
+    const finalOptions = {
+        instructions: `${context.systemPrompt}
 
 Answer the user directly using the tool results already gathered.
 Do not call any more tools in this response.`,
-            useWebSearch,
-        }
-    );
+        useWebSearch: false,
+    };
+
+    if(context.streamFinal)
+    {
+        const streamed = await streamOpenAIToText(apiKey, input, finalOptions, handlers);
+        return {
+            reply: streamed.text,
+            calendarChanged,
+            streamedFinal: true,
+        };
+    }
+
+    const reply = await callOpenAI(apiKey, input, finalOptions);
 
     return {
         reply,
         calendarChanged,
+        streamedFinal: false,
     };
 }
 
@@ -2414,6 +2828,8 @@ exports.setApp = function(app, client)
         'verification-mascot.png': path.resolve(__dirname, '..', 'VerificationMascot.png'),
         'reminder-mascot.png': path.resolve(__dirname, '..', 'ReminderMascot.png'),
         'reset-password-mascot.png': path.resolve(__dirname, '..', 'ResetPassword.png'),
+        'verification-expired.png': path.resolve(__dirname, '..', 'VerificationExpired.png'),
+        'warning-icon.png': path.resolve(__dirname, '..', 'WarningIcon.png'),
     });
 
     app.get('/api/email-assets/:assetName', (req, res) =>
@@ -2453,7 +2869,10 @@ exports.setApp = function(app, client)
 
             if(!user.isVerified)
             {
-                res.status(403).json({ error: 'Please verify your email before logging in' });
+                await resendVerificationEmail(db, user);
+                res.status(403).json({
+                    error: 'Please verify your email before logging in. We sent a fresh verification link to your inbox.',
+                });
                 return;
             }
 
@@ -2478,12 +2897,16 @@ exports.setApp = function(app, client)
 
             if(existingUser)
             {
+                if(!existingUser.isVerified)
+                {
+                    await resendVerificationEmail(db, existingUser);
+                    res.status(200).json({ error: '', verificationResent: true });
+                    return;
+                }
+
                 res.status(409).json({ error: 'An account with that email already exists' });
                 return;
             }
-
-            const verifyToken        = crypto.randomBytes(32).toString('hex');
-            const verifyTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
             const newUser = {
                 firstName,
@@ -2491,18 +2914,13 @@ exports.setApp = function(app, client)
                 email,
                 password: hashPassword(password),
                 isVerified: false,
-                verifyToken,
-                verifyTokenExpires,
             };
 
-            await db.collection('users').insertOne(newUser);
-
-            const verifyLink = `${process.env.SERVER_URL}/api/verifyemail?token=${verifyToken}`;
-            await sendWithResend(
-                email,
-                'Verify your Calendar++ email ✅',
-                verificationEmailHtml(verifyLink)
-            );
+            const insertResult = await db.collection('users').insertOne(newUser);
+            await resendVerificationEmail(db, {
+                ...newUser,
+                _id: insertResult.insertedId,
+            });
 
             res.status(201).json({ error: '' });
         }
@@ -2534,7 +2952,18 @@ exports.setApp = function(app, client)
 
             if(!user)
             {
-                res.status(400).json({ error: 'Invalid or expired verification link' });
+                const clientOrigin = trimTrailingSlash(process.env.CLIENT_ORIGIN || 'http://localhost:3000');
+                const serverUrl = trimTrailingSlash(process.env.SERVER_URL || 'http://localhost:5000');
+                res
+                    .status(400)
+                    .type('html')
+                    .send(
+                        renderVerificationExpiredPage({
+                            loginUrl: `${clientOrigin}/`,
+                            warningIconUrl: `${serverUrl}/api/email-assets/warning-icon.png`,
+                            mascotUrl: `${serverUrl}/api/email-assets/verification-expired.png`,
+                        })
+                    );
                 return;
             }
 
@@ -3995,13 +4424,23 @@ Help the user manage their schedule, suggest events, answer questions about thei
                     prefixMessages: [{ role: 'user', content: locationContext }],
                     utcOffsetMinutes,
                     timeZone,
+                    streamFinal: true,
+                    handlers: {
+                        onStatus(status)
+                        {
+                            writeEvent({ type: 'status', status });
+                        },
+                        onDelta(delta)
+                        {
+                            writeEvent({ type: 'delta', delta });
+                        },
+                    },
                 }
             );
 
-            const chunks = assistantResult.reply.match(/.{1,28}(\s|$)|.{1,28}/g) || [assistantResult.reply];
-            for(const chunk of chunks)
+            if(!assistantResult.streamedFinal && assistantResult.reply)
             {
-                writeEvent({ type: 'delta', delta: chunk });
+                writeEvent({ type: 'delta', delta: assistantResult.reply });
             }
 
             writeEvent({
