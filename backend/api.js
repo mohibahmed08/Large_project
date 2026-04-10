@@ -658,7 +658,6 @@ async function sendFcmPush(deviceToken, title, body, data = {})
 
         const result = await messaging.send({
             token: deviceToken,
-            notification: { title, body },
             data: normalizedData,
             android: {
                 priority: 'high',
@@ -674,6 +673,7 @@ async function sendFcmPush(deviceToken, title, body, data = {})
                     },
                 },
             },
+            notification: { title, body },
         });
         pushDebug('FCM push response received.', {
             messageId: result,
@@ -1965,8 +1965,33 @@ async function sendTaskReminderEmail(user, task)
 
     if(shouldSendPush && user.deviceToken)
     {
-        const pushTitle = `⏰ ${task.title || 'Upcoming task'}`;
-        const pushBody  = startText + (endText ? ` → ${endText}` : '');
+        const cleanTaskTitle = String(task.title || '').trim() || 'Upcoming task';
+        const reminderMinutesBefore = Number.isFinite(Number(task?.reminderMinutesBefore))
+            ? Math.max(0, Math.round(Number(task.reminderMinutesBefore)))
+            : 30;
+        const minutesUntilStart = startDate
+            ? Math.floor((startDate.getTime() - Date.now()) / (60 * 1000))
+            : null;
+        let pushBody;
+
+        if(minutesUntilStart !== null && (minutesUntilStart <= 1 || reminderMinutesBefore <= 0))
+        {
+            pushBody = `${cleanTaskTitle} is starting now`;
+        }
+        else if(reminderMinutesBefore === 60)
+        {
+            pushBody = `${cleanTaskTitle} begins in 1 hour`;
+        }
+        else if(reminderMinutesBefore > 60 && reminderMinutesBefore % 60 === 0)
+        {
+            pushBody = `${cleanTaskTitle} begins in ${reminderMinutesBefore / 60} hours`;
+        }
+        else
+        {
+            pushBody = `${cleanTaskTitle} begins in ${reminderMinutesBefore} min`;
+        }
+
+        const pushTitle = 'Calendar++ Reminder';
         pushDebug('Attempting push reminder send.', {
             taskId: String(task?._id || ''),
             tokenPreview: `${String(user.deviceToken).slice(0, 12)}...`,
