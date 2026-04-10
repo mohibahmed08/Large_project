@@ -3,6 +3,7 @@ import JSZip from 'jszip';
 
 import './Calendar.css';
 import CalendarMonth from './CalendarMonth.jsx';
+import { DEFAULT_WEATHER_LOCATION, requestWeatherLocation } from './weatherLocation.js';
 
 import ClearSky from './weather_backgrounds/ClearSky.jpg';
 import Cloudy from './weather_backgrounds/Cloudy.jpg';
@@ -671,26 +672,13 @@ function Calendar({
         const { startDate, endDate } = dayWeatherRange();
 
         const loadWeather = async () => {
-            if (!navigator.geolocation) {
-                setDayModalState((prev) => ({
-                    ...prev,
-                    weather: [],
-                    weatherLoading: false,
-                }));
-                return;
-            }
-
             setDayModalState((prev) => ({ ...prev, weatherLoading: true }));
 
             try {
-                const coords = weatherCoordsRef.current || await new Promise((resolve, reject) => {
-                    navigator.geolocation.getCurrentPosition(
-                        ({ coords: nextCoords }) => resolve(nextCoords),
-                        reject,
-                        { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
-                    );
-                });
-                weatherCoordsRef.current = coords;
+                const coords = weatherCoordsRef.current || await requestWeatherLocation();
+                if (!coords.isFallback) {
+                    weatherCoordsRef.current = coords;
+                }
 
                 const cacheKey = [
                     Number(coords.latitude).toFixed(2),
@@ -734,12 +722,35 @@ function Calendar({
                     }));
                 }
             } catch {
-                if (!ignore) {
-                    setDayModalState((prev) => ({
-                        ...prev,
-                        weather: [],
-                        weatherLoading: false,
-                    }));
+                try {
+                    const fallbackResponse = await fetch(
+                        `https://api.open-meteo.com/v1/forecast?latitude=${DEFAULT_WEATHER_LOCATION.latitude}&longitude=${DEFAULT_WEATHER_LOCATION.longitude}&daily=weathercode,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&start_date=${startDate}&end_date=${endDate}`
+                    );
+                    const fallbackData = await fallbackResponse.json();
+                    if (!fallbackResponse.ok) {
+                        throw new Error('Could not load fallback weather.');
+                    }
+
+                    if (!ignore) {
+                        setDayModalState((prev) => ({
+                            ...prev,
+                            weather: (fallbackData.daily?.time || []).map((day, index) => ({
+                                date: day,
+                                code: fallbackData.daily.weathercode?.[index],
+                                max: fallbackData.daily.temperature_2m_max?.[index],
+                                min: fallbackData.daily.temperature_2m_min?.[index],
+                            })),
+                            weatherLoading: false,
+                        }));
+                    }
+                } catch {
+                    if (!ignore) {
+                        setDayModalState((prev) => ({
+                            ...prev,
+                            weather: [],
+                            weatherLoading: false,
+                        }));
+                    }
                 }
             }
         };

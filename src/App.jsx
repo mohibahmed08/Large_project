@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 
 import Calendar from './Calendar.jsx';
 import Login, { ResetPasswordPage } from './login.jsx';
+import { DEFAULT_WEATHER_LOCATION, requestWeatherLocation } from './weatherLocation.js';
 
 import leftOpenIcon from './icons/panel-left-open.svg';
 import leftCloseIcon from './icons/panel-left-close.svg';
@@ -278,7 +279,9 @@ function App() {
     const [aiMode, setAiMode] = useState('chat');
     const [location, setLocation] = useState(null);
     const [isLocating, setIsLocating] = useState(false);
-    const [locationNotice, setLocationNotice] = useState('Location is off, so the AI will use calendar context only.');
+    const [locationNotice, setLocationNotice] = useState(
+        `Location is off, so weather defaults to ${DEFAULT_WEATHER_LOCATION.label}.`
+    );
     const [messages, setMessages] = useState([
         { role: 'assistant', text: 'Ask about your day or grab event suggestions.' },
     ]);
@@ -584,10 +587,7 @@ function App() {
     };
 
     const ensureLocation = async () => {
-        if (location || isLocating || !window.navigator.geolocation) {
-            if (!window.navigator.geolocation) {
-                setLocationNotice('Location is not available in this browser.');
-            }
+        if (location || isLocating) {
             return location;
         }
 
@@ -595,27 +595,16 @@ function App() {
         setLocationNotice('Checking location...');
 
         try {
-            const coords = await new Promise((resolve, reject) => {
-                window.navigator.geolocation.getCurrentPosition(
-                    ({ coords: nextCoords }) => resolve({
-                        latitude: nextCoords.latitude,
-                        longitude: nextCoords.longitude,
-                    }),
-                    reject,
-                    {
-                        enableHighAccuracy: false,
-                        timeout: 10000,
-                        maximumAge: 300000,
-                    },
-                );
-            });
+            const coords = await requestWeatherLocation();
 
-            setLocation(coords);
-            setLocationNotice('Nearby suggestions are using your current location.');
+            if (!coords.isFallback) {
+                setLocation(coords);
+                setLocationNotice('Nearby suggestions are using your current location.');
+                return coords;
+            }
+
+            setLocationNotice(`Location is off, so weather defaults to ${DEFAULT_WEATHER_LOCATION.label}.`);
             return coords;
-        } catch {
-            setLocationNotice('Could not read your location, so suggestions may be more generic.');
-            return null;
         } finally {
             setIsLocating(false);
         }
