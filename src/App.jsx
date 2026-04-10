@@ -279,7 +279,7 @@ function App() {
     const [aiMode, setAiMode] = useState('chat');
     const [location, setLocation] = useState(null);
     const [isLocating, setIsLocating] = useState(false);
-    const [locationNotice, setLocationNotice] = useState('set to UCF');
+    const [locationNotice, setLocationNotice] = useState('Location is blocked, set to UCF');
     const [messages, setMessages] = useState([
         { role: 'assistant', text: 'Ask about your day or grab event suggestions.' },
     ]);
@@ -601,7 +601,7 @@ function App() {
                 return coords;
             }
 
-            setLocationNotice('set to UCF');
+            setLocationNotice('Location is blocked, set to UCF');
             return coords;
         } finally {
             setIsLocating(false);
