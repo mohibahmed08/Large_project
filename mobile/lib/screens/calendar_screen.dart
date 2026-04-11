@@ -1865,88 +1865,133 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
                 // ── Swipeable month grid ──────────────────────────────────
                 SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: 336,
-                    child: PageView.builder(
-                      controller: _monthPageController,
-                      onPageChanged: (page) {
-                        final base = DateTime(today.year, today.month);
-                        unawaited(
-                          _setDisplayedMonth(
-                            DateTime(base.year, base.month + (page - 1200)),
-                          ),
-                        );
-                      },
-                      itemBuilder: (context, page) {
-                        final base = DateTime(today.year, today.month);
-                        final pageMonth = DateTime(
-                          base.year,
-                          base.month + (page - 1200),
-                        );
-                        final firstDay =
-                            DateTime(
-                              pageMonth.year,
-                              pageMonth.month,
-                              1,
-                            ).weekday %
-                            7;
-                        final daysInMonth = DateTime(
-                          pageMonth.year,
-                          pageMonth.month + 1,
-                          0,
-                        ).day;
-                        final totalCells = firstDay + daysInMonth;
-                        final rows = (totalCells / 7).ceil();
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final viewportHeight = (MediaQuery.sizeOf(context).height *
+                              0.38)
+                          .clamp(300.0, 430.0)
+                          .toDouble();
 
-                        return GridView.builder(
-                          physics: const NeverScrollableScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 7,
-                                childAspectRatio: 0.9,
-                                mainAxisSpacing: 2,
-                                crossAxisSpacing: 2,
+                      return SizedBox(
+                        height: viewportHeight,
+                        child: PageView.builder(
+                          controller: _monthPageController,
+                          onPageChanged: (page) {
+                            final base = DateTime(today.year, today.month);
+                            unawaited(
+                              _setDisplayedMonth(
+                                DateTime(
+                                  base.year,
+                                  base.month + (page - 1200),
+                                ),
                               ),
-                          itemCount: rows * 7,
-                          itemBuilder: (context, index) {
-                            final dayNum = index - firstDay + 1;
-                            if (dayNum < 1 || dayNum > daysInMonth) {
-                              return const SizedBox.shrink();
-                            }
-                            final date = DateTime(
-                              pageMonth.year,
-                              pageMonth.month,
-                              dayNum,
                             );
-                            return DayGrid(
-                              day: dayNum,
-                              isToday: DateUtils.isSameDay(date, today),
-                              isSelected: DateUtils.isSameDay(
-                                date,
-                                _selectedDate,
-                              ),
-                              weatherData: _weatherData,
-                              tasks: _visibleTasks
-                                  .where(
-                                    (t) =>
-                                        DateUtils.isSameDay(t.startDate, date),
-                                  )
-                                  .toList(),
-                              onDayTap: (selectedDay) {
-                                setState(() {
-                                  _selectedDate = DateTime(
-                                    pageMonth.year,
-                                    pageMonth.month,
-                                    selectedDay,
-                                  );
-                                });
+                          },
+                          itemBuilder: (context, page) {
+                            final base = DateTime(today.year, today.month);
+                            final pageMonth = DateTime(
+                              base.year,
+                              base.month + (page - 1200),
+                            );
+                            final firstDay =
+                                DateTime(
+                                  pageMonth.year,
+                                  pageMonth.month,
+                                  1,
+                                ).weekday %
+                                7;
+                            final daysInMonth = DateTime(
+                              pageMonth.year,
+                              pageMonth.month + 1,
+                              0,
+                            ).day;
+                            final totalCells = firstDay + daysInMonth;
+                            final rows = (totalCells / 7).ceil();
+
+                            return LayoutBuilder(
+                              builder: (context, pageConstraints) {
+                                final usableWidth =
+                                    (pageConstraints.maxWidth - 16)
+                                        .clamp(0.0, 1100.0)
+                                        .toDouble();
+                                final cellHeight =
+                                    ((usableWidth / 7) * 0.72)
+                                        .clamp(56.0, 88.0)
+                                        .toDouble();
+
+                                return Align(
+                                  alignment: Alignment.topCenter,
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      maxWidth: 1100,
+                                    ),
+                                    child: GridView.builder(
+                                      primary: false,
+                                      physics: const ClampingScrollPhysics(),
+                                      padding: const EdgeInsets.fromLTRB(
+                                        8,
+                                        8,
+                                        8,
+                                        12,
+                                      ),
+                                      gridDelegate:
+                                          SliverGridDelegateWithFixedCrossAxisCount(
+                                            crossAxisCount: 7,
+                                            mainAxisExtent: cellHeight,
+                                            mainAxisSpacing: 4,
+                                            crossAxisSpacing: 4,
+                                          ),
+                                      itemCount: rows * 7,
+                                      itemBuilder: (context, index) {
+                                        final dayNum = index - firstDay + 1;
+                                        if (dayNum < 1 ||
+                                            dayNum > daysInMonth) {
+                                          return const SizedBox.shrink();
+                                        }
+                                        final date = DateTime(
+                                          pageMonth.year,
+                                          pageMonth.month,
+                                          dayNum,
+                                        );
+                                        return DayGrid(
+                                          day: dayNum,
+                                          isToday: DateUtils.isSameDay(
+                                            date,
+                                            today,
+                                          ),
+                                          isSelected: DateUtils.isSameDay(
+                                            date,
+                                            _selectedDate,
+                                          ),
+                                          weatherData: _weatherData,
+                                          tasks: _visibleTasks
+                                              .where(
+                                                (t) => DateUtils.isSameDay(
+                                                  t.startDate,
+                                                  date,
+                                                ),
+                                              )
+                                              .toList(),
+                                          onDayTap: (selectedDay) {
+                                            setState(() {
+                                              _selectedDate = DateTime(
+                                                pageMonth.year,
+                                                pageMonth.month,
+                                                selectedDay,
+                                              );
+                                            });
+                                          },
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                );
                               },
                             );
                           },
-                        );
-                      },
-                    ),
+                        ),
+                      );
+                    },
                   ),
                 ),
 
