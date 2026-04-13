@@ -306,7 +306,7 @@ function App() {
     const [accountSaving, setAccountSaving] = useState(false);
     const [accountFeedback, setAccountFeedback] = useState('');
     const [emailFeedback, setEmailFeedback] = useState('');
-    const [avatarUrl, setAvatarUrl] = useState(null);
+    const [avatarUrl, setAvatarUrl] = useState(() => localStorage.getItem('avatarUrl') || null);
     const [pendingAvatarUrl, setPendingAvatarUrl] = useState(null);
 
     const currentDate = new Date();
@@ -456,7 +456,13 @@ function App() {
             setAccountSettings(data.settings || accountDraft);
             setAccountDraft(data.settings || accountDraft);
             if (pendingAvatarUrl !== null) {
-                setAvatarUrl(pendingAvatarUrl);
+                const nextAvatar = pendingAvatarUrl === 'REMOVED' ? null : pendingAvatarUrl;
+                setAvatarUrl(nextAvatar);
+                if (nextAvatar) {
+                    localStorage.setItem('avatarUrl', nextAvatar);
+                } else {
+                    localStorage.removeItem('avatarUrl');
+                }
                 setPendingAvatarUrl(null);
             }
             setAccountFeedback('Settings saved.');
