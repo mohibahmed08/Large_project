@@ -797,3 +797,50 @@
   font-size: 0.9rem;
   text-align: center;
 }
+
+/* --- PROFILE PICTURE ADDITIONS --- */
+.profile-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 10px;
+}
+
+.avatar-btn {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: border-color 0.2s;
+}
+
+.avatar-btn:hover {
+  border-color: #60a5fa;
+}
+
+.user-avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-placeholder {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  text-align: center;
+}
+
+.profile-name {
+  font-weight: 600;
+  color: #fff;
+  font-size: 1.1rem;
+}

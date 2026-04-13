@@ -309,7 +309,19 @@ function App() {
 
     // Avatar Feature States
     const fileInputRef = useRef(null);
-    const [avatarPreview, setAvatarPreview] = useState(null);
+    const [avatarUrl, setAvatarUrl] = useState(localStorage.getItem('userAvatar') || null);
+
+    const handleAvatarChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setAvatarUrl(reader.result);
+                localStorage.setItem('userAvatar', reader.result);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
 
     const currentDate = new Date();
     const verticalDateString = selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -866,9 +878,12 @@ function App() {
                                 <Calendar
                                     refreshKey={calendarRefreshKey}
                                     modalIntent={calendarModalIntent}
-                                    onModalClose={() => setCalendarModalIntent(null)}
-                                    onDateSelect={setSelectedDate}
-                                    onBackgroundChange={setBackground}
+                                    onSelectedDateChange={setSelectedDate} 
+                                    setBackground={setBackground}
+                                    session={getSession()}
+                                    apiRoot={API_ROOT}
+                                    onSessionRefresh={updateToken}
+                                    reminderDefaults={accountSettings?.reminderDefaults}
                                 />
                             </div>
                         </div>
