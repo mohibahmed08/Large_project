@@ -24,6 +24,7 @@ yarn-error.log*
 
 # environment variables
 .env
+mobile/firebase.env.json
 
 # Node Modules
 node_modules
@@ -56,6 +57,8 @@ Thumbs.db
 # Android
 android/.gradle/
 android/local.properties
+mobile/android/app/google-services.json
+mobile/ios/GoogleService-Info.plist
 
 # iOS / macOS generated
 ios/Flutter/ephemeral/

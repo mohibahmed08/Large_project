@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 
+import '../models/task_model.dart';
+import '../theme/app_theme.dart';
+
 class DayGrid extends StatelessWidget {
   const DayGrid({
     super.key,
     required this.day,
     required this.isToday,
     required this.isSelected,
-    required this.month,
-    required this.year,
-    required this.taskCount,
+    required this.tasks,
     required this.onDayTap,
     this.weatherData,
   });
@@ -16,134 +17,145 @@ class DayGrid extends StatelessWidget {
   final int day;
   final bool isToday;
   final bool isSelected;
-  final int month;
-  final int year;
-  final int taskCount;
+  final List<CalendarTask> tasks;
   final Map<String, dynamic>? weatherData;
   final ValueChanged<int> onDayTap;
 
-  String getWeatherText() {
-    if (weatherData == null) {
-      return '';
+  int get taskCount => tasks.length;
+
+  Color _taskBaseColor(CalendarTask task) {
+    final normalized = task.color.trim().replaceFirst('#', '');
+    final parsed = int.tryParse(normalized, radix: 16);
+    if (parsed != null && (normalized.length == 6 || normalized.length == 8)) {
+      return Color(normalized.length == 6 ? 0xFF000000 | parsed : parsed);
     }
 
-    try {
-      final List codes = weatherData!['hourly']['weathercode'];
-      final today = DateUtils.dateOnly(DateTime.now());
-      final cellDate = DateTime(year, month, day);
-      final diffDays = cellDate.difference(today).inDays;
-
-      if (diffDays < 0) {
-        return '';
-      }
-      if ((diffDays * 24 + 24) > codes.length) {
-        return '';
-      }
-
-      final start = diffDays * 24;
-      final dayCodes = codes.sublist(start, start + 24);
-      final count = <int, int>{};
-
-      for (final code in dayCodes) {
-        count[code as int] = (count[code] ?? 0) + 1;
-      }
-
-      var mostCommon = dayCodes.first as int;
-      var maxCount = 0;
-      count.forEach((key, value) {
-        if (value > maxCount) {
-          maxCount = value;
-          mostCommon = key;
-        }
-      });
-
-      return weatherCodeToText(mostCommon);
-    } catch (_) {
-      return '';
+    switch (task.source.toLowerCase()) {
+      case 'ical':
+        return const Color(0xFF94A3B8); // slate – matches web
+      case 'task':
+        return const Color(0xFF22C55E); // green – matches web
+      case 'plan':
+        return const Color(0xFFA855F7); // purple – matches web
+      case 'event':
+      default:
+        return const Color(0xFF60A5FA); // blue – matches web accent
     }
   }
 
-  String weatherCodeToText(int code) {
-    switch (code) {
-      case 0:
-        return 'Sunny';
-      case 1:
-        return 'Mostly';
-      case 2:
-        return 'Partly';
-      case 3:
-        return 'Cloudy';
-      case 61:
-        return 'Rain';
-      default:
-        return '';
+  Color _groupMajorityColor(List<CalendarTask> tasks) {
+    final counts = <int, int>{};
+    for (final task in tasks) {
+      final normalized = task.color.trim().replaceFirst('#', '');
+      final parsed = int.tryParse(normalized, radix: 16);
+      if (parsed == null || (normalized.length != 6 && normalized.length != 8)) {
+        continue;
+      }
+      final colorValue = normalized.length == 6 ? 0xFF000000 | parsed : parsed;
+      counts.update(colorValue, (value) => value + 1, ifAbsent: () => 1);
     }
+
+    if (counts.isNotEmpty) {
+      final winner = counts.entries.reduce(
+        (best, next) => next.value > best.value ? next : best,
+      );
+      return Color(winner.key);
+    }
+
+    return _taskBaseColor(tasks.first);
+  }
+
+  Color _taskDisplayColor(CalendarTask task, Color groupColor) {
+    final normalized = task.color.trim().replaceFirst('#', '');
+    final parsed = int.tryParse(normalized, radix: 16);
+    if (parsed != null && (normalized.length == 6 || normalized.length == 8)) {
+      return Color(normalized.length == 6 ? 0xFF000000 | parsed : parsed);
+    }
+
+    return groupColor;
   }
 
   @override
   Widget build(BuildContext context) {
-    final weatherText = getWeatherText();
+    final groupColor = taskCount > 0 ? _groupMajorityColor(tasks) : const Color(0xFF64B5F6);
+    final previewColors = <Color>[];
+    for (final task in tasks) {
+      final color = _taskDisplayColor(task, groupColor);
+      if (previewColors.any((existing) => existing.toARGB32() == color.toARGB32())) {
+        continue;
+      }
+      previewColors.add(color);
+      if (previewColors.length == 3) {
+        break;
+      }
+    }
 
+    // Compact cell: day number centred, today ring, selected fill, 3 dot max
     return GestureDetector(
       onTap: () => onDayTap(day),
       child: Container(
         decoration: BoxDecoration(
-          color: const Color(0xFF12121F),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isSelected
-                ? const Color(0xFF9C27B0)
-                : isToday
-                    ? const Color(0xFF64B5F6)
-                    : const Color(0xFF2C2C3E),
-            width: isSelected || isToday ? 2 : 1,
-          ),
+          color: isSelected
+              ? AppTheme.accent.withValues(alpha: 0.22)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: isSelected
+              ? Border.all(color: AppTheme.accent, width: 1.5)
+              : isToday
+                  ? Border.all(color: AppTheme.accentStrong, width: 1.5)
+                  : null,
         ),
-        child: Stack(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (weatherText.isNotEmpty)
-              Positioned(
-                top: 6,
-                left: 8,
-                child: Text(
-                  weatherText,
-                  style: const TextStyle(fontSize: 10, color: Colors.white70),
-                ),
-              ),
-            Positioned(
-              top: 6,
-              right: 8,
+            // Day number
+            Container(
+              width: 28,
+              height: 28,
+              alignment: Alignment.center,
+              decoration: isToday && !isSelected
+                  ? BoxDecoration(
+                      color: AppTheme.accentStrong,
+                      shape: BoxShape.circle,
+                    )
+                  : null,
               child: Text(
                 '$day',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: isToday || isSelected
+                      ? FontWeight.w800
+                      : FontWeight.w500,
+                  color: isToday && !isSelected
+                      ? Colors.white
+                      : isSelected
+                          ? AppTheme.accent
+                          : AppTheme.textPrimary,
                 ),
               ),
             ),
-            if (taskCount > 0)
-              Positioned(
-                bottom: 6,
-                left: 8,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF64B5F6),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '$taskCount',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
+            const SizedBox(height: 3),
+            // Up to 3 colour dots for tasks
+            if (previewColors.isNotEmpty)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: previewColors
+                    .take(3)
+                    .map(
+                      (c) => Container(
+                        width: 5,
+                        height: 5,
+                        margin: const EdgeInsets.symmetric(horizontal: 1),
+                        decoration: BoxDecoration(
+                          color: c,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    )
+                    .toList(),
+              )
+            else
+              const SizedBox(height: 8),
           ],
         ),
       ),

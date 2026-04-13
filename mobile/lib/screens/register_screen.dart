@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 
 class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key});
+
   @override
-  _RegisterScreenState createState() => _RegisterScreenState();
+  State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
@@ -27,11 +29,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() { _isLoading = true; });
 
     try {
-      await AuthService().register(
-        _firstNameController.text.trim(),
-        _lastNameController.text.trim(),
-        _emailController.text.trim(),
-        _passwordController.text.trim(),
+      await AuthService().signup(
+        firstName: _firstNameController.text.trim(),
+        lastName: _lastNameController.text.trim(),
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
       );
 
       if (!mounted) return;
@@ -99,8 +101,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ? CircularProgressIndicator()
                 : ElevatedButton(
                     onPressed: _handleRegister,
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: Size(double.infinity, 50),
+                    ),
                     child: Text('Sign Up'),
-                    style: ElevatedButton.styleFrom(minimumSize: Size(double.infinity, 50)),
                   ),
           ],
         ),

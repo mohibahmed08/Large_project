@@ -15,6 +15,10 @@ class UserSession {
 
   factory UserSession.fromLoginResponse(Map<String, dynamic> json) {
     final token = json['accessToken']?.toString() ?? '';
+    return UserSession.fromAccessToken(token);
+  }
+
+  factory UserSession.fromAccessToken(String token) {
     if (token.isEmpty) {
       throw Exception('The server did not return an access token.');
     }

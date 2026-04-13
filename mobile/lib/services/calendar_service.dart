@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/task_model.dart';
@@ -20,18 +21,29 @@ class CalendarService {
   CalendarService({String? baseUrl}) : baseUrl = baseUrl ?? ApiConfig.baseUrl;
 
   final String baseUrl;
+  static Future<String>? _cachedTimeZone;
+
+  Future<String> _timeZone() {
+    _cachedTimeZone ??= FlutterTimezone.getLocalTimezone()
+        .catchError((_) => DateTime.now().timeZoneName);
+    return _cachedTimeZone!;
+  }
 
   Future<CalendarResult> loadCalendar({
     required UserSession session,
     DateTime? startDate,
     DateTime? endDate,
   }) async {
+    final timeZone = await _timeZone();
+    final localNow = DateTime.now();
     final json = await _post(
       'loadcalendar',
       session,
       {
-        if (startDate != null) 'startDate': startDate.toIso8601String(),
-        if (endDate != null) 'endDate': endDate.toIso8601String(),
+        if (startDate != null) 'startDate': startDate.toUtc().toIso8601String(),
+        if (endDate != null) 'endDate': endDate.toUtc().toIso8601String(),
+        'timeZone': timeZone,
+        'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
       },
     );
 
@@ -76,8 +88,15 @@ class CalendarService {
     DateTime? endDate,
     String location = '',
     String source = 'manual',
+    String color = '',
+    String group = '',
     bool isCompleted = false,
+    bool reminderEnabled = false,
+    int reminderMinutesBefore = 30,
+    String reminderDelivery = 'email',
   }) async {
+    final timeZone = await _timeZone();
+    final localNow = DateTime.now();
     final json = await _post(
       'savecalendar',
       session,
@@ -85,12 +104,32 @@ class CalendarService {
         if (taskId != null && taskId.isNotEmpty) 'taskId': taskId,
         'title': title,
         'description': description,
-        if (startDate != null) 'dueDate': startDate.toIso8601String(),
-        if (endDate != null) 'endDate': endDate.toIso8601String(),
+        if (startDate != null) 'dueDate': startDate.toUtc().toIso8601String(),
+        if (endDate != null) 'endDate': endDate.toUtc().toIso8601String(),
         'location': location,
         'source': source,
+        'color': color,
+        'group': group,
         'isCompleted': isCompleted,
+        'reminderEnabled': reminderEnabled,
+        'reminderMinutesBefore': reminderMinutesBefore,
+        'reminderDelivery': reminderDelivery,
+        'timeZone': timeZone,
+        'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
       },
+    );
+
+    return _updatedSession(session, json);
+  }
+
+  Future<UserSession> deleteTask({
+    required UserSession session,
+    required String taskId,
+  }) async {
+    final json = await _post(
+      'deletecalendar',
+      session,
+      {'taskId': taskId},
     );
 
     return _updatedSession(session, json);
@@ -101,6 +140,8 @@ class CalendarService {
     String? icsUrl,
     String? icsContent,
   }) async {
+    final timeZone = await _timeZone();
+    final localNow = DateTime.now();
     final json = await _post(
       'readcalendar',
       session,
@@ -108,6 +149,8 @@ class CalendarService {
         if (icsUrl != null && icsUrl.trim().isNotEmpty) 'icsUrl': icsUrl.trim(),
         if (icsContent != null && icsContent.trim().isNotEmpty)
           'icsContent': icsContent.trim(),
+        'timeZone': timeZone,
+        'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
       },
     );
 
