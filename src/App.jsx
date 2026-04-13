@@ -1,5 +1,5 @@
 import './App.css';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
 import Calendar from './Calendar.jsx';
 import Login, { ResetPasswordPage } from './login.jsx';
@@ -307,6 +307,22 @@ function App() {
     const [accountFeedback, setAccountFeedback] = useState('');
     const [emailFeedback, setEmailFeedback] = useState('');
 
+    // --- Profile Picture Logic ---
+    const fileInputRef = useRef(null);
+    const [avatarUrl, setAvatarUrl] = useState(localStorage.getItem('userAvatar') || null);
+
+    const handleAvatarChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setAvatarUrl(reader.result);
+                localStorage.setItem('userAvatar', reader.result);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+    
     const currentDate = new Date();
     const verticalDateString = selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const fullDateString = selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
@@ -1102,11 +1118,39 @@ function App() {
                             <div className="account-modal-body">
                                 <div className="account-hero">
                                     <div className="account-avatar-shell">
-                                        <div className="account-avatar">{profileInitials}</div>
-                                        <button type="button" className="account-avatar-btn" disabled>
-                                            Avatar soon
-                                        </button>
+                                        <input 
+                                            type="file" 
+                                            ref={fileInputRef} 
+                                            onChange={handleAvatarChange} 
+                                            style={{ display: 'none' }} 
+                                            accept="image/*"
+                                        />
+                                        <div className="account-avatar" onClick={() => fileInputRef.current.click()} style={{ cursor: 'pointer', overflow: 'hidden' }}>
+                                            {avatarUrl ? (
+                                                <img src={avatarUrl} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            ) : (
+                                                profileInitials
+                                            )}
+                                        </div>
+                                        <div className="account-avatar-controls">
+                                            <button type="button" className="account-avatar-btn" onClick={() => fileInputRef.current.click()}>
+                                                Upload picture
+                                            </button>
+                                            {avatarUrl && (
+                                                <button 
+                                                    type="button" 
+                                                    className="account-avatar-remove-btn" 
+                                                    onClick={() => {
+                                                        setAvatarUrl(null);
+                                                        localStorage.removeItem('userAvatar');
+                                                    }}
+                                                >
+                                                    Remove picture
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
+                                </div>
                                     <div className="account-hero-copy">
                                         <h3>{`${profileFirstName} ${profileLastName}`}</h3>
                                         <p>{accountSettings?.email || 'Loading email...'}</p>

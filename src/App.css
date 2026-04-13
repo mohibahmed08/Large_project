@@ -918,3 +918,40 @@
     align-items: flex-start;
   }
 }
+
+/* --- Avatar Style Fixes --- */
+.account-avatar-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.account-avatar-remove-btn {
+  background: transparent;
+  border: none;
+  color: #f87171; /* Soft red */
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 2px 8px;
+  transition: opacity 0.2s;
+}
+
+.account-avatar-remove-btn:hover {
+  opacity: 0.8;
+  color: #ef4444;
+}
+
+.account-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  transition: transform 0.2s;
+}
+
+.account-avatar:hover {
+  transform: scale(1.02);
+}
