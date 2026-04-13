@@ -306,6 +306,8 @@ function App() {
     const [accountSaving, setAccountSaving] = useState(false);
     const [accountFeedback, setAccountFeedback] = useState('');
     const [emailFeedback, setEmailFeedback] = useState('');
+    const [avatarUrl, setAvatarUrl] = useState(null);
+    const [pendingAvatarUrl, setPendingAvatarUrl] = useState(null);
 
     const currentDate = new Date();
     const verticalDateString = selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -406,6 +408,7 @@ function App() {
         setAccountTab(tab);
         setAccountFeedback('');
         setEmailFeedback('');
+        setPendingAvatarUrl(null);
         setAccountModalOpen(true);
         if (accountSettings) {
             setAccountDraft(accountSettings);
@@ -452,6 +455,10 @@ function App() {
             updateToken(data.jwtToken);
             setAccountSettings(data.settings || accountDraft);
             setAccountDraft(data.settings || accountDraft);
+            if (pendingAvatarUrl !== null) {
+                setAvatarUrl(pendingAvatarUrl);
+                setPendingAvatarUrl(null);
+            }
             setAccountFeedback('Settings saved.');
         } catch (error) {
             setAccountFeedback(error.message);
@@ -879,7 +886,9 @@ function App() {
                                     onClick={() => openAccountModal('account')}
                                 >
                                     <div className="profile-summary-avatar">
-                                        {profileInitials}
+                                        {avatarUrl ? (
+                                            <img src={avatarUrl} alt="Profile" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                                        ) : profileInitials}
                                     </div>
                                     <div className="profile-summary-copy">
                                         <span className="profile-summary-name">{`${profileFirstName} ${profileLastName}`}</span>
@@ -1102,10 +1111,34 @@ function App() {
                             <div className="account-modal-body">
                                 <div className="account-hero">
                                     <div className="account-avatar-shell">
-                                        <div className="account-avatar">{profileInitials}</div>
-                                        <button type="button" className="account-avatar-btn" disabled>
-                                            Avatar soon
-                                        </button>
+                                        {pendingAvatarUrl !== null ? (
+                                            <img src={pendingAvatarUrl || undefined} alt="Profile" className="account-avatar account-avatar-img" style={pendingAvatarUrl ? {} : undefined} />
+                                        ) : avatarUrl ? (
+                                            <img src={avatarUrl} alt="Profile" className="account-avatar account-avatar-img" />
+                                        ) : (
+                                            <div className="account-avatar">{profileInitials}</div>
+                                        )}
+                                        <label className="account-avatar-btn" style={{ cursor: 'pointer' }}>
+                                            Upload picture
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                style={{ display: 'none' }}
+                                                onChange={(event) => {
+                                                    const file = event.target.files?.[0];
+                                                    if (!file) return;
+                                                    const reader = new FileReader();
+                                                    reader.onload = (e) => setPendingAvatarUrl(e.target.result);
+                                                    reader.readAsDataURL(file);
+                                                    event.target.value = '';
+                                                }}
+                                            />
+                                        </label>
+                                        {(avatarUrl || pendingAvatarUrl) && (
+                                            <button type="button" className="account-avatar-remove-btn" onClick={() => { setPendingAvatarUrl(''); }}>
+                                                Remove picture
+                                            </button>
+                                        )}
                                     </div>
                                     <div className="account-hero-copy">
                                         <h3>{`${profileFirstName} ${profileLastName}`}</h3>
