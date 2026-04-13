@@ -1111,9 +1111,9 @@ function App() {
                             <div className="account-modal-body">
                                 <div className="account-hero">
                                     <div className="account-avatar-shell">
-                                        {pendingAvatarUrl !== null ? (
-                                            <img src={pendingAvatarUrl || undefined} alt="Profile" className="account-avatar account-avatar-img" style={pendingAvatarUrl ? {} : undefined} />
-                                        ) : avatarUrl ? (
+                                        {pendingAvatarUrl !== null && pendingAvatarUrl !== 'REMOVED' ? (
+                                            <img src={pendingAvatarUrl} alt="Profile" className="account-avatar account-avatar-img" />
+                                        ) : (pendingAvatarUrl !== 'REMOVED' && avatarUrl) ? (
                                             <img src={avatarUrl} alt="Profile" className="account-avatar account-avatar-img" />
                                         ) : (
                                             <div className="account-avatar">{profileInitials}</div>
@@ -1134,8 +1134,8 @@ function App() {
                                                 }}
                                             />
                                         </label>
-                                        {(avatarUrl || pendingAvatarUrl) && (
-                                            <button type="button" className="account-avatar-remove-btn" onClick={() => { setPendingAvatarUrl(''); }}>
+                                        {(avatarUrl || pendingAvatarUrl) && pendingAvatarUrl !== 'REMOVED' && (
+                                            <button type="button" className="account-avatar-remove-btn" onClick={() => { setPendingAvatarUrl('REMOVED'); }}>
                                                 Remove picture
                                             </button>
                                         )}
