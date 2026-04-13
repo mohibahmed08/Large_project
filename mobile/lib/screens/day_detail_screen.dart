@@ -5,7 +5,8 @@ class DayDetailScreen extends StatelessWidget {
   final int month;
   final int year;
 
-  DayDetailScreen({
+  const DayDetailScreen({
+    super.key,
     required this.day,
     required this.month,
     required this.year,

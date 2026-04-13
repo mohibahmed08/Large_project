@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from "react";
+import { DEFAULT_WEATHER_LOCATION, requestWeatherLocation } from './weatherLocation.js';
 
 //RETURNS THE WEATHER FOR A SPECIFIC DATE
 function Weather({ setWeather, desiredDate, additionalDays, priorDays }) {
 
     //HOLDS CURRENT LONGITUDE AND LATITUDE THAT THE USER IS AT (ONCE ENABLED)
-    const [longitude, setLongitude] = useState(null);
-    const [latitude, setLatitude] = useState(null);
+    const [coords, setCoords] = useState(() => ({
+        latitude: DEFAULT_WEATHER_LOCATION.latitude,
+        longitude: DEFAULT_WEATHER_LOCATION.longitude,
+    }));
 
     //FIRST DAY TO GO BACK TO IN THE PAST FROM TODAY
     const firstDay = desiredDate ? new Date(desiredDate) : new Date();
@@ -16,43 +19,42 @@ function Weather({ setWeather, desiredDate, additionalDays, priorDays }) {
 
     //REQUESTS THE USER'S LOCATION WHEN COMPONENT MOUNTS
     useEffect(() => {
-        //CHECK IF BROWSER SUPPORTS GEOLOCATION
-        if (!navigator.geolocation) {
-            console.error("Geolocation is not supported by this browser");
-            return;
-        }
+        let ignore = false;
 
-        //GET THE CURRENT POSITION ONCE
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                //EXTRACT LATITUDE AND LONGITUDE
-                setLatitude(position.coords.latitude);
-                setLongitude(position.coords.longitude);
-            },
-            (err) => console.error(err.message),
-        );
+        requestWeatherLocation()
+            .then((nextLocation) => {
+                if (ignore || nextLocation.isFallback) {
+                    return;
+                }
+
+                setCoords({
+                    latitude: nextLocation.latitude,
+                    longitude: nextLocation.longitude,
+                });
+            })
+            .catch((err) => console.error(err.message));
+
+        return () => {
+            ignore = true;
+        };
     }, []);
 
     //USE EFFECT FOR WEATHER INITIALIZATION WHEN LOCATION CHANGES OR DATE CHANGES
     useEffect(() => {
-        //MAKE SURE LATITUDE AND LONGITUDE HAS BEEN FOUND
-        if (latitude !== null && longitude !== null) {
-            //IF FOUND, THEN FETCH THE FORECAST FOR THE CURRENT LOCATION AND DATE RANGE
-            fetch(
-                `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&start_date=${startDate}&end_date=${endDate}&hourly=temperature_2m,weathercode,windspeed_10m`
-            )
-            .then((res) => {
-                if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-                return res.json();
-            })
-            .then((data) => {
-                console.log("Weather fetched:", data); // debug
-                setWeather(data); // STORE FULL DATA (hourly/daily)
-            })
-            .catch((err) => console.error("Failed to fetch weather:", err));
-        }
+        fetch(
+            `https://api.open-meteo.com/v1/forecast?latitude=${coords.latitude}&longitude=${coords.longitude}&start_date=${startDate}&end_date=${endDate}&hourly=temperature_2m,weathercode,windspeed_10m`
+        )
+        .then((res) => {
+            if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+            return res.json();
+        })
+        .then((data) => {
+            console.log("Weather fetched:", data); // debug
+            setWeather(data); // STORE FULL DATA (hourly/daily)
+        })
+        .catch((err) => console.error("Failed to fetch weather:", err));
     //USE EFFECT FOR WEATHER INITIALIZATION WHEN LOCATION CHANGES OR DATE CHANGES
-    }, [latitude, longitude, startDate, endDate]);
+    }, [coords.latitude, coords.longitude, startDate, endDate]);
 
     return null;
 }

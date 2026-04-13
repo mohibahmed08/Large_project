@@ -5,10 +5,10 @@ import DayGrid from './DayGrid.jsx';
 import Weather from './Weather.jsx';
 
 //USE STATE AND EFFECT FOR AUTO UPDATES & DOM RELOAD SAVE
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, cloneElement } from 'react';
 
 //MAIN CONSTRUCTOR FOR CALENDAR MONTH
-function CalendarMonth({monthsFromNow, setBackgroundWeather, singleMonth}){
+function CalendarMonth({monthsFromNow, setBackgroundWeather, singleMonth, tasks = [], onSelectDay, onSelectTask, selectedDate}){
 
     //HOLDS THE CURRENT WEATHER STATE FOR EXTENDED TIME
     const [weather, setWeather] = useState(null);
@@ -58,7 +58,7 @@ function CalendarMonth({monthsFromNow, setBackgroundWeather, singleMonth}){
         //CREATE AN ARRAY OF DAYS IN MONTH LENGTH
         Array.from( {length : daysInMonth}, (_, i) => 
             //THEN TAGS TO DAY GRID SUBCLASS WITH ITERATIVE INFO
-            <DayGrid key = {i} setCurrentWeather = {setCurrentWeather} weather = {weather} maxFutureWeatherDays = {maxFutureWeatherDays} maxPastWeatherDays = {maxPastWeatherDays} dayOfMonth = {i + 1} year = {year} month = {date.getMonth() + monthsFromNow}/>
+            <DayGrid key = {i} setCurrentWeather = {setCurrentWeather} weather = {weather} maxFutureWeatherDays = {maxFutureWeatherDays} maxPastWeatherDays = {maxPastWeatherDays} dayOfMonth = {i + 1} year = {targetDate.getFullYear()} month = {targetDate.getMonth()}/>
         );
 
     // EMPTY DAYS (OFFSET THAT REPLACES INDENTATION)
@@ -70,12 +70,35 @@ function CalendarMonth({monthsFromNow, setBackgroundWeather, singleMonth}){
         const day = daysInPrevMonth - firstDay + i + 1;
         
         //RETURN A COPY OF LAST MONTHS PRIOR DAYS FILLING UP TO CURRENT NEW MONTH DAY (GRAYED OUT)
-        return (<DayGrid key={`prev-${i}`} setCurrentWeather={setCurrentWeather} weather={weather} maxFutureWeatherDays={maxFutureWeatherDays} maxPastWeatherDays={maxPastWeatherDays} dayOfMonth={day} year={year} month={date.getMonth() + monthsFromNow - 1} isOtherMonth={true}/>);
+        return (<DayGrid key={`prev-${i}`} setCurrentWeather={setCurrentWeather} weather={weather} maxFutureWeatherDays={maxFutureWeatherDays} maxPastWeatherDays={maxPastWeatherDays} dayOfMonth={day} year={prevMonthDate.getFullYear()} month={prevMonthDate.getMonth()} isOtherMonth={true}/>);
     
     }) : [];
 
     //COMBINE EMPTY DAYS WITH DAYS ARR
     const dayArr = [...prevMonthDays, ...realDays];
+    const monthTaskMap = useMemo(() => {
+        const entries = {};
+        tasks.forEach((task) => {
+            if (!task?.dueDate) {
+                return;
+            }
+
+            const dueDate = new Date(task.dueDate);
+            const key = `${dueDate.getFullYear()}-${dueDate.getMonth()}-${dueDate.getDate()}`;
+            if (!entries[key]) {
+                entries[key] = [];
+            }
+            entries[key].push(task);
+        });
+
+        return entries;
+    }, [tasks]);
+
+    const dayTasks = (targetYear, targetMonth, targetDay) => {
+        const normalizedDate = new Date(targetYear, targetMonth, targetDay);
+        const key = `${normalizedDate.getFullYear()}-${normalizedDate.getMonth()}-${normalizedDate.getDate()}`;
+        return monthTaskMap[key] || [];
+    };
 
     return (
         <>
@@ -87,7 +110,24 @@ function CalendarMonth({monthsFromNow, setBackgroundWeather, singleMonth}){
             <div className="calendar-month-wrapper"> 
                 {/* DAYGRID CELLS INDENTED BASED ON START DATE */}
                 <div className="calendar-month-day-grid-wrapper" style = {{"--first-day" : !singleMonth ? firstDay + 1 : 0}}>  
-                    {dayArr}
+                    {dayArr.map((dayElement) => {
+                        if (!dayElement?.props) {
+                            return dayElement;
+                        }
+
+                        const targetTasks = dayTasks(
+                            dayElement.props.year,
+                            dayElement.props.month,
+                            dayElement.props.dayOfMonth,
+                        );
+
+                        return cloneElement(dayElement, {
+                            tasks: targetTasks,
+                            onSelectDay,
+                            onSelectTask,
+                            selectedDate,
+                        });
+                    })}
                 </div>
             </div>
         </>

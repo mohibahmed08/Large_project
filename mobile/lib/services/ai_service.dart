@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/ai_models.dart';
@@ -22,6 +23,14 @@ class AiChatResult {
 class AiChatStreamEvent {
   AiChatStreamEvent.delta(this.delta)
       : type = AiChatStreamEventType.delta,
+        status = '',
+        session = null,
+        error = null,
+        calendarChanged = false;
+
+  AiChatStreamEvent.status(this.status)
+      : type = AiChatStreamEventType.status,
+        delta = '',
         session = null,
         error = null,
         calendarChanged = false;
@@ -29,16 +38,19 @@ class AiChatStreamEvent {
   AiChatStreamEvent.done(this.session, {required this.calendarChanged})
       : type = AiChatStreamEventType.done,
         delta = '',
+        status = '',
         error = null;
 
   AiChatStreamEvent.error(this.error)
       : type = AiChatStreamEventType.error,
         delta = '',
+        status = '',
         session = null,
         calendarChanged = false;
 
   final AiChatStreamEventType type;
   final String delta;
+  final String status;
   final UserSession? session;
   final String? error;
   final bool calendarChanged;
@@ -46,6 +58,7 @@ class AiChatStreamEvent {
 
 enum AiChatStreamEventType {
   delta,
+  status,
   done,
   error,
 }
@@ -64,6 +77,13 @@ class AiService {
   AiService({String? baseUrl}) : baseUrl = baseUrl ?? ApiConfig.baseUrl;
 
   final String baseUrl;
+  static Future<String>? _cachedTimeZone;
+
+  Future<String> _timeZone() {
+    _cachedTimeZone ??= FlutterTimezone.getLocalTimezone()
+        .catchError((_) => DateTime.now().timeZoneName);
+    return _cachedTimeZone!;
+  }
 
   Future<AiChatResult> chat({
     required UserSession session,
@@ -72,16 +92,17 @@ class AiService {
     double? longitude,
   }) async {
     final localNow = DateTime.now();
+    final timeZone = await _timeZone();
     final json = await _post(
       'chat',
       session,
       {
         'messages': messages,
-        'localNow': localNow.toIso8601String(),
-        'timeZone': localNow.timeZoneName,
+        'localNow': _toOffsetIsoString(localNow),
+        'timeZone': timeZone,
         'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
-        if (latitude != null) 'latitude': latitude,
-        if (longitude != null) 'longitude': longitude,
+        ...?(latitude == null ? null : {'latitude': latitude}),
+        ...?(longitude == null ? null : {'longitude': longitude}),
       },
     );
 
@@ -99,6 +120,7 @@ class AiService {
     double? longitude,
   }) async* {
     final localNow = DateTime.now();
+    final timeZone = await _timeZone();
     final client = http.Client();
 
     try {
@@ -111,11 +133,11 @@ class AiService {
         'userId': session.userId,
         'jwtToken': session.accessToken,
         'messages': messages,
-        'localNow': localNow.toIso8601String(),
-        'timeZone': localNow.timeZoneName,
+        'localNow': _toOffsetIsoString(localNow),
+        'timeZone': timeZone,
         'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
-        if (latitude != null) 'latitude': latitude,
-        if (longitude != null) 'longitude': longitude,
+        ...?(latitude == null ? null : {'latitude': latitude}),
+        ...?(longitude == null ? null : {'longitude': longitude}),
       });
 
       final response = await client.send(request);
@@ -141,6 +163,11 @@ class AiService {
           if (delta.isNotEmpty) {
             yield AiChatStreamEvent.delta(delta);
           }
+        } else if (type == 'status') {
+          final status = payload['status']?.toString() ?? '';
+          if (status.isNotEmpty) {
+            yield AiChatStreamEvent.status(status);
+          }
         } else if (type == 'done') {
           yield AiChatStreamEvent.done(
             _updatedSession(session, payload),
@@ -165,16 +192,17 @@ class AiService {
     double? longitude,
   }) async {
     final localNow = DateTime.now();
+    final timeZone = await _timeZone();
     final json = await _post(
       'suggestevents',
       session,
       {
-        'date': date.toIso8601String(),
-        'localNow': localNow.toIso8601String(),
-        'timeZone': localNow.timeZoneName,
+        'date': _toOffsetIsoString(date),
+        'localNow': _toOffsetIsoString(localNow),
+        'timeZone': timeZone,
         'utcOffsetMinutes': localNow.timeZoneOffset.inMinutes,
-        if (latitude != null) 'latitude': latitude,
-        if (longitude != null) 'longitude': longitude,
+        ...?(latitude == null ? null : {'latitude': latitude}),
+        ...?(longitude == null ? null : {'longitude': longitude}),
         if (preferences != null && preferences.trim().isNotEmpty)
           'preferences': preferences.trim(),
       },
@@ -290,5 +318,19 @@ class AiService {
       return session;
     }
     return session.copyWith(accessToken: refreshed);
+  }
+
+  String _toOffsetIsoString(DateTime value) {
+    final local = value.toLocal();
+    final offset = local.timeZoneOffset;
+    final sign = offset.isNegative ? '-' : '+';
+    final totalMinutes = offset.inMinutes.abs();
+    final hours = (totalMinutes ~/ 60).toString().padLeft(2, '0');
+    final minutes = (totalMinutes % 60).toString().padLeft(2, '0');
+    final base = local
+        .toIso8601String()
+        .split(RegExp(r'Z|[+-]\d{2}:\d{2}$'))
+        .first;
+    return '$base$sign$hours:$minutes';
   }
 }

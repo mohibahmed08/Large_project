@@ -15,6 +15,7 @@ class AIScreen extends StatefulWidget {
     required this.onSessionUpdated,
     required this.onCreateTaskFromSuggestion,
     required this.onCalendarChanged,
+    this.embedded = false,
   });
 
   final UserSession initialSession;
@@ -23,6 +24,7 @@ class AIScreen extends StatefulWidget {
   final Future<void> Function(String title, String description, String suggestedTime)
       onCreateTaskFromSuggestion;
   final Future<void> Function() onCalendarChanged;
+  final bool embedded;
 
   @override
   State<AIScreen> createState() => _AIScreenState();
@@ -71,7 +73,13 @@ class _AIScreenState extends State<AIScreen> {
     setState(() {
       _isSending = true;
       _messages.add(_ChatBubbleData(role: 'user', text: text));
-      _messages.add(const _ChatBubbleData(role: 'assistant', text: ''));
+      _messages.add(
+        const _ChatBubbleData(
+          role: 'assistant',
+          text: '',
+          status: 'Thinking...',
+        ),
+      );
       _messageController.clear();
     });
 
@@ -96,12 +104,32 @@ class _AIScreenState extends State<AIScreen> {
             _messages[lastIndex] = _ChatBubbleData(
               role: previous.role,
               text: previous.text + event.delta,
+              status: '',
+            );
+          });
+        } else if (event.type == AiChatStreamEventType.status) {
+          setState(() {
+            final lastIndex = _messages.length - 1;
+            final previous = _messages[lastIndex];
+            _messages[lastIndex] = _ChatBubbleData(
+              role: previous.role,
+              text: previous.text,
+              status: event.status,
             );
           });
         } else if (event.type == AiChatStreamEventType.done &&
             event.session != null) {
           _session = event.session!;
           widget.onSessionUpdated(_session);
+          setState(() {
+            final lastIndex = _messages.length - 1;
+            final previous = _messages[lastIndex];
+            _messages[lastIndex] = _ChatBubbleData(
+              role: previous.role,
+              text: previous.text,
+              status: '',
+            );
+          });
           if (event.calendarChanged) {
             await widget.onCalendarChanged();
           }
@@ -122,12 +150,11 @@ class _AIScreenState extends State<AIScreen> {
       });
       _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
     } finally {
-      if (!mounted) {
-        return;
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+        });
       }
-      setState(() {
-        _isSending = false;
-      });
     }
   }
 
@@ -160,12 +187,11 @@ class _AIScreenState extends State<AIScreen> {
       }
       _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
     } finally {
-      if (!mounted) {
-        return;
+      if (mounted) {
+        setState(() {
+          _isLoadingSuggestions = false;
+        });
       }
-      setState(() {
-        _isLoadingSuggestions = false;
-      });
     }
   }
 
@@ -233,7 +259,9 @@ class _AIScreenState extends State<AIScreen> {
         }
         setState(() {
           _locationNotice =
-              'Location permission is off, so the AI is using time and calendar context only.';
+              permission == LocationPermission.deniedForever
+                  ? 'Location permission is blocked for Calendar++. Open Settings to enable nearby suggestions.'
+                  : 'Location permission is off, so the AI is using time and calendar context only.';
         });
         return;
       }
@@ -263,12 +291,11 @@ class _AIScreenState extends State<AIScreen> {
             'Could not read device location, so nearby suggestions may be generic.';
       });
     } finally {
-      if (!mounted) {
-        return;
+      if (mounted) {
+        setState(() {
+          _isFetchingLocation = false;
+        });
       }
-      setState(() {
-        _isFetchingLocation = false;
-      });
     }
   }
 
@@ -280,15 +307,15 @@ class _AIScreenState extends State<AIScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('AI Assistant')),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
+    final content = SafeArea(
+      top: !widget.embedded,
+      bottom: !widget.embedded,
+      child: Column(
+        children: [
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(18),
@@ -298,14 +325,6 @@ class _AIScreenState extends State<AIScreen> {
                           Text(
                             'Schedule ideas with context',
                             style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                          const SizedBox(height: 6),
-                          const Text(
-                            'Use the same assistant style as the web sidebar to ask questions or generate suggestions for the selected day.',
-                            style: TextStyle(
-                              color: AppTheme.textMuted,
-                              height: 1.4,
-                            ),
                           ),
                           const SizedBox(height: 14),
                           Row(
@@ -321,8 +340,17 @@ class _AIScreenState extends State<AIScreen> {
                                 ),
                               ),
                               IconButton(
-                                onPressed:
-                                    _isFetchingLocation ? null : _refreshLocation,
+                                onPressed: _isFetchingLocation
+                                    ? null
+                                    : () async {
+                                        if ((_locationNotice ?? '').contains(
+                                          'Open Settings',
+                                        )) {
+                                          await Geolocator.openAppSettings();
+                                        } else {
+                                          await _refreshLocation();
+                                        }
+                                      },
                                 icon: _isFetchingLocation
                                     ? const SizedBox(
                                         width: 16,
@@ -331,8 +359,18 @@ class _AIScreenState extends State<AIScreen> {
                                           strokeWidth: 2,
                                         ),
                                       )
-                                    : const Icon(Icons.my_location),
-                                tooltip: 'Refresh location',
+                                    : Icon(
+                                        (_locationNotice ?? '').contains(
+                                              'Open Settings',
+                                            )
+                                            ? Icons.settings_outlined
+                                            : Icons.my_location,
+                                      ),
+                                tooltip: (_locationNotice ?? '').contains(
+                                      'Open Settings',
+                                    )
+                                    ? 'Open Settings'
+                                    : 'Refresh location',
                               ),
                             ],
                           ),
@@ -425,7 +463,11 @@ class _AIScreenState extends State<AIScreen> {
                           border: Border.all(color: AppTheme.border),
                         ),
                         child: MarkdownBody(
-                          data: message.text,
+                          data: message.text.isNotEmpty
+                              ? message.text
+                              : (message.status?.isNotEmpty ?? false)
+                                  ? '_${message.status}..._'
+                                  : '',
                           selectable: true,
                           styleSheet: MarkdownStyleSheet(
                             p: const TextStyle(
@@ -457,41 +499,49 @@ class _AIScreenState extends State<AIScreen> {
                       ),
                     );
                   }),
-                ],
-              ),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _messageController,
-                      minLines: 1,
-                      maxLines: 4,
-                      decoration: const InputDecoration(
-                        hintText: 'Ask something about your calendar...',
-                      ),
-                      onSubmitted: (_) => _sendMessage(),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _messageController,
+                    minLines: 1,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      hintText: 'Ask something about your calendar...',
                     ),
+                    onSubmitted: (_) => _sendMessage(),
                   ),
-                  const SizedBox(width: 12),
-                  FilledButton(
-                    onPressed: _isSending ? null : _sendMessage,
-                    child: _isSending
-                        ? const SizedBox(
-                            height: 16,
-                            width: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send),
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton(
+                  onPressed: _isSending ? null : _sendMessage,
+                  child: _isSending
+                      ? const SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.send),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
+    );
+
+    if (widget.embedded) {
+      return content;
+    }
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('AI Assistant')),
+      body: content,
     );
   }
 }
@@ -500,8 +550,10 @@ class _ChatBubbleData {
   const _ChatBubbleData({
     required this.role,
     required this.text,
+    this.status,
   });
 
   final String role;
   final String text;
+  final String? status;
 }

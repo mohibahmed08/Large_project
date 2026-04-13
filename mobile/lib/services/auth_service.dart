@@ -37,6 +37,23 @@ class AuthService {
     );
   }
 
+  Future<void> requestPasswordReset(String email) async {
+    await _post(
+      Uri.parse('$baseUrl/forgotpassword'),
+      {'email': email},
+    );
+  }
+
+  Future<void> resetPassword({
+    required String token,
+    required String newPassword,
+  }) async {
+    await _post(
+      Uri.parse('$baseUrl/resetpassword'),
+      {'token': token, 'newPassword': newPassword},
+    );
+  }
+
   Future<Map<String, dynamic>> _post(Uri uri, Map<String, dynamic> body) async {
     final response = await http.post(
       uri,

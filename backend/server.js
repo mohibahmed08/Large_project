@@ -33,6 +33,7 @@ app.use((req, res, next) =>
 const api = require('./api.js');
 api.setApp(app, client);
 api.verifyEmailTransporter();
+api.startReminderLoop(client);
 
 // Starting the server
 const PORT = process.env.PORT || 5000;

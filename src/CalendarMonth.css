@@ -10,24 +10,29 @@
   top: 0;
   z-index: 9;
 
-  display: flex;
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 56px;
   align-items: center;
-  justify-content: center; /* center them together */
-  gap: 1em; /* small spacing between items */
+  gap: 12px;
 
   user-select: none; /* prevent text highlighting */
 
-  padding: 10px 0;
+  padding: 10px 16px;
   background-color: rgba(26, 26, 46, 0.5); /* lighter than full black */
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);     /* Safari */
 }
 
+.calendar-month-header-side {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
 .calendar-month-month-name {
   cursor: pointer;
   font-weight: 600;
-
-  width: 250px;       /* fixed width */
   text-align: center; /* center the text inside */
 }
 .calendar-month-month-name,
@@ -75,7 +80,8 @@
 
 /* day cell shape */
 .calendar-month-day-grid-wrapper > *{
-  aspect-ratio: 1 / 0.9;
+  aspect-ratio: 1 / 0.72;
+  min-width: 0;
 }
 
 /* INDENT FIRST DAY IF NOT SINGLE MONTH */

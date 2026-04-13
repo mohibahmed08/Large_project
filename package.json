@@ -9,6 +9,7 @@
     "eject": "react-scripts eject"
   },
   "dependencies": {
+    "jszip": "^3.10.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-scripts": "^5.0.1"
