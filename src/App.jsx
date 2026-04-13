@@ -1,5 +1,5 @@
 import './App.css';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react'; // Added useRef
 
 import Calendar from './Calendar.jsx';
 import Login, { ResetPasswordPage } from './login.jsx';
@@ -307,6 +307,10 @@ function App() {
     const [accountFeedback, setAccountFeedback] = useState('');
     const [emailFeedback, setEmailFeedback] = useState('');
 
+    // Avatar Feature States
+    const fileInputRef = useRef(null);
+    const [avatarPreview, setAvatarPreview] = useState(null);
+
     const currentDate = new Date();
     const verticalDateString = selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const fullDateString = selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
@@ -376,9 +380,11 @@ function App() {
                     reminderEnabled: false,
                     reminderMinutesBefore: 30,
                 },
+                avatar: null,
             };
             setAccountSettings(nextSettings);
             setAccountDraft(nextSettings);
+            setAvatarPreview(nextSettings.avatar || null);
             setEmailDraft('');
         } catch (error) {
             setAccountFeedback(error.message);
@@ -409,6 +415,7 @@ function App() {
         setAccountModalOpen(true);
         if (accountSettings) {
             setAccountDraft(accountSettings);
+            setAvatarPreview(accountSettings.avatar || null);
         } else {
             loadAccountSettings();
         }
@@ -439,6 +446,7 @@ function App() {
                     jwtToken: session.jwtToken,
                     firstName: accountDraft.firstName,
                     lastName: accountDraft.lastName,
+                    avatar: avatarPreview,
                     reminderEnabled: accountDraft.reminderDefaults?.reminderEnabled === true,
                     reminderMinutesBefore: Number(accountDraft.reminderDefaults?.reminderMinutesBefore || 30),
                 }),
@@ -458,6 +466,54 @@ function App() {
         } finally {
             setAccountSaving(false);
         }
+    };
+
+    // Avatar Logic
+    const handleFileChange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            if (file.type === 'image/gif') {
+                setAvatarPreview(event.target.result);
+            } else {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX_WIDTH = 400;
+                    const MAX_HEIGHT = 400;
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > height) {
+                        if (width > MAX_WIDTH) {
+                            height *= MAX_WIDTH / width;
+                            width = MAX_WIDTH;
+                        }
+                    } else {
+                        if (height > MAX_HEIGHT) {
+                            width *= MAX_HEIGHT / height;
+                            height = MAX_HEIGHT;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.7); 
+                    setAvatarPreview(dataUrl);
+                };
+                img.src = event.target.result;
+            }
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleRemoveAvatar = () => {
+        setAvatarPreview(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
     };
 
     const requestEmailChange = async () => {
@@ -591,10 +647,8 @@ function App() {
 
         setIsLocating(true);
         setLocationNotice('Checking location...');
-
         try {
             const coords = await requestWeatherLocation();
-
             if (!coords.isFallback) {
                 setLocation(coords);
                 setLocationNotice('Nearby suggestions are using your current location.');
@@ -617,6 +671,7 @@ function App() {
         try {
             const localNow = new Date();
             const coords = await ensureLocation();
+
             const response = await fetch(`${API_ROOT}/suggestevents`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -652,9 +707,8 @@ function App() {
             const updated = [...prev];
             const lastIndex = updated.length - 1;
             const previous = updated[lastIndex];
-            const seed = previous?.role === 'assistant'
-                ? previous
-                : { role: 'assistant', text: '', status: '' };
+
+            const seed = previous?.role === 'assistant' ? previous : { role: 'assistant', text: '', status: '' };
             const nextMessage = updater(seed);
 
             if (previous?.role === 'assistant') {
@@ -680,16 +734,14 @@ function App() {
         try {
             const localNow = new Date();
             const coords = await ensureLocation();
+
             const response = await fetch(`${API_ROOT}/chatstream`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     userId: session.userId,
                     jwtToken: session.jwtToken,
-                    messages: nextMessages.map((message) => ({
-                        role: message.role,
-                        content: message.text,
-                    })),
+                    messages: nextMessages.map((message) => ({ role: message.role, content: message.text, })),
                     localNow: localNow.toISOString(),
                     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                     utcOffsetMinutes: -localNow.getTimezoneOffset(),
@@ -748,483 +800,417 @@ function App() {
                         await waitForNextPaint();
                     } else if (payload.type === 'done') {
                         updateToken(payload.jwtToken);
-                        updateStreamingAssistantMessage((previous) => ({
-                            ...previous,
-                            status: '',
-                        }));
-                        if (payload.calendarChanged) {
-                            refreshCalendar();
-                        }
-                    } else if (payload.type === 'error') {
-                        throw new Error(payload.error || 'Streaming failed.');
                     }
                 }
             }
-
-            const finalLine = buffer.trim();
-            if (finalLine) {
-                let payload;
-                try {
-                    payload = JSON.parse(finalLine);
-                } catch {
-                    payload = null;
-                }
-
-                if (payload?.type === 'done') {
-                    updateToken(payload.jwtToken);
-                } else if (payload?.type === 'error') {
-                    throw new Error(payload.error || 'Streaming failed.');
-                }
-            }
         } catch (error) {
-            setMessages((prev) => {
-                const updated = [...prev];
-                const lastIndex = updated.length - 1;
-                const previous = updated[lastIndex];
-                if (previous?.role === 'assistant' && previous.text === '') {
-                    updated[lastIndex] = { role: 'assistant', text: error.message };
-                    return updated;
-                }
-
-                return [...updated, { role: 'assistant', text: error.message }];
-            });
+            updateStreamingAssistantMessage((previous) => ({
+                ...previous,
+                text: `${previous.text}\n\nError: ${error.message}`,
+                status: '',
+            }));
         } finally {
             setAiLoading(false);
         }
     };
 
-    const saveSuggestion = async (suggestion) => {
-        const session = getSession();
-        const key = suggestionKey(suggestion);
-        if (!session || savedSuggestionKeys.includes(key) || aiLoading) {
-            return;
-        }
-
-        setAiLoading(true);
-        try {
-            const startDate = dateWithSuggestedTime(currentDate, suggestion.suggestedTime || '');
-            const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
-            const response = await fetch(`${API_ROOT}/savecalendar`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    userId: session.userId,
-                    jwtToken: session.jwtToken,
-                    title: suggestion.title,
-                    description: suggestion.description,
-                    dueDate: startDate.toISOString(),
-                    endDate: endDate.toISOString(),
-                    source: 'manual',
-                    isCompleted: false,
-                }),
-            });
-
-            const data = await response.json();
-            if (!response.ok) {
-                throw new Error(data.error || 'Could not save suggestion.');
-            }
-
-            updateToken(data.jwtToken);
-            setSavedSuggestionKeys((prev) => [...prev, key]);
-            refreshCalendar();
-        } catch (error) {
-            setMessages((prev) => [...prev, { role: 'assistant', text: error.message }]);
-            setAiMode('chat');
-        } finally {
-            setAiLoading(false);
-        }
+    const addSuggestionToCalendar = (suggestion) => {
+        setCalendarModalIntent({
+            kind: 'add',
+            title: suggestion.title || '',
+            description: suggestion.description || '',
+            date: dateWithSuggestedTime(selectedDate, suggestion.suggestedTime || '12:00').toISOString(),
+            key: Date.now(),
+        });
+        setSavedSuggestionKeys((prev) => [...prev, suggestionKey(suggestion)]);
     };
-
-    const currentSession = isAuthenticated ? getSession() : null;
-    const profileFirstName = accountSettings?.firstName || currentSession?.firstName || 'John';
-    const profileLastName = accountSettings?.lastName || currentSession?.lastName || 'Doe';
-    const profileInitials = `${profileFirstName.charAt(0)}${profileLastName.charAt(0)}`.toUpperCase();
-
-    // Handle /resetpassword?token=... route before anything else
-    const isResetRoute = window.location.pathname === '/resetpassword' &&
-                         new URLSearchParams(window.location.search).has('token');
-    if (isResetRoute) {
-        return <ResetPasswordPage />;
-    }
 
     return (
         <>
-            {isAuthenticated && currentSession ? (
+            {isAuthenticated ? (
                 <>
-                    <div className="main-layout" style={{ '--bg-img': `url(${background}` }}>
+                    <div className="main-layout" style={{ '--bg-img': `url(${background})` }}>
                         <div className={`sidebar left-sidebar ${leftOpen ? 'open' : 'closed'}`}>
-                        <button className="toggle-btn right-align" onClick={() => setLeftOpen(!leftOpen)}>
-                            <img src={leftOpen ? leftCloseIcon : leftOpenIcon} alt="Toggle Left" />
-                        </button>
+                            <button
+                                type="button"
+                                className={`toggle-btn ${leftOpen ? 'right-align' : 'left-align'}`}
+                                onClick={() => setLeftOpen(!leftOpen)}
+                            >
+                                <img src={leftOpen ? leftCloseIcon : leftOpenIcon} alt="Toggle Sidebar" />
+                            </button>
 
-                        {leftOpen ? (
-                            <div className="sidebar-content">
-                                <div style={{ marginBottom: '20px' }}>
-                                    <h2 style={{ margin: '0 0 5px 0' }}>{isSelectedToday ? 'Today' : 'Plan'}</h2>
-                                    <p style={{ margin: 0, color: '#60a5fa', fontWeight: 'bold' }}>{fullDateString}</p>
-                                </div>
-
-                                <nav style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                                    <button className="nav-item" onClick={() => openCalendarModal('plan')}><span className="nav-icon">Plan</span></button>
-                                    <button className="nav-item" onClick={() => openCalendarModal('event')}><span className="nav-icon">Event</span></button>
-                                    <button className="nav-item" onClick={() => openCalendarModal('task')}><span className="nav-icon">Task</span></button>
-                                    <hr style={{ border: '0', borderTop: '1px solid #2c2c3e', margin: '10px 0' }} />
-                                    <button className="nav-item" onClick={() => openCalendarModal('import')}><span className="nav-icon">Import</span></button>
-                                    <button className="nav-item" onClick={() => openAccountModal('settings')}><span className="nav-icon">Settings</span></button>
-                                </nav>
-
-                                <button
-                                    type="button"
-                                    className="profile-summary-button"
-                                    onClick={() => openAccountModal('account')}
-                                >
-                                    <div className="profile-summary-avatar">
-                                        {profileInitials}
-                                    </div>
-                                    <div className="profile-summary-copy">
-                                        <span className="profile-summary-name">{`${profileFirstName} ${profileLastName}`}</span>
-                                        <span className="profile-summary-email">{accountSettings?.email || ''}</span>
-                                    </div>
-                                </button>
-                                <div className="logout-container">
-                                    <button onClick={logout} className="logout-btn">
-                                        Logout
+                            {leftOpen && (
+                                <div className="sidebar-content">
+                                    <button type="button" className="nav-item" onClick={() => openCalendarModal('add')}>
+                                        <span className="nav-icon">＋</span>
+                                        <span>New Event</span>
+                                    </button>
+                                    <button type="button" className="nav-item" onClick={() => openAccountModal('account')}>
+                                        <span className="nav-icon">👤</span>
+                                        <span>Account</span>
+                                    </button>
+                                    <button type="button" className="nav-item" onClick={() => openAccountModal('sync')}>
+                                        <span className="nav-icon">🔄</span>
+                                        <span>Sync</span>
+                                    </button>
+                                    <button type="button" className="nav-item" style={{ marginTop: 'auto' }} onClick={logout}>
+                                        <span className="nav-icon">🚪</span>
+                                        <span>Logout</span>
                                     </button>
                                 </div>
-                            </div>
-                        ) : (
-                            <div className="vertical-date">
-                                {verticalDateString}
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="center-content">
-                        <div className="calendar-wrapper">
-                            <Calendar
-                                singleMonth={false}
-                                setBackground={setBackground}
-                                session={currentSession}
-                                apiRoot={API_ROOT}
-                                onSessionRefresh={updateToken}
-                                refreshKey={calendarRefreshKey}
-                                modalIntent={calendarModalIntent}
-                                reminderDefaults={accountSettings?.reminderDefaults}
-                                onSelectedDateChange={setSelectedDate}
-                            />
+                            )}
                         </div>
-                    </div>
 
-                    <div className={`sidebar right-sidebar ${rightOpen ? 'open' : 'closed'}`}>
-                        <button className="toggle-btn left-align" onClick={() => setRightOpen(!rightOpen)}>
-                            <img src={rightOpen ? rightCloseIcon : rightOpenIcon} alt="Toggle Right" />
-                        </button>
-                        {rightOpen && (
-                            <div className="sidebar-content ai-panel">
-                                <div className="ai-panel-header">
-                                    <h2>AI Assistant</h2>
-                                </div>
-                                <div className="ai-hero-card">
-                                    <h3>Schedule ideas with context</h3>
-                                    <div className="ai-location-row">
-                                        <span className="ai-location-text">{locationNotice}</span>
-                                        <button
-                                            className="ai-icon-btn"
-                                            type="button"
-                                            onClick={ensureLocation}
-                                            disabled={isLocating}
-                                            aria-label="Refresh location"
-                                        >
-                                            {isLocating ? '...' : <LocationIcon />}
-                                        </button>
+                        <div className="center-content">
+                            <div className="calendar-wrapper">
+                                <Calendar
+                                    refreshKey={calendarRefreshKey}
+                                    modalIntent={calendarModalIntent}
+                                    onModalClose={() => setCalendarModalIntent(null)}
+                                    onDateSelect={setSelectedDate}
+                                    onBackgroundChange={setBackground}
+                                />
+                            </div>
+                        </div>
+
+                        <div className={`sidebar right-sidebar ${rightOpen ? 'open' : 'closed'}`}>
+                            <button
+                                type="button"
+                                className={`toggle-btn ${rightOpen ? 'left-align' : 'right-align'}`}
+                                onClick={() => setRightOpen(!rightOpen)}
+                            >
+                                <img src={rightOpen ? rightCloseIcon : rightOpenIcon} alt="Toggle AI Panel" />
+                            </button>
+
+                            {rightOpen && (
+                                <div className="ai-panel">
+                                    <div className="ai-panel-header">
+                                        <h2>Assistant</h2>
                                     </div>
-                                    <textarea
-                                        className="ai-input ai-preferences"
-                                        placeholder="Suggestion preferences"
-                                        value={suggestionPreferences}
-                                        onChange={(event) => setSuggestionPreferences(event.target.value)}
-                                    />
-                                    <button
-                                        className="ai-send-btn ai-suggest-btn"
-                                        onClick={loadSuggestions}
-                                        disabled={aiLoading}
-                                    >
-                                        <SparklesIcon />
-                                        {aiLoading && aiMode === 'suggestions'
-                                            ? 'Loading...'
-                                            : `Suggest events for ${currentDate.getMonth() + 1}/${currentDate.getDate()}/${currentDate.getFullYear()}`}
-                                    </button>
-                                </div>
 
-                                {aiMode === 'suggestions' ? (
-                                    <>
-                                        <div className="ai-main-shell suggestions-mode">
-                                            <div className="ai-section ai-suggestions active">
+                                    <div className="ai-hero-card">
+                                        <h3>{fullDateString}</h3>
+                                        <p className="ai-subtitle">
+                                            {isSelectedToday ? "Here's what's happening today." : `Plan ahead for ${fullDateString}.`}
+                                        </p>
+                                        <div className="ai-location-row">
+                                            <LocationIcon />
+                                            <span className="ai-location-text">{locationNotice}</span>
+                                            <button
+                                                type="button"
+                                                className="ai-icon-btn"
+                                                onClick={loadSuggestions}
+                                                disabled={aiLoading}
+                                                title="Refresh suggestions"
+                                            >
+                                                <SparklesIcon />
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className={`ai-main-shell ${aiMode}-mode`}>
+                                        {aiMode === 'suggestions' ? (
+                                            <div className="ai-section active">
                                                 <div className="ai-section-header">
-                                                    <h3>Suggestions</h3>
-                                                    <span>{suggestions.length} ready</span>
+                                                    <h3>Smart Suggestions</h3>
+                                                    <span>Based on location & time</span>
                                                 </div>
                                                 <div className="ai-suggestion-list">
                                                     {suggestions.length > 0 ? (
-                                                        suggestions.map((suggestion, index) => {
+                                                        suggestions.map((suggestion, idx) => {
                                                             const key = suggestionKey(suggestion);
                                                             const isSaved = savedSuggestionKeys.includes(key);
-
                                                             return (
-                                                                <div
-                                                                    key={`${key}-${index}`}
-                                                                    className="ai-suggestion-card"
-                                                                >
+                                                                <div key={idx} className="ai-suggestion-card">
                                                                     <div className="ai-suggestion-copy">
-                                                                        <div className="ai-suggestion-time">
-                                                                            {suggestion.suggestedTime || 'No time'}
-                                                                        </div>
+                                                                        <div className="ai-suggestion-time">{suggestion.suggestedTime}</div>
                                                                         <div className="ai-suggestion-title">{suggestion.title}</div>
                                                                         <div className="ai-suggestion-description">{suggestion.description}</div>
                                                                     </div>
                                                                     <button
                                                                         type="button"
                                                                         className={`ai-add-btn ${isSaved ? 'saved' : ''}`}
-                                                                        onClick={() => saveSuggestion(suggestion)}
-                                                                        disabled={isSaved || aiLoading}
-                                                                        aria-label={isSaved ? 'Already added' : 'Add to calendar'}
+                                                                        onClick={() => !isSaved && addSuggestionToCalendar(suggestion)}
+                                                                        disabled={isSaved}
                                                                     >
-                                                                        {isSaved ? '\u2713' : '+'}
+                                                                        {isSaved ? '✓' : '+'}
                                                                     </button>
                                                                 </div>
                                                             );
                                                         })
                                                     ) : (
                                                         <div className="ai-empty-state">
-                                                            Use the button above and I&apos;ll fill this panel with ideas for today.
+                                                            No suggestions yet. Try adding preferences or hit the sparkles!
                                                         </div>
                                                     )}
                                                 </div>
                                             </div>
-                                        </div>
-
-                                        <div className="ai-composer">
-                                            <textarea
-                                                className="ai-input ai-message-input"
-                                                placeholder="Message the assistant..."
-                                                value={aiInput}
-                                                onChange={(event) => setAiInput(event.target.value)}
-                                                onKeyDown={(event) => {
-                                                    if (event.key === 'Enter' && !event.shiftKey) {
-                                                        event.preventDefault();
-                                                        sendChat();
-                                                    }
-                                                }}
-                                            />
-                                            <button className="ai-send-btn ai-composer-send" onClick={sendChat} disabled={aiLoading}>
-                                                {aiLoading && aiMode === 'chat' ? '...' : <SendIcon />}
-                                            </button>
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div className="ai-chat-shell">
-                                        <div className="ai-main-shell chat-mode">
-                                            <div className="ai-section ai-chat active">
-                                                <div className="ai-chat-feed">
-                                                    {messages.map((message, index) => (
-                                                        <div
-                                                            key={`${message.role}-${index}`}
-                                                            className={`ai-message ${message.role === 'user' ? 'user' : 'assistant'}${message.role === 'assistant' && !message.text && message.status ? ' status-loading' : ''}`}
-                                                        >
-                                                            {message.role === 'assistant'
-                                                                ? (
-                                                                    message.text
-                                                                        ? renderAssistantMessage(message.text)
-                                                                        : message.status
-                                                                            ? <span className="ai-status-text">{displayAssistantStatus(message.status)}</span>
-                                                                            : ''
-                                                                )
-                                                                : message.text}
-                                                        </div>
-                                                    ))}
+                                        ) : (
+                                            <div className="ai-section active">
+                                                <div className="ai-chat-shell">
+                                                    <div className="ai-chat-feed">
+                                                        {messages.map((msg, i) => (
+                                                            <div key={i} className={`ai-message ${msg.role} ${msg.status ? 'status-loading' : ''}`}>
+                                                                {msg.status ? (
+                                                                    <div className="ai-status-text">{displayAssistantStatus(msg.status)}</div>
+                                                                ) : (
+                                                                    renderAssistantMessage(msg.text)
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="ai-composer ai-composer-inline">
-                                            <textarea
-                                                className="ai-input ai-message-input"
-                                                placeholder="Message the assistant..."
-                                                value={aiInput}
-                                                onChange={(event) => setAiInput(event.target.value)}
-                                                onKeyDown={(event) => {
-                                                    if (event.key === 'Enter' && !event.shiftKey) {
-                                                        event.preventDefault();
-                                                        sendChat();
-                                                    }
-                                                }}
-                                            />
-                                            <button className="ai-send-btn ai-composer-send" onClick={sendChat} disabled={aiLoading}>
-                                                {aiLoading && aiMode === 'chat' ? '...' : <SendIcon />}
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                        </div>
-                    </div>
-                    {accountModalOpen && (
-                        <div className="account-modal-overlay" onClick={() => setAccountModalOpen(false)}>
-                            <div className="account-modal" onClick={(event) => event.stopPropagation()}>
-                            <div className="account-modal-header">
-                                <div>
-                                    <div className="account-modal-kicker">Account</div>
-                                    <h2>Account & Settings</h2>
-                                </div>
-                                <button type="button" className="account-close-btn" onClick={() => setAccountModalOpen(false)}>
-                                    Close
-                                </button>
-                            </div>
-
-                            <div className="account-modal-tabs">
-                                <button
-                                    type="button"
-                                    className={`account-tab-btn ${accountTab === 'account' ? 'active' : ''}`}
-                                    onClick={() => setAccountTab('account')}
-                                >
-                                    Account
-                                </button>
-                                <button
-                                    type="button"
-                                    className={`account-tab-btn ${accountTab === 'settings' ? 'active' : ''}`}
-                                    onClick={() => setAccountTab('settings')}
-                                >
-                                    Settings
-                                </button>
-                            </div>
-
-                            <div className="account-modal-body">
-                                <div className="account-hero">
-                                    <div className="account-avatar-shell">
-                                        <div className="account-avatar">{profileInitials}</div>
-                                        <button type="button" className="account-avatar-btn" disabled>
-                                            Avatar soon
-                                        </button>
-                                    </div>
-                                    <div className="account-hero-copy">
-                                        <h3>{`${profileFirstName} ${profileLastName}`}</h3>
-                                        <p>{accountSettings?.email || 'Loading email...'}</p>
-                                        {accountSettings?.pendingEmail && (
-                                            <div className="account-pending-badge">
-                                                Pending email: {accountSettings.pendingEmail}
                                             </div>
                                         )}
                                     </div>
-                                </div>
 
+                                    <div className="ai-input-area">
+                                        <div className="ai-input-wrapper">
+                                            <textarea
+                                                className="ai-input"
+                                                placeholder={aiMode === 'suggestions' ? "Add preferences (e.g. 'I like jazz')..." : "Ask anything..."}
+                                                value={aiMode === 'suggestions' ? suggestionPreferences : aiInput}
+                                                onChange={(e) => aiMode === 'suggestions' ? setSuggestionPreferences(e.target.value) : setAiInput(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                                        e.preventDefault();
+                                                        if (aiMode === 'suggestions') loadSuggestions();
+                                                        else sendChat();
+                                                    }
+                                                }}
+                                            />
+                                            <button
+                                                type="button"
+                                                className="ai-send-btn"
+                                                onClick={aiMode === 'suggestions' ? loadSuggestions : sendChat}
+                                                disabled={aiLoading}
+                                            >
+                                                {aiLoading ? '...' : <SendIcon />}
+                                            </button>
+                                        </div>
+                                        <div className="ai-mode-toggle">
+                                            <button
+                                                type="button"
+                                                className={`ai-suggest-btn ${aiMode === 'suggestions' ? 'active' : ''}`}
+                                                onClick={() => setAiMode('suggestions')}
+                                            >
+                                                Suggestions
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={`ai-suggest-btn ${aiMode === 'chat' ? 'active' : ''}`}
+                                                onClick={() => setAiMode('chat')}
+                                            >
+                                                Chat
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {accountModalOpen && (
+                    <div className="account-modal-overlay">
+                        <div className="account-modal">
+                            <div className="account-modal-header">
+                                <div className="account-modal-tabs">
+                                    <button
+                                        type="button"
+                                        className={`account-tab-btn ${accountTab === 'account' ? 'active' : ''}`}
+                                        onClick={() => setAccountTab('account')}
+                                    >
+                                        Account Settings
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`account-tab-btn ${accountTab === 'sync' ? 'active' : ''}`}
+                                        onClick={() => setAccountTab('sync')}
+                                    >
+                                        External Sync
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="account-modal-body">
                                 {accountLoading ? (
-                                    <div className="account-feedback-panel">Loading account details...</div>
+                                    <div className="account-loading">Loading settings...</div>
                                 ) : (
                                     <>
-                                        {accountTab === 'account' ? (
-                                            <div className="account-section-stack">
-                                                <div className="account-section-card">
-                                                    <h3>Profile</h3>
-                                                    <div className="account-field-row">
-                                                        <label className="account-field">
-                                                            <span>First name</span>
-                                                            <input
-                                                                value={accountDraft.firstName || ''}
-                                                                onChange={(event) => setAccountDraft((prev) => ({ ...prev, firstName: event.target.value }))}
-                                                            />
-                                                        </label>
-                                                        <label className="account-field">
-                                                            <span>Last name</span>
-                                                            <input
-                                                                value={accountDraft.lastName || ''}
-                                                                onChange={(event) => setAccountDraft((prev) => ({ ...prev, lastName: event.target.value }))}
-                                                            />
-                                                        </label>
+                                        {accountTab === 'account' && (
+                                            <div className="account-settings-form">
+                                                <div className="account-avatar-section">
+                                                    <div className="account-avatar-container">
+                                                        <div 
+                                                            className="account-avatar-circle" 
+                                                            onClick={() => fileInputRef.current.click()}
+                                                            title="Click to upload"
+                                                        >
+                                                            {avatarPreview ? (
+                                                                <img src={avatarPreview} alt="Profile" className="account-avatar-img" />
+                                                            ) : (
+                                                                <div className="account-avatar-default">👤</div>
+                                                            )}
+                                                        </div>
+                                                        
+                                                        <div className="account-avatar-buttons">
+                                                            <button 
+                                                                type="button" 
+                                                                className="account-avatar-upload-btn" 
+                                                                onClick={() => fileInputRef.current.click()}
+                                                            >
+                                                                Upload Picture
+                                                            </button>
+                                                            {avatarPreview && (
+                                                                <button 
+                                                                    type="button" 
+                                                                    className="account-avatar-remove-btn" 
+                                                                    onClick={handleRemoveAvatar}
+                                                                >
+                                                                    Remove
+                                                                </button>
+                                                            )}
+                                                        </div>
+
+                                                        <input 
+                                                            type="file" 
+                                                            ref={fileInputRef} 
+                                                            onChange={handleFileChange} 
+                                                            accept="image/*" 
+                                                            style={{ display: 'none' }} 
+                                                        />
                                                     </div>
                                                 </div>
 
-                                                <div className="account-section-card">
-                                                    <h3>Email</h3>
-                                                    <label className="account-field">
-                                                        <span>Current email</span>
-                                                        <input value={accountSettings?.email || ''} disabled />
-                                                    </label>
-                                                    <label className="account-field">
-                                                        <span>New email</span>
+                                                <div className="account-form-grid">
+                                                    <div className="account-field">
+                                                        <label>First Name</label>
                                                         <input
-                                                            value={emailDraft}
-                                                            onChange={(event) => setEmailDraft(event.target.value)}
-                                                            placeholder="name@example.com"
+                                                            type="text"
+                                                            value={accountDraft.firstName}
+                                                            onChange={(e) => setAccountDraft({ ...accountDraft, firstName: e.target.value })}
                                                         />
-                                                    </label>
-                                                    <div className="account-inline-actions">
-                                                        <button type="button" className="account-primary-btn" onClick={requestEmailChange} disabled={accountSaving || !emailDraft.trim()}>
-                                                            {accountSaving ? 'Sending...' : 'Verify new email'}
-                                                        </button>
                                                     </div>
-                                                    {emailFeedback && <div className="account-feedback-panel">{emailFeedback}</div>}
+                                                    <div className="account-field">
+                                                        <label>Last Name</label>
+                                                        <input
+                                                            type="text"
+                                                            value={accountDraft.lastName}
+                                                            onChange={(e) => setAccountDraft({ ...accountDraft, lastName: e.target.value })}
+                                                        />
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ) : (
-                                            <div className="account-section-stack">
-                                                <div className="account-section-card">
-                                                    <h3>Reminder defaults</h3>
-                                                    <label className="account-check-row">
+
+                                                <div className="account-field">
+                                                    <label>Notification Defaults</label>
+                                                    <div className="account-check-row">
                                                         <input
                                                             type="checkbox"
-                                                            checked={accountDraft.reminderDefaults?.reminderEnabled === true}
-                                                            onChange={(event) => setAccountDraft((prev) => ({
-                                                                ...prev,
+                                                            checked={accountDraft.reminderDefaults?.reminderEnabled}
+                                                            onChange={(e) => setAccountDraft({
+                                                                ...accountDraft,
                                                                 reminderDefaults: {
-                                                                    ...prev.reminderDefaults,
-                                                                    reminderEnabled: event.target.checked,
-                                                                },
-                                                            }))}
+                                                                    ...accountDraft.reminderDefaults,
+                                                                    reminderEnabled: e.target.checked
+                                                                }
+                                                            })}
                                                         />
-                                                        <span>Enable reminders by default for new items</span>
-                                                    </label>
-                                                    <label className="account-field">
-                                                        <span>Default reminder timing</span>
-                                                        <select
-                                                            value={Number(accountDraft.reminderDefaults?.reminderMinutesBefore || 30)}
-                                                            disabled={accountDraft.reminderDefaults?.reminderEnabled !== true}
-                                                            onChange={(event) => setAccountDraft((prev) => ({
-                                                                ...prev,
-                                                                reminderDefaults: {
-                                                                    ...prev.reminderDefaults,
-                                                                    reminderMinutesBefore: Number(event.target.value),
-                                                                },
-                                                            }))}
-                                                        >
-                                                            {REMINDER_OPTIONS.map((option) => (
-                                                                <option key={option.value} value={option.value}>{option.label}</option>
-                                                            ))}
-                                                        </select>
-                                                    </label>
+                                                        <span>Enable reminders for new events</span>
+                                                    </div>
                                                 </div>
 
-                                                <div className="account-section-card">
-                                                    <h3>Calendar data</h3>
-                                                    <p className="account-section-copy">
-                                                        Import and connected calendar tools stay in the calendar import modal. You can also export your current calendar as an iCal file here.
-                                                    </p>
-                                                    <label className="account-field">
-                                                        <span>Subscription feed URL</span>
-                                                        <input value={accountSettings?.calendarFeedUrl || ''} readOnly />
-                                                    </label>
-                                                    <div className="account-inline-actions account-inline-actions-wrap">
-                                                        <button type="button" className="account-secondary-btn" onClick={() => copyCalendarFeed(false)}>
-                                                            Copy feed URL
-                                                        </button>
-                                                        <button type="button" className="account-secondary-btn" onClick={() => copyCalendarFeed(true)}>
-                                                            Copy webcal link
-                                                        </button>
-                                                        <button type="button" className="account-secondary-btn" onClick={regenerateCalendarFeed} disabled={accountSaving}>
-                                                            Regenerate link
+                                                {accountDraft.reminderDefaults?.reminderEnabled && (
+                                                    <div className="account-field">
+                                                        <label>Default Reminder Time</label>
+                                                        <select
+                                                            value={accountDraft.reminderDefaults?.reminderMinutesBefore}
+                                                            onChange={(e) => setAccountDraft({
+                                                                ...accountDraft,
+                                                                reminderDefaults: {
+                                                                    ...accountDraft.reminderDefaults,
+                                                                    reminderMinutesBefore: Number(e.target.value)
+                                                                }
+                                                            })}
+                                                        >
+                                                            {REMINDER_OPTIONS.map((opt) => (
+                                                                <option key={opt.value} value={opt.value}>
+                                                                    {opt.label}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                )}
+
+                                                <div className="account-divider" />
+
+                                                <div className="account-field">
+                                                    <label>Current Email Address</label>
+                                                    <div className="account-email-display">
+                                                        {accountSettings?.email}
+                                                        {accountSettings?.pendingEmail && (
+                                                            <span className="account-email-pending">
+                                                                (Pending change to: {accountSettings.pendingEmail})
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                <div className="account-field">
+                                                    <label>Change Email</label>
+                                                    <div className="account-input-with-btn">
+                                                        <input
+                                                            type="email"
+                                                            placeholder="New email address"
+                                                            value={emailDraft}
+                                                            onChange={(e) => setEmailDraft(e.target.value)}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            className="account-primary-btn"
+                                                            onClick={requestEmailChange}
+                                                            disabled={accountSaving || !emailDraft.trim()}
+                                                        >
+                                                            Update
                                                         </button>
                                                     </div>
-                                                    <div className="account-inline-actions">
+                                                    {emailFeedback && <div className="account-feedback-small">{emailFeedback}</div>}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {accountTab === 'sync' && (
+                                            <div className="account-sync-panel">
+                                                <div className="account-sync-info">
+                                                    <h3>Subscribe to your calendar</h3>
+                                                    <p>Use these links to see your events in Google Calendar, Outlook, or Apple Calendar.</p>
+                                                </div>
+
+                                                <div className="account-sync-section">
+                                                    <label>iCal Subscription Link (Webcal)</label>
+                                                    <div className="account-input-with-btn">
+                                                        <input type="text" readOnly value={accountSettings?.calendarFeedWebcalUrl || 'Generating...'} />
+                                                        <button type="button" className="account-secondary-btn" onClick={() => copyCalendarFeed(true)}>
+                                                            Copy
+                                                        </button>
+                                                    </div>
+                                                    <p className="account-help-text">Recommended for most calendar apps.</p>
+                                                </div>
+
+                                                <div className="account-sync-section">
+                                                    <label>Direct Feed URL (HTTPS)</label>
+                                                    <div className="account-input-with-btn">
+                                                        <input type="text" readOnly value={accountSettings?.calendarFeedUrl || 'Generating...'} />
+                                                        <button type="button" className="account-secondary-btn" onClick={() => copyCalendarFeed(false)}>
+                                                            Copy
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                <div className="account-sync-actions">
+                                                    <div className="account-sync-row">
+                                                        <button type="button" className="account-danger-link" onClick={regenerateCalendarFeed}>
+                                                            Regenerate Link
+                                                        </button>
                                                         <button type="button" className="account-primary-btn" onClick={exportCalendar}>
                                                             Export iCal
                                                         </button>
