@@ -1,8 +1,16 @@
+// @ts-nocheck
 import './App.css';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import Calendar from './Calendar.jsx';
-import Login, { ResetPasswordPage } from './login.jsx';
+import Calendar from './Calendar';
+import Login, { ResetPasswordPage } from './login';
+import {
+    getContrastTextColor,
+    hexToRgbString,
+    normalizeHexColor,
+    resolveEffectiveBackground,
+} from './themeUtils';
+import { WEATHER_SLOTS } from './weatherScenes';
 import { requestWeatherLocation } from './weatherLocation.js';
 
 import leftOpenIcon from './icons/panel-left-open.svg';
@@ -12,6 +20,95 @@ import rightCloseIcon from './icons/panel-right-close.svg';
 
 const RAW_API_BASE = process.env.REACT_APP_API_URL ?? 'http://localhost:5000';
 const API_ROOT = RAW_API_BASE.endsWith('/api') ? RAW_API_BASE : `${RAW_API_BASE}/api`;
+
+// ── Theme system ──────────────────────────────────────────────────────────────
+const THEME_STORAGE_KEY = 'calpp_theme';
+
+const PRESET_THEMES = [
+    {
+        id: 'default',
+        name: 'Default',
+        description: 'Dynamic weather backgrounds',
+        preview: 'linear-gradient(135deg,#1e3a5f 0%,#3b82f6 100%)',
+        btnColor: '#60a5fa',
+        images: null,
+    },
+    {
+        id: 'aurora',
+        name: 'Aurora',
+        description: 'Deep purples & cool blues',
+        preview: 'linear-gradient(135deg,#0d0221 0%,#5a0d82 50%,#1a6b8a 100%)',
+        btnColor: '#a855f7',
+        images: { universal: 'https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=1920&q=80&auto=format&fit=crop' },
+    },
+    {
+        id: 'forest',
+        name: 'Forest',
+        description: 'Lush greens & earthy tones',
+        preview: 'linear-gradient(135deg,#0f2a0f 0%,#2d6a2d 50%,#1a3a1a 100%)',
+        btnColor: '#22c55e',
+        images: { universal: 'https://images.unsplash.com/photo-1448375240586-882707db888b?w=1920&q=80&auto=format&fit=crop' },
+    },
+    {
+        id: 'desert',
+        name: 'Desert Dusk',
+        description: 'Warm oranges & sandy hues',
+        preview: 'linear-gradient(135deg,#7c2d12 0%,#ea580c 50%,#fbbf24 100%)',
+        btnColor: '#f97316',
+        images: { universal: 'https://images.unsplash.com/photo-1509316785289-025f5b846b35?w=1920&q=80&auto=format&fit=crop' },
+    },
+    {
+        id: 'ocean',
+        name: 'Ocean',
+        description: 'Deep sea blues & teals',
+        preview: 'linear-gradient(135deg,#0c1a40 0%,#0e4d6e 50%,#0ea5e9 100%)',
+        btnColor: '#06b6d4',
+        images: { universal: 'https://images.unsplash.com/photo-1505118380757-91f5f5632de0?w=1920&q=80&auto=format&fit=crop' },
+    },
+    {
+        id: 'midnight',
+        name: 'Midnight',
+        description: 'Deep blacks & silver accents',
+        preview: 'linear-gradient(135deg,#0a0a0a 0%,#1c1c2e 50%,#2d2d44 100%)',
+        btnColor: '#94a3b8',
+        images: { universal: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=1920&q=80&auto=format&fit=crop' },
+    },
+    {
+        id: 'custom',
+        name: 'Custom',
+        description: 'Your own colors & images',
+        preview: 'linear-gradient(135deg,#374151 0%,#6b7280 100%)',
+        btnColor: '#60a5fa',
+        images: {},
+    },
+];
+
+function loadTheme() {
+    try {
+        const raw = localStorage.getItem(THEME_STORAGE_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+    } catch {
+        return null;
+    }
+}
+
+function persistTheme(theme) {
+    try {
+        localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(theme));
+    } catch {
+        // ignore quota errors
+    }
+}
+
+function applyBtnColorOverride(color) {
+    const resolvedColor = normalizeHexColor(color);
+    document.documentElement.style.setProperty('--btn-color', resolvedColor);
+    document.documentElement.style.setProperty('--btn-color-rgb', hexToRgbString(resolvedColor));
+    document.documentElement.style.setProperty('--btn-text-color', getContrastTextColor(resolvedColor));
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 const REMINDER_OPTIONS = [
     { value: 0, label: 'At time of event' },
     { value: 5, label: '5 minutes before' },
@@ -20,8 +117,20 @@ const REMINDER_OPTIONS = [
     { value: 60, label: '1 hour before' },
     { value: 1440, label: '1 day before' },
 ];
+const SUPPORTED_AVATAR_TYPES = new Set([
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'image/webp',
+    'image/avif',
+    'image/heic',
+    'image/heif',
+]);
+const AVATAR_ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,image/avif,image/heic,image/heif';
+const MAX_AVATAR_FILE_BYTES = 2 * 1024 * 1024;
+const AVATAR_FORMAT_LABEL = 'PNG, JPEG, GIF, WEBP, AVIF, HEIC, or HEIF';
 
-function decodeToken(token) {
+export function decodeToken(token) {
     if (!token) {
         return null;
     }
@@ -39,7 +148,7 @@ function suggestionKey(suggestion) {
     return `${suggestion.title}|${suggestion.suggestedTime}|${suggestion.description}`;
 }
 
-function dateWithSuggestedTime(base, suggestedTime) {
+export function dateWithSuggestedTime(base, suggestedTime) {
     const parts = suggestedTime.split(':');
     if (parts.length !== 2) {
         return new Date(base.getFullYear(), base.getMonth(), base.getDate(), 12, 0, 0, 0);
@@ -58,7 +167,7 @@ function dateWithSuggestedTime(base, suggestedTime) {
     );
 }
 
-function extractJsonArray(text) {
+export function extractJsonArray(text) {
     const fenceMatch = /```(?:json)?\s*([\s\S]*?)```/m.exec(text);
     const fenced = fenceMatch?.[1]?.trim();
     if (fenced && fenced.startsWith('[') && fenced.endsWith(']')) {
@@ -74,7 +183,7 @@ function extractJsonArray(text) {
     return '';
 }
 
-function normalizeSuggestions(rawSuggestions) {
+export function normalizeSuggestions(rawSuggestions) {
     const items = Array.isArray(rawSuggestions) ? rawSuggestions : [];
     if (
         items.length === 1 &&
@@ -95,7 +204,7 @@ function normalizeSuggestions(rawSuggestions) {
     return items;
 }
 
-function displayAssistantStatus(status) {
+export function displayAssistantStatus(status) {
     const trimmed = String(status || '').trim();
     if (!trimmed) {
         return '';
@@ -111,6 +220,36 @@ function waitForNextPaint() {
                 ? window.requestAnimationFrame.bind(window)
                 : (callback) => window.setTimeout(callback, 16);
         schedule(() => resolve());
+    });
+}
+
+export function validateAvatarFile(file) {
+    if (!file) {
+        throw new Error('Choose an image file to upload.');
+    }
+
+    if (!SUPPORTED_AVATAR_TYPES.has(String(file.type || '').toLowerCase())) {
+        throw new Error(`Profile picture must be ${AVATAR_FORMAT_LABEL}.`);
+    }
+
+    if (file.size > MAX_AVATAR_FILE_BYTES) {
+        throw new Error('Profile picture must be 2 MB or smaller.');
+    }
+}
+
+function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            if (typeof reader.result === 'string' && reader.result) {
+                resolve(reader.result);
+                return;
+            }
+
+            reject(new Error('Could not read the selected image.'));
+        };
+        reader.onerror = () => reject(new Error('Could not read the selected image.'));
+        reader.readAsDataURL(file);
     });
 }
 
@@ -270,7 +409,7 @@ function App() {
     const [isAuthenticated, setIsAuthenticated] = useState(Boolean(localStorage.getItem('jwtToken')));
     const [leftOpen, setLeftOpen] = useState(true);
     const [rightOpen, setRightOpen] = useState(true);
-    const [background, setBackground] = useState(null);
+    const [background, setBackground] = useState({ image: null, sceneKey: null });
     const [aiInput, setAiInput] = useState('');
     const [suggestionPreferences, setSuggestionPreferences] = useState('');
     const [aiLoading, setAiLoading] = useState(false);
@@ -279,15 +418,31 @@ function App() {
     const [aiMode, setAiMode] = useState('chat');
     const [location, setLocation] = useState(null);
     const [isLocating, setIsLocating] = useState(false);
-    const [locationNotice, setLocationNotice] = useState('Location is blocked, set to UCF');
+    const [locationNotice, setLocationNotice] = useState('Trying to use your current location for nearby suggestions.');
     const [messages, setMessages] = useState([
         { role: 'assistant', text: 'Ask about your day or grab event suggestions.' },
     ]);
     const [calendarRefreshKey, setCalendarRefreshKey] = useState(0);
     const [calendarModalIntent, setCalendarModalIntent] = useState(null);
     const [selectedDate, setSelectedDate] = useState(initialSelectedDate);
+    const [searchOpen, setSearchOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchMeta, setSearchMeta] = useState({
+        active: false,
+        loading: false,
+        count: 0,
+        error: '',
+    });
     const [accountModalOpen, setAccountModalOpen] = useState(false);
     const [accountTab, setAccountTab] = useState('account');
+    // Theme state — loaded from localStorage on mount
+    const [activeTheme, setActiveTheme] = useState(() => {
+        const saved = loadTheme();
+        return saved || PRESET_THEMES[0];
+    });
+    // Scratch state for the theme editor (before Apply is clicked)
+    const [themeDraft, setThemeDraft] = useState(null);
+    const [customBgMode, setCustomBgMode] = useState('universal'); // 'universal' | 'perScene'
     const [accountSettings, setAccountSettings] = useState(null);
     const [accountDraft, setAccountDraft] = useState({
         firstName: '',
@@ -306,6 +461,10 @@ function App() {
     const [accountSaving, setAccountSaving] = useState(false);
     const [accountFeedback, setAccountFeedback] = useState('');
     const [emailFeedback, setEmailFeedback] = useState('');
+    const [avatarUrl, setAvatarUrl] = useState(null);
+    const [pendingAvatarUrl, setPendingAvatarUrl] = useState(null);
+    const searchInputRef = useRef(null);
+    const locationRequestRef = useRef(null);
 
     const currentDate = new Date();
     const verticalDateString = selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -313,10 +472,18 @@ function App() {
     const todayDate = new Date();
     todayDate.setHours(0, 0, 0, 0);
     const isSelectedToday = selectedDate.getTime() === todayDate.getTime();
+    const trimmedSearchQuery = searchQuery.trim();
 
     const logout = () => {
         localStorage.removeItem('jwtToken');
         localStorage.removeItem('accessToken');
+        setAvatarUrl(null);
+        setPendingAvatarUrl(null);
+        locationRequestRef.current = null;
+        setLocation(null);
+        setLocationNotice('Trying to use your current location for nearby suggestions.');
+        setSearchQuery('');
+        setSearchOpen(false);
         setIsAuthenticated(false);
     };
 
@@ -370,6 +537,7 @@ function App() {
                 lastName: session.lastName || '',
                 email: '',
                 pendingEmail: '',
+                avatarUrl: '',
                 calendarFeedUrl: '',
                 calendarFeedWebcalUrl: '',
                 reminderDefaults: {
@@ -379,7 +547,9 @@ function App() {
             };
             setAccountSettings(nextSettings);
             setAccountDraft(nextSettings);
+            setAvatarUrl(nextSettings.avatarUrl || null);
             setEmailDraft('');
+            setPendingAvatarUrl(null);
         } catch (error) {
             setAccountFeedback(error.message);
         } finally {
@@ -395,11 +565,51 @@ function App() {
             }
         } else {
             setAccountSettings(null);
+            setAvatarUrl(null);
+            setPendingAvatarUrl(null);
         }
     }, [isAuthenticated]);
 
+    useEffect(() => {
+        if (!isAuthenticated) {
+            return;
+        }
+
+        ensureLocation();
+    }, [isAuthenticated]);
+
+    // Apply btn-color override whenever theme changes
+    useEffect(() => {
+        applyBtnColorOverride(activeTheme?.btnColor || '#60a5fa');
+    }, [activeTheme]);
+
+    useEffect(() => {
+        if (!searchOpen) {
+            return;
+        }
+
+        window.requestAnimationFrame(() => {
+            searchInputRef.current?.focus();
+        });
+    }, [searchOpen]);
+
     const refreshCalendar = () => {
         setCalendarRefreshKey((prev) => prev + 1);
+    };
+
+    const openSearch = () => {
+        setSearchOpen(true);
+    };
+
+    const clearSearch = () => {
+        setSearchQuery('');
+        setSearchMeta({
+            active: false,
+            loading: false,
+            count: 0,
+            error: '',
+        });
+        searchInputRef.current?.focus();
     };
 
     const openAccountModal = (tab = 'account') => {
@@ -431,17 +641,21 @@ function App() {
         setAccountSaving(true);
         setAccountFeedback('');
         try {
+            const requestBody = {
+                userId: session.userId,
+                jwtToken: session.jwtToken,
+                firstName: accountDraft.firstName,
+                lastName: accountDraft.lastName,
+                reminderEnabled: accountDraft.reminderDefaults?.reminderEnabled === true,
+                reminderMinutesBefore: Number(accountDraft.reminderDefaults?.reminderMinutesBefore || 30),
+                ...(pendingAvatarUrl !== null
+                    ? { avatarDataUrl: pendingAvatarUrl === 'REMOVED' ? '' : pendingAvatarUrl }
+                    : {}),
+            };
             const response = await fetch(`${API_ROOT}/saveaccountsettings`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    userId: session.userId,
-                    jwtToken: session.jwtToken,
-                    firstName: accountDraft.firstName,
-                    lastName: accountDraft.lastName,
-                    reminderEnabled: accountDraft.reminderDefaults?.reminderEnabled === true,
-                    reminderMinutesBefore: Number(accountDraft.reminderDefaults?.reminderMinutesBefore || 30),
-                }),
+                body: JSON.stringify(requestBody),
             });
 
             const data = await response.json();
@@ -450,8 +664,11 @@ function App() {
             }
 
             updateToken(data.jwtToken);
-            setAccountSettings(data.settings || accountDraft);
-            setAccountDraft(data.settings || accountDraft);
+            const nextSettings = data.settings || accountDraft;
+            setAccountSettings(nextSettings);
+            setAccountDraft(nextSettings);
+            setAvatarUrl(nextSettings.avatarUrl || null);
+            setPendingAvatarUrl(null);
             setAccountFeedback('Settings saved.');
         } catch (error) {
             setAccountFeedback(error.message);
@@ -585,27 +802,37 @@ function App() {
     };
 
     const ensureLocation = async () => {
-        if (location || isLocating) {
+        if (location && !location.isFallback) {
             return location;
         }
 
-        setIsLocating(true);
-        setLocationNotice('Checking location...');
-
-        try {
-            const coords = await requestWeatherLocation();
-
-            if (!coords.isFallback) {
-                setLocation(coords);
-                setLocationNotice('Nearby suggestions are using your current location.');
-                return coords;
-            }
-
-            setLocationNotice('Location is blocked, set to UCF');
-            return coords;
-        } finally {
-            setIsLocating(false);
+        if (locationRequestRef.current) {
+            return locationRequestRef.current;
         }
+
+        const locationRequest = (async () => {
+            setIsLocating(true);
+            setLocationNotice('Checking location...');
+
+            try {
+                const coords = await requestWeatherLocation();
+
+                if (!coords.isFallback) {
+                    setLocation(coords);
+                    setLocationNotice('Nearby suggestions are using your current location.');
+                    return coords;
+                }
+
+                setLocationNotice('Location is blocked, set to UCF');
+                return coords;
+            } finally {
+                locationRequestRef.current = null;
+                setIsLocating(false);
+            }
+        })();
+
+        locationRequestRef.current = locationRequest;
+        return locationRequest;
     };
 
     const loadSuggestions = async () => {
@@ -840,7 +1067,10 @@ function App() {
     const profileLastName = accountSettings?.lastName || currentSession?.lastName || 'Doe';
     const profileInitials = `${profileFirstName.charAt(0)}${profileLastName.charAt(0)}`.toUpperCase();
 
-    // Handle /resetpassword?token=... route before anything else
+    // Compute the effective background: theme override takes precedence over weather
+    const effectiveBackground = resolveEffectiveBackground(activeTheme, background);
+
+    // Render the password reset screen directly when the reset route is active.
     const isResetRoute = window.location.pathname === '/resetpassword' &&
                          new URLSearchParams(window.location.search).has('token');
     if (isResetRoute) {
@@ -851,7 +1081,13 @@ function App() {
         <>
             {isAuthenticated && currentSession ? (
                 <>
-                    <div className="main-layout" style={{ '--bg-img': `url(${background}` }}>
+                    <div
+                        className="main-layout"
+                        style={{
+                            '--bg-img': effectiveBackground ? `url(${effectiveBackground})` : 'none',
+                            backgroundSize: activeTheme?.imageFit === 'contain' ? 'contain' : activeTheme?.imageFit === 'center' ? 'auto' : 'cover',
+                        }}
+                    >
                         <div className={`sidebar left-sidebar ${leftOpen ? 'open' : 'closed'}`}>
                         <button className="toggle-btn right-align" onClick={() => setLeftOpen(!leftOpen)}>
                             <img src={leftOpen ? leftCloseIcon : leftOpenIcon} alt="Toggle Left" />
@@ -861,13 +1097,14 @@ function App() {
                             <div className="sidebar-content">
                                 <div style={{ marginBottom: '20px' }}>
                                     <h2 style={{ margin: '0 0 5px 0' }}>{isSelectedToday ? 'Today' : 'Plan'}</h2>
-                                    <p style={{ margin: 0, color: '#60a5fa', fontWeight: 'bold' }}>{fullDateString}</p>
+                                    <p style={{ margin: 0, color: 'var(--btn-color)', fontWeight: 'bold' }}>{fullDateString}</p>
                                 </div>
 
                                 <nav style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                                     <button className="nav-item" onClick={() => openCalendarModal('plan')}><span className="nav-icon">Plan</span></button>
                                     <button className="nav-item" onClick={() => openCalendarModal('event')}><span className="nav-icon">Event</span></button>
                                     <button className="nav-item" onClick={() => openCalendarModal('task')}><span className="nav-icon">Task</span></button>
+                                    <button className={`nav-item${searchOpen || trimmedSearchQuery ? ' active' : ''}`} onClick={openSearch}><span className="nav-icon">Search</span></button>
                                     <hr style={{ border: '0', borderTop: '1px solid #2c2c3e', margin: '10px 0' }} />
                                     <button className="nav-item" onClick={() => openCalendarModal('import')}><span className="nav-icon">Import</span></button>
                                     <button className="nav-item" onClick={() => openAccountModal('settings')}><span className="nav-icon">Settings</span></button>
@@ -900,6 +1137,43 @@ function App() {
                     </div>
 
                     <div className="center-content">
+                        {(searchOpen || trimmedSearchQuery) && (
+                            <div className="calendar-search-shell">
+                                <div className="calendar-search-card">
+                                    <div className="calendar-search-copy">
+                                        <span className="calendar-search-kicker">Search</span>
+                                        <span className="calendar-search-status">
+                                            {searchMeta.error
+                                                ? searchMeta.error
+                                                : searchMeta.loading
+                                                    ? 'Searching...'
+                                                    : trimmedSearchQuery
+                                                        ? `${searchMeta.count} match${searchMeta.count === 1 ? '' : 'es'}`
+                                                        : 'Search your calendar.'}
+                                        </span>
+                                    </div>
+                                    <div className="calendar-search-input-shell">
+                                        <input
+                                            ref={searchInputRef}
+                                            type="search"
+                                            className="calendar-search-input"
+                                            value={searchQuery}
+                                            onChange={(event) => setSearchQuery(event.target.value)}
+                                            placeholder="Search"
+                                        />
+                                        {(trimmedSearchQuery || searchMeta.active) && (
+                                            <button
+                                                type="button"
+                                                className="calendar-search-clear-btn"
+                                                onClick={clearSearch}
+                                            >
+                                                Clear
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         <div className="calendar-wrapper">
                             <Calendar
                                 singleMonth={false}
@@ -911,6 +1185,8 @@ function App() {
                                 modalIntent={calendarModalIntent}
                                 reminderDefaults={accountSettings?.reminderDefaults}
                                 onSelectedDateChange={setSelectedDate}
+                                searchQuery={searchQuery}
+                                onSearchMetaChange={setSearchMeta}
                             />
                         </div>
                     </div>
@@ -1097,15 +1373,59 @@ function App() {
                                 >
                                     Settings
                                 </button>
+                                <button
+                                    type="button"
+                                    className={`account-tab-btn ${accountTab === 'themes' ? 'active' : ''}`}
+                                    onClick={() => {
+                                        setAccountTab('themes');
+                                        // Initialise draft from active theme when opening
+                                        setThemeDraft(JSON.parse(JSON.stringify(activeTheme)));
+                                        setCustomBgMode(
+                                            activeTheme?.images?.universal !== undefined ? 'universal' : 'perScene'
+                                        );
+                                    }}
+                                >
+                                    Themes
+                                </button>
                             </div>
 
                             <div className="account-modal-body">
                                 <div className="account-hero">
                                     <div className="account-avatar-shell">
-                                        <div className="account-avatar">{profileInitials}</div>
-                                        <button type="button" className="account-avatar-btn" disabled>
-                                            Avatar soon
-                                        </button>
+                                        {pendingAvatarUrl !== null && pendingAvatarUrl !== 'REMOVED' ? (
+                                            <img src={pendingAvatarUrl} alt="Profile" className="account-avatar account-avatar-img" />
+                                        ) : (pendingAvatarUrl !== 'REMOVED' && avatarUrl) ? (
+                                            <img src={avatarUrl} alt="Profile" className="account-avatar account-avatar-img" />
+                                        ) : (
+                                            <div className="account-avatar">{profileInitials}</div>
+                                        )}
+                                        <label className="account-avatar-btn" style={{ cursor: 'pointer' }}>
+                                            Upload picture
+                                            <input
+                                                type="file"
+                                                accept={AVATAR_ACCEPT}
+                                                style={{ display: 'none' }}
+                                                onChange={async (event) => {
+                                                    const file = event.target.files?.[0];
+                                                    event.target.value = '';
+                                                    if (!file) return;
+
+                                                    try {
+                                                        setAccountFeedback('');
+                                                        validateAvatarFile(file);
+                                                        const nextAvatarUrl = await readFileAsDataUrl(file);
+                                                        setPendingAvatarUrl(nextAvatarUrl);
+                                                    } catch (error) {
+                                                        setAccountFeedback(error.message);
+                                                    }
+                                                }}
+                                            />
+                                        </label>
+                                        {(avatarUrl || pendingAvatarUrl) && pendingAvatarUrl !== 'REMOVED' && (
+                                            <button type="button" className="account-avatar-remove-btn" onClick={() => { setPendingAvatarUrl('REMOVED'); }}>
+                                                Remove picture
+                                            </button>
+                                        )}
                                     </div>
                                     <div className="account-hero-copy">
                                         <h3>{`${profileFirstName} ${profileLastName}`}</h3>
@@ -1165,6 +1485,211 @@ function App() {
                                                     </div>
                                                     {emailFeedback && <div className="account-feedback-panel">{emailFeedback}</div>}
                                                 </div>
+                                            </div>
+                                        ) : accountTab === 'themes' ? (
+                                            /* ── THEMES TAB ─────────────────────────────────────────── */
+                                            <div className="account-section-stack">
+                                                <div className="account-section-card">
+                                                    <h3>Choose a theme</h3>
+                                                    <p className="account-section-copy">Select a preset or build your own. Changes apply instantly — click Apply to keep them.</p>
+                                                    <div className="theme-preset-grid">
+                                                        {PRESET_THEMES.map((preset) => {
+                                                            const isSelected = themeDraft?.id === preset.id;
+                                                            return (
+                                                                <button
+                                                                    key={preset.id}
+                                                                    type="button"
+                                                                    className={`theme-preset-card${isSelected ? ' selected' : ''}`}
+                                                                    onClick={() => {
+                                                                        const base = preset.id === 'custom'
+                                                                            ? { ...preset, btnColor: themeDraft?.id === 'custom' ? themeDraft.btnColor : preset.btnColor, images: themeDraft?.id === 'custom' ? themeDraft.images : {} }
+                                                                            : { ...preset };
+                                                                        setThemeDraft(base);
+                                                                        if (preset.id !== 'custom') {
+                                                                            setCustomBgMode('universal');
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    <div className="theme-swatch" style={{ background: preset.preview }} />
+                                                                    <span className="theme-preset-name">{preset.name}</span>
+                                                                    <span className="theme-preset-desc">{preset.description}</span>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+
+                                                {/* Custom theme editor — shown only when Custom is selected */}
+                                                {themeDraft?.id === 'custom' && (
+                                                    <div className="account-section-card">
+                                                        <h3>Customize</h3>
+
+                                                        {/* Button color picker */}
+                                                        <div className="theme-custom-row">
+                                                            <label className="theme-color-label">
+                                                                <span>Accent / button color</span>
+                                                                <div className="theme-color-row">
+                                                                    <input
+                                                                        type="color"
+                                                                        className="theme-color-input"
+                                                                        value={themeDraft.btnColor || '#60a5fa'}
+                                                                        onChange={(e) => setThemeDraft((prev) => ({ ...prev, btnColor: e.target.value }))}
+                                                                    />
+                                                                    <input
+                                                                        type="text"
+                                                                        className="theme-color-text"
+                                                                        value={themeDraft.btnColor || '#60a5fa'}
+                                                                        maxLength={7}
+                                                                        onChange={(e) => {
+                                                                            const v = e.target.value;
+                                                                            if (/^#[0-9a-fA-F]{0,6}$/.test(v)) {
+                                                                                setThemeDraft((prev) => ({ ...prev, btnColor: v }));
+                                                                            }
+                                                                        }}
+                                                                    />
+                                                                </div>
+                                                            </label>
+                                                        </div>
+
+                                                        {/* Background image mode toggle */}
+                                                        <div className="theme-bg-mode-row">
+                                                            <button
+                                                                type="button"
+                                                                className={`account-tab-btn${customBgMode === 'universal' ? ' active' : ''}`}
+                                                                style={{ fontSize: '12px', padding: '6px 14px' }}
+                                                                onClick={() => setCustomBgMode('universal')}
+                                                            >
+                                                                Single background
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className={`account-tab-btn${customBgMode === 'perScene' ? ' active' : ''}`}
+                                                                style={{ fontSize: '12px', padding: '6px 14px' }}
+                                                                onClick={() => setCustomBgMode('perScene')}
+                                                            >
+                                                                Per-weather scenes
+                                                            </button>
+                                                        </div>
+
+                                                        {customBgMode === 'universal' ? (
+                                                            <div className="theme-bg-upload-row">
+                                                                <label className="theme-bg-upload-label">
+                                                                    <div className="theme-bg-thumb" style={{
+                                                                        backgroundImage: themeDraft.images?.universal ? `url(${themeDraft.images.universal})` : 'none',
+                                                                    }}>
+                                                                        {!themeDraft.images?.universal && <span className="theme-bg-placeholder">No image</span>}
+                                                                    </div>
+                                                                    <div className="theme-bg-info">
+                                                                        <span className="theme-bg-title">Background image</span>
+                                                                        <span className="theme-bg-hint">Used for all weather conditions</span>
+                                                                        <span className="theme-bg-hint">PNG or JPEG, &lt; 4 MB</span>
+                                                                    </div>
+                                                                    <input
+                                                                        type="file"
+                                                                        accept="image/png,image/jpeg,image/webp"
+                                                                        style={{ display: 'none' }}
+                                                                        onChange={async (e) => {
+                                                                            const file = e.target.files?.[0];
+                                                                            e.target.value = '';
+                                                                            if (!file) return;
+                                                                            if (file.size > 4 * 1024 * 1024) { setAccountFeedback('Background image must be under 4 MB.'); return; }
+                                                                            const url = await readFileAsDataUrl(file);
+                                                                            setThemeDraft((prev) => ({ ...prev, images: { universal: url } }));
+                                                                        }}
+                                                                    />
+                                                                    <button
+                                                                        type="button"
+                                                                        className="account-secondary-btn"
+                                                                        style={{ pointerEvents: 'none' }}
+                                                                    >
+                                                                        Choose image
+                                                                    </button>
+                                                                </label>
+                                                                {themeDraft.images?.universal && (
+                                                                    <button
+                                                                        type="button"
+                                                                        className="account-secondary-btn"
+                                                                        onClick={() => setThemeDraft((prev) => ({ ...prev, images: {} }))}
+                                                                    >
+                                                                        Remove image
+                                                                    </button>
+                                                                )}
+                                                                {/* Image fit selector */}
+                                                                {themeDraft.images?.universal && (
+                                                                    <label className="account-field" style={{ marginTop: 8 }}>
+                                                                        <span>Image fit</span>
+                                                                        <select
+                                                                            value={themeDraft.imageFit || 'cover'}
+                                                                            onChange={(e) => setThemeDraft((prev) => ({ ...prev, imageFit: e.target.value }))}
+                                                                        >
+                                                                            <option value="cover">Cover (fill &amp; crop)</option>
+                                                                            <option value="contain">Contain (show full image)</option>
+                                                                            <option value="center">Center (no scaling)</option>
+                                                                        </select>
+                                                                    </label>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="theme-scene-grid">
+                                                                {WEATHER_SLOTS.map(({ key, label }) => {
+                                                                    const img = themeDraft.images?.[key];
+                                                                    return (
+                                                                        <label key={key} className="theme-scene-cell">
+                                                                            <div className="theme-scene-thumb" style={{
+                                                                                backgroundImage: img ? `url(${img})` : 'none',
+                                                                            }}>
+                                                                                {!img && <span className="theme-bg-placeholder">+</span>}
+                                                                            </div>
+                                                                            <span className="theme-scene-label">{label}</span>
+                                                                            <input
+                                                                                type="file"
+                                                                                accept="image/png,image/jpeg,image/webp"
+                                                                                style={{ display: 'none' }}
+                                                                                onChange={async (e) => {
+                                                                                    const file = e.target.files?.[0];
+                                                                                    e.target.value = '';
+                                                                                    if (!file) return;
+                                                                                    if (file.size > 4 * 1024 * 1024) { setAccountFeedback('Image must be under 4 MB.'); return; }
+                                                                                    const url = await readFileAsDataUrl(file);
+                                                                                    setThemeDraft((prev) => ({ ...prev, images: { ...prev.images, [key]: url } }));
+                                                                                }}
+                                                                            />
+                                                                        </label>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {/* Live preview strip */}
+                                                {themeDraft && (
+                                                    <div className="account-section-card theme-preview-card">
+                                                        <h3>Preview</h3>
+                                                        <div className="theme-preview-strip" style={{
+                                                            backgroundImage: (() => {
+                                                                const imgs = themeDraft.images || {};
+                                                                const src = imgs.universal || null;
+                                                                return src ? `url(${src})` : themeDraft.preview;
+                                                            })(),
+                                                            backgroundSize: themeDraft.imageFit === 'contain' ? 'contain' : themeDraft.imageFit === 'center' ? 'auto' : 'cover',
+                                                        }}>
+                                                            <div className="theme-preview-overlay">
+                                                                <button
+                                                                    className="theme-preview-btn"
+                                                                    style={{
+                                                                        '--btn-color': normalizeHexColor(themeDraft.btnColor),
+                                                                        '--btn-text-color': getContrastTextColor(themeDraft.btnColor),
+                                                                    }}
+                                                                    type="button"
+                                                                >
+                                                                    Sample button
+                                                                </button>
+                                                                <span className="theme-preview-label">Accent: {themeDraft.btnColor || '#60a5fa'}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         ) : (
                                             <div className="account-section-stack">
@@ -1242,9 +1767,39 @@ function App() {
                                 <button type="button" className="account-secondary-btn" onClick={() => setAccountModalOpen(false)}>
                                     Close
                                 </button>
-                                <button type="button" className="account-primary-btn" onClick={saveAccountSettings} disabled={accountSaving || accountLoading}>
-                                    {accountSaving ? 'Saving...' : 'Save changes'}
-                                </button>
+                                {accountTab === 'themes' ? (
+                                    <>
+                                        <button
+                                            type="button"
+                                            className="account-secondary-btn"
+                                            onClick={() => {
+                                                const reset = PRESET_THEMES[0];
+                                                setActiveTheme(reset);
+                                                setThemeDraft(reset);
+                                                persistTheme(reset);
+                                            }}
+                                        >
+                                            Reset to default
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="account-primary-btn"
+                                            disabled={!themeDraft}
+                                            onClick={() => {
+                                                if (!themeDraft) return;
+                                                setActiveTheme(themeDraft);
+                                                persistTheme(themeDraft);
+                                                setAccountFeedback('Theme applied.');
+                                            }}
+                                        >
+                                            Apply theme
+                                        </button>
+                                    </>
+                                ) : (
+                                    <button type="button" className="account-primary-btn" onClick={saveAccountSettings} disabled={accountSaving || accountLoading}>
+                                        {accountSaving ? 'Saving...' : 'Save changes'}
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>

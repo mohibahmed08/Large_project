@@ -1,5 +1,7 @@
+// @ts-nocheck
 import React, { useState, useEffect } from 'react';
 import './login.css';
+import loginBackground from './assets/images/LoginBackground.jpg';
 
 const RAW_API_BASE = process.env.REACT_APP_API_URL ?? 'http://localhost:5000';
 const API_ROOT = RAW_API_BASE.endsWith('/api') ? RAW_API_BASE : `${RAW_API_BASE}/api`;
@@ -219,7 +221,10 @@ const Login = ({ setIsAuthenticated }) => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-900 p-4">
+    <div
+      className="login-shell flex min-h-screen items-center justify-center p-4"
+      style={{ '--login-bg': `url(${loginBackground})` }}
+    >
 
       {/* ── Email verification sent modal ─────────────────────────────── */}
       {showVerifyModal && (
