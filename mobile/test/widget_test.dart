@@ -1,15 +1,21 @@
+import 'package:calendar/screens/app_bootstrap_screen.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:calendar/main.dart';
-
 void main() {
-  testWidgets('app starts on the auth screen', (WidgetTester tester) async {
-    await tester.pumpWidget(const MyApp());
+  testWidgets('app bootstrap opens the in-app reset password flow', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AppBootstrapScreen(initialResetToken: 'reset-token'),
+      ),
+    );
+    await tester.pumpAndSettle();
 
-    expect(find.text('Calendar++'), findsOneWidget);
-    expect(find.text('Login'), findsWidgets);
-    expect(find.text('Sign Up'), findsOneWidget);
-    expect(find.text('Email'), findsOneWidget);
-    expect(find.text('Password'), findsOneWidget);
+    expect(find.text('Reset Password'), findsOneWidget);
+    expect(find.text('Choose a New Password'), findsOneWidget);
+    expect(find.text('New password'), findsOneWidget);
+    expect(find.text('Confirm password'), findsOneWidget);
   });
 }
