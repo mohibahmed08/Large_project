@@ -49,6 +49,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   final TextEditingController _quickTaskController = TextEditingController();
   final TextEditingController _quickAddController = TextEditingController();
   final PageController _monthPageController = PageController(initialPage: 1200);
+  final ScrollController _calendarScrollController = ScrollController();
 
   late UserSession _session;
   Timer? _liveActivityTimer;
@@ -140,6 +141,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _quickTaskController.dispose();
     _quickAddController.dispose();
     _monthPageController.dispose();
+    _calendarScrollController.dispose();
     super.dispose();
   }
 
@@ -1920,13 +1922,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final today = DateUtils.dateOnly(DateTime.now());
     final selectedDayWeather = _selectedDayWeather;
     final dayTasks = _tasksForSelectedDay;
+    final showWideScreenScrollbar = MediaQuery.of(context).size.width >= 960;
 
     return _isLoading
         ? const Center(child: CircularProgressIndicator())
         : RefreshIndicator(
             onRefresh: () => _loadMonth(showLoader: false),
-            child: CustomScrollView(
-              slivers: [
+            child: Scrollbar(
+              controller: _calendarScrollController,
+              thumbVisibility: showWideScreenScrollbar,
+              trackVisibility: showWideScreenScrollbar,
+              interactive: showWideScreenScrollbar,
+              child: CustomScrollView(
+                controller: _calendarScrollController,
+                slivers: [
                 // ── Month header row ──────────────────────────────────────
                 SliverToBoxAdapter(
                   child: Padding(
@@ -2211,7 +2220,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ),
                     ),
                   ),
-              ],
+                ],
+              ),
             ),
           );
   }

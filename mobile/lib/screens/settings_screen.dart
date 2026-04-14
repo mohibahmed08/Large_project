@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
@@ -13,6 +14,7 @@ import '../models/account_settings.dart';
 import '../models/user_model.dart';
 import '../services/account_service.dart';
 import '../services/biometric_auth_service.dart';
+import '../services/platform_runtime.dart';
 import '../services/session_storage.dart';
 import '../services/theme_service.dart';
 import '../theme/app_theme.dart';
@@ -299,7 +301,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// On iOS/Android, show a bottom sheet to pick camera or gallery via image_picker.
   /// On other platforms, fall back to file_selector.
   Future<void> _pickAvatar() async {
-    if (Platform.isIOS || Platform.isAndroid) {
+    if (isNativeMobile) {
       await _pickAvatarMobile();
     } else {
       await _pickAvatarDesktop();
@@ -615,13 +617,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _showSnackBar('No calendar data to export.');
         return;
       }
-      // Write the ICS file to the app's temp directory then share it via the system share sheet
-      final tempDir = await getTemporaryDirectory();
-      final file = File('${tempDir.path}/${result.filename}');
-      await file.writeAsString(result.icsContent, encoding: const Utf8Codec());
       if (!mounted) return;
+      final shareFile = await _buildCalendarExportFile(
+        result.icsContent,
+        result.filename,
+      );
       await Share.shareXFiles(
-        [XFile(file.path, mimeType: 'text/calendar', name: result.filename)],
+        [shareFile],
         subject: result.filename,
       );
     } catch (error) {
@@ -644,6 +646,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await Clipboard.setData(ClipboardData(text: value));
     if (!mounted) return;
     _showSnackBar('$label copied.');
+  }
+
+  Future<XFile> _buildCalendarExportFile(
+    String icsContent,
+    String filename,
+  ) async {
+    if (kIsWeb) {
+      return XFile.fromData(
+        Uint8List.fromList(const Utf8Codec().encode(icsContent)),
+        mimeType: 'text/calendar',
+        name: filename,
+      );
+    }
+
+    final tempDir = await getTemporaryDirectory();
+    final file = File('${tempDir.path}/$filename');
+    await file.writeAsString(icsContent, encoding: const Utf8Codec());
+    return XFile(file.path, mimeType: 'text/calendar', name: filename);
   }
 
   void _showSnackBar(String message) {

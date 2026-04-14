@@ -16,25 +16,74 @@ function buildThemeSceneImages(themeId) {
     };
 }
 
-function buildFeaturedGallery(packId, extension, count = 9) {
-    return Array.from({ length: count }, (_, index) => (
-        `${PUBLIC_ASSET_BASE}/theme_featured/${packId}/${packId}-${String(index + 1).padStart(2, '0')}.${extension}`
-    ));
+function buildFeaturedAsset(packId, assetName, extension) {
+    return `${PUBLIC_ASSET_BASE}/theme_featured/${packId}/${assetName}.${extension}`;
 }
 
-function buildFeaturedCover(packId, extension) {
-    return `${PUBLIC_ASSET_BASE}/theme_featured/${packId}/cover.${extension}`;
+function buildFeaturedSceneImages(packId, extension) {
+    return {
+        clearDay: buildFeaturedAsset(packId, 'ClearDay', extension),
+        clearSunrise: buildFeaturedAsset(packId, 'ClearSunset', extension),
+        clearNight: buildFeaturedAsset(packId, 'ClearNight', extension),
+        cloudyDay: buildFeaturedAsset(packId, 'CloudyDay', extension),
+        cloudySunrise: buildFeaturedAsset(packId, 'CloudySunset', extension),
+        cloudyNight: buildFeaturedAsset(packId, 'CloudyNight', extension),
+        partlyCloudyDay: buildFeaturedAsset(packId, 'PartlyCloudyDay', extension),
+        partlyCloudySunrise: buildFeaturedAsset(packId, 'PartlyCloudySunset', extension),
+        partlyCloudyNight: buildFeaturedAsset(packId, 'PartlyCloudyNight', extension),
+    };
 }
 
-export const FEATURED_THEMES = [
+function buildFeaturedGallery(packId, extension) {
+    return [
+        buildFeaturedAsset(packId, 'ClearDay', extension),
+        buildFeaturedAsset(packId, 'PartlyCloudyDay', extension),
+        buildFeaturedAsset(packId, 'CloudyDay', extension),
+        buildFeaturedAsset(packId, 'ClearSunset', extension),
+        buildFeaturedAsset(packId, 'PartlyCloudySunset', extension),
+        buildFeaturedAsset(packId, 'CloudySunset', extension),
+        buildFeaturedAsset(packId, 'ClearNight', extension),
+        buildFeaturedAsset(packId, 'PartlyCloudyNight', extension),
+        buildFeaturedAsset(packId, 'CloudyNight', extension),
+    ];
+}
+
+function buildFeaturedTheme({
+    id,
+    packId,
+    name,
+    description,
+    btnColor,
+    coverExtension,
+    sceneExtension,
+}) {
+    const coverImage = buildFeaturedAsset(packId, 'cover', coverExtension);
+    return {
+        id,
+        packId,
+        name,
+        description,
+        preview: `url(${coverImage})`,
+        previewImage: coverImage,
+        btnColor,
+        images: buildFeaturedSceneImages(packId, sceneExtension),
+        galleryImages: [coverImage, ...buildFeaturedGallery(packId, sceneExtension)],
+        imageFit: 'cover',
+        backgroundMode: 'perScene',
+        source: 'featured',
+    };
+}
+
+export const PRESET_THEMES = [
     {
         id: 'default',
         name: 'Mountain',
-        description: 'Alpine skies across shifting weather',
+        description: 'The original weather-reactive default theme',
         preview: 'linear-gradient(135deg,#1e3a5f 0%,#3b82f6 100%)',
         btnColor: '#60a5fa',
         images: buildThemeSceneImages('default'),
         backgroundMode: 'perScene',
+        source: 'preset',
     },
     {
         id: 'aurora',
@@ -44,6 +93,7 @@ export const FEATURED_THEMES = [
         btnColor: '#a855f7',
         images: buildThemeSceneImages('aurora'),
         backgroundMode: 'perScene',
+        source: 'preset',
     },
     {
         id: 'forest',
@@ -53,6 +103,7 @@ export const FEATURED_THEMES = [
         btnColor: '#22c55e',
         images: buildThemeSceneImages('forest'),
         backgroundMode: 'perScene',
+        source: 'preset',
     },
     {
         id: 'desert',
@@ -62,6 +113,7 @@ export const FEATURED_THEMES = [
         btnColor: '#f97316',
         images: buildThemeSceneImages('desert'),
         backgroundMode: 'perScene',
+        source: 'preset',
     },
     {
         id: 'ocean',
@@ -71,6 +123,7 @@ export const FEATURED_THEMES = [
         btnColor: '#06b6d4',
         images: buildThemeSceneImages('ocean'),
         backgroundMode: 'perScene',
+        source: 'preset',
     },
     {
         id: 'midnight',
@@ -80,64 +133,60 @@ export const FEATURED_THEMES = [
         btnColor: '#94a3b8',
         images: buildThemeSceneImages('midnight'),
         backgroundMode: 'perScene',
+        source: 'preset',
     },
     {
-        id: 'mountain-photo',
-        name: 'Mountain Photos',
-        description: 'Photo pack of high-country light and ridge lines',
-        preview: `url(${buildFeaturedCover('mountain', 'png')})`,
-        previewImage: buildFeaturedCover('mountain', 'png'),
-        btnColor: '#67e8f9',
-        images: {
-            universal: `${PUBLIC_ASSET_BASE}/theme_featured/mountain/mountain-01.jpg`,
-        },
-        galleryImages: buildFeaturedGallery('mountain', 'jpg'),
-        imageFit: 'cover',
-        backgroundMode: 'universal',
-    },
-    {
-        id: 'forest-photo',
-        name: 'Forest Photos',
-        description: 'Photo pack of canopy haze, greens, and rainfall',
-        preview: `url(${buildFeaturedCover('forest', 'jpg')})`,
-        previewImage: buildFeaturedCover('forest', 'jpg'),
-        btnColor: '#4ade80',
-        images: {
-            universal: `${PUBLIC_ASSET_BASE}/theme_featured/forest/forest-01.jpg`,
-        },
-        galleryImages: buildFeaturedGallery('forest', 'jpg'),
-        imageFit: 'cover',
-        backgroundMode: 'universal',
-    },
-    {
-        id: 'desert-photo',
-        name: 'Desert Photos',
-        description: 'Photo pack of sandstone, heat shimmer, and dusk',
-        preview: `url(${buildFeaturedCover('desert', 'webp')})`,
-        previewImage: buildFeaturedCover('desert', 'webp'),
-        btnColor: '#f59e0b',
-        images: {
-            universal: `${PUBLIC_ASSET_BASE}/theme_featured/desert/desert-01.png`,
-        },
-        galleryImages: buildFeaturedGallery('desert', 'png'),
-        imageFit: 'cover',
-        backgroundMode: 'universal',
-    },
-    {
-        id: 'beach-photo',
-        name: 'Beach Photos',
-        description: 'Photo pack of shoreline blues, surf, and horizon glow',
-        preview: `url(${buildFeaturedCover('beach', 'jpg')})`,
-        previewImage: buildFeaturedCover('beach', 'jpg'),
-        btnColor: '#38bdf8',
-        images: {
-            universal: `${PUBLIC_ASSET_BASE}/theme_featured/beach/beach-01.jpg`,
-        },
-        galleryImages: buildFeaturedGallery('beach', 'jpg'),
-        imageFit: 'cover',
-        backgroundMode: 'universal',
+        id: 'custom',
+        name: 'Custom',
+        description: 'Your own colors & images',
+        preview: 'linear-gradient(135deg,#374151 0%,#6b7280 100%)',
+        btnColor: '#60a5fa',
+        images: {},
+        backgroundMode: 'gradient',
+        source: 'draft',
     },
 ];
+
+export const FEATURED_THEMES = [
+    buildFeaturedTheme({
+        id: 'mountain-featured',
+        packId: 'mountain',
+        name: 'Mountain Photo Pack',
+        description: 'The real featured mountain set from theme_featured',
+        btnColor: '#67e8f9',
+        coverExtension: 'png',
+        sceneExtension: 'jpg',
+    }),
+    buildFeaturedTheme({
+        id: 'forest-featured',
+        packId: 'forest',
+        name: 'Forest Photo Pack',
+        description: 'Weather-based forest photography with mist and canopy glow',
+        btnColor: '#4ade80',
+        coverExtension: 'jpg',
+        sceneExtension: 'jpg',
+    }),
+    buildFeaturedTheme({
+        id: 'desert-featured',
+        packId: 'desert',
+        name: 'Desert Photo Pack',
+        description: 'Weather-based desert skies, sandstone, and dusk light',
+        btnColor: '#f59e0b',
+        coverExtension: 'webp',
+        sceneExtension: 'png',
+    }),
+    buildFeaturedTheme({
+        id: 'beach-featured',
+        packId: 'beach',
+        name: 'Beach Photo Pack',
+        description: 'Weather-based shoreline scenes with surf, haze, and horizon glow',
+        btnColor: '#38bdf8',
+        coverExtension: 'jpg',
+        sceneExtension: 'jpg',
+    }),
+];
+
+export const DEFAULT_THEME = PRESET_THEMES[0];
 
 export const EMPTY_CUSTOM_THEME = {
     id: 'custom',
@@ -223,5 +272,6 @@ export function sanitizeThemePack(input, fallback = EMPTY_CUSTOM_THEME) {
         source: draft.source || base.source || 'user',
         preview: draft.preview || base.preview,
         previewImage: draft.previewImage || base.previewImage || '',
+        packId: draft.packId || base.packId || '',
     };
 }

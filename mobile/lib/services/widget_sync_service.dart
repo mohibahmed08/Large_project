@@ -1,9 +1,8 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../models/task_model.dart';
+import 'platform_runtime.dart';
 
 class WidgetSyncService {
   WidgetSyncService._();
@@ -12,7 +11,7 @@ class WidgetSyncService {
       MethodChannel('com.calendarpp/widget_data');
 
   static Future<void> updateTasks(List<CalendarTask> tasks) async {
-    if (!Platform.isIOS) return;
+    if (!isNativeIOS) return;
 
     final payload = tasks
         .where((task) => !task.isCompleted && task.startDate != null)
@@ -56,7 +55,7 @@ class WidgetSyncService {
   }
 
   static Future<void> clear() async {
-    if (!Platform.isIOS) return;
+    if (!isNativeIOS) return;
 
     try {
       await _channel.invokeMethod<void>('clearWidgetData');
