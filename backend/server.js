@@ -13,7 +13,7 @@ client.connect();
 const app = express();
 
 app.use(cors());
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '4mb' }));
 
 app.use((req, res, next) =>
 {

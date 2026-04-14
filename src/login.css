@@ -8,6 +8,13 @@ body {
   font-family: Arial, sans-serif;
 }
 
+.login-shell {
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.34), rgba(0, 0, 0, 0.68)),
+    var(--login-bg) center center / cover no-repeat,
+    #050505;
+}
+
 /* ===== Layout ===== */
 .flex {
   display: flex;

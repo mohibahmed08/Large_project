@@ -225,8 +225,8 @@
 
 .calendar-task-save-btn {
   margin-left: auto;
-  background: #60a5fa;
-  color: #0f172a;
+  background: var(--btn-color, #60a5fa);
+  color: var(--btn-text-color, #0f172a);
 }
 
 .calendar-import-upload-row {
@@ -688,7 +688,7 @@
   white-space: nowrap;
 }
 .calendar-day-hide-completed-toggle input[type="checkbox"] {
-  accent-color: #60a5fa;
+  accent-color: var(--btn-color, #60a5fa);
   width: 14px;
   height: 14px;
   cursor: pointer;
@@ -736,10 +736,10 @@
 }
 .calendar-day-complete-btn.checked {
   background: var(--btn-color, #60a5fa);
-  color: #0f172a;
+  color: var(--btn-text-color, #0f172a);
 }
 .calendar-day-complete-btn:hover:not(.checked) {
-  background: rgba(96, 165, 250, 0.12);
+  background: rgba(var(--btn-color-rgb), 0.12);
 }
 
 /* Completed card fade */
@@ -765,7 +765,7 @@
   padding: 0;
   border: none;
   background: none;
-  color: #60a5fa;
+  color: var(--btn-color, #60a5fa);
   font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
@@ -773,7 +773,7 @@
   text-underline-offset: 2px;
 }
 .calendar-day-card-expand-btn:hover {
-  color: #93c5fd;
+  opacity: 0.8;
 }
 
 /* End-time in time display */
