@@ -474,7 +474,7 @@ class _AIScreenState extends State<AIScreen> {
                               color: AppTheme.textPrimary,
                               height: 1.4,
                             ),
-                            a: const TextStyle(
+                            a: TextStyle(
                               color: AppTheme.accent,
                               decoration: TextDecoration.underline,
                             ),

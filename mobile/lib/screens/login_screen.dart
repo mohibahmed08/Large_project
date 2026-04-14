@@ -382,17 +382,7 @@ class _LoginScreenState extends State<LoginScreen> {
       appBar: AppBar(title: const Text('Calendar++')),
       body: SafeArea(
         child: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Color(0xFF23263A),
-                AppTheme.background,
-                AppTheme.surface,
-              ],
-            ),
-          ),
+          decoration: AppTheme.backgroundDecoration(),
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),
@@ -475,7 +465,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                   child: Text(
                                     'Sign in with $_biometricLabel',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: AppTheme.accent,
                                       fontWeight: FontWeight.w700,
                                     ),

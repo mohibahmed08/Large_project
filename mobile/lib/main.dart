@@ -9,10 +9,12 @@ import 'screens/app_bootstrap_screen.dart';
 import 'screens/reset_password_screen.dart';
 import 'services/app_link_service.dart';
 import 'services/push_notification_service.dart';
+import 'services/theme_service.dart';
 import 'theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ThemeService().load();
 
   runApp(const MyApp());
 }
@@ -27,6 +29,7 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   final AppLinks _appLinks = AppLinks();
+  final ThemeService _themeService = ThemeService();
   StreamSubscription<Uri>? _linkSubscription;
   String? _initialResetToken;
   bool _initialLinkResolved = true;
@@ -175,14 +178,21 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: _navigatorKey,
-      title: 'Calendar++',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.build(),
-      home: _initialLinkResolved
-          ? AppBootstrapScreen(initialResetToken: _initialResetToken)
-          : const Scaffold(body: Center(child: CircularProgressIndicator())),
+    return AnimatedBuilder(
+      animation: _themeService,
+      builder: (context, _) => MaterialApp(
+        navigatorKey: _navigatorKey,
+        title: 'Calendar++',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.build(),
+        builder: (context, child) => DecoratedBox(
+          decoration: AppTheme.backgroundDecoration(),
+          child: child ?? const SizedBox.shrink(),
+        ),
+        home: _initialLinkResolved
+            ? AppBootstrapScreen(initialResetToken: _initialResetToken)
+            : const Scaffold(body: Center(child: CircularProgressIndicator())),
+      ),
     );
   }
 }

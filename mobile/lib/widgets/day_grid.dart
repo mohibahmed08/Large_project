@@ -39,7 +39,7 @@ class DayGrid extends StatelessWidget {
         return const Color(0xFFA855F7); // purple – matches web
       case 'event':
       default:
-        return const Color(0xFF60A5FA); // blue – matches web accent
+        return AppTheme.accent;
     }
   }
 
@@ -77,7 +77,7 @@ class DayGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final groupColor = taskCount > 0 ? _groupMajorityColor(tasks) : const Color(0xFF64B5F6);
+    final groupColor = taskCount > 0 ? _groupMajorityColor(tasks) : AppTheme.accent;
     final previewColors = <Color>[];
     for (final task in tasks) {
       final color = _taskDisplayColor(task, groupColor);

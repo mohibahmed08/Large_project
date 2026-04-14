@@ -44,6 +44,7 @@ class AccountService {
     required bool reminderEnabled,
     required int reminderMinutesBefore,
     required String reminderDelivery,
+    String? avatarDataUrl,
   }) async {
     final json = await _post(
       'saveaccountsettings',
@@ -54,6 +55,7 @@ class AccountService {
         'reminderEnabled': reminderEnabled,
         'reminderMinutesBefore': reminderMinutesBefore,
         'reminderDelivery': reminderDelivery,
+        ...?avatarDataUrl == null ? null : {'avatarDataUrl': avatarDataUrl},
       },
     );
     final nextSession = _updatedSession(session, json).copyWith(

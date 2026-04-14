@@ -269,17 +269,7 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
       appBar: AppBar(title: const Text('Unlock Calendar++')),
       body: SafeArea(
         child: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Color(0xFF23263A),
-                AppTheme.background,
-                AppTheme.surface,
-              ],
-            ),
-          ),
+          decoration: AppTheme.backgroundDecoration(),
           child: Center(
             child: Padding(
               padding: const EdgeInsets.all(20),

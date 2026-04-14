@@ -1,30 +1,101 @@
 import 'package:flutter/material.dart';
 
+import '../services/theme_service.dart';
+
 class AppTheme {
-  static const background = Color(0xFF1E1E2F);
-  static const surface = Color(0xFF12121F);
-  static const surfaceAlt = Color(0xFF1F2937);
-  static const border = Color(0x332D3748);
-  static const accent = Color(0xFF60A5FA);
-  static const accentStrong = Color(0xFF3B82F6);
   static const textPrimary = Color(0xFFF3F4F6);
   static const textMuted = Color(0xFF9CA3AF);
   static const success = Color(0xFF22C55E);
   static const danger = Color(0xFFEF4444);
 
+  static final ThemeService _themeService = ThemeService();
+
+  static MobileTheme get currentTheme => _themeService.current;
+
+  static AppThemePreset get currentPreset {
+    final presetId = currentTheme.presetId;
+    return kPresetThemes.firstWhere(
+      (preset) => preset.id == presetId,
+      orElse: () => backgroundPreset,
+    );
+  }
+
+  static AppThemePreset get backgroundPreset {
+    final packageId = currentTheme.backgroundPackageId;
+    return kPresetThemes.firstWhere(
+      (preset) => preset.id == packageId,
+      orElse: () => kPresetThemes.first,
+    );
+  }
+
+  static Color get accent => currentTheme.accentColor;
+  static Color get buttonForeground => onColorFor(accent);
+
+  static Color get accentStrong =>
+      _mix(accent, backgroundPreset.gradientColors.last, 0.42);
+
+  static Color get background =>
+      _mix(backgroundPreset.gradientColors.first, Colors.black, 0.62);
+
+  static Color get surface => _mix(const Color(0xFF12121F), accent, 0.10);
+
+  static Color get surfaceAlt => _mix(const Color(0xFF1F2937), accent, 0.16);
+
+  static Color get border =>
+      _mix(const Color(0xFF2D3748), accent, 0.20).withValues(alpha: 0.42);
+
+  static List<Color> get backgroundGradientColors {
+    final gradient = backgroundPreset.gradientColors;
+    final mid = gradient.length > 2
+        ? gradient[1]
+        : _mix(gradient.first, gradient.last, 0.5);
+    return [
+      _mix(gradient.first, Colors.black, 0.28),
+      _mix(mid, Colors.black, 0.38),
+      _mix(gradient.last, Colors.black, 0.50),
+    ];
+  }
+
+  static BoxDecoration backgroundDecoration() {
+    final imageProvider = _themeService.backgroundImageProvider();
+    final imageFit = currentTheme.backgroundMode == ThemeBackgroundMode.customImage
+        ? currentTheme.backgroundFit
+        : BoxFit.cover;
+    return BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: backgroundGradientColors,
+      ),
+      image: imageProvider == null
+          ? null
+          : DecorationImage(
+              image: imageProvider,
+              fit: imageFit,
+              colorFilter: ColorFilter.mode(
+                Colors.black.withValues(alpha: 0.46),
+                BlendMode.darken,
+              ),
+            ),
+    );
+  }
+
   static ThemeData build() {
     final base = ThemeData.dark(useMaterial3: true);
+    final colorScheme = ColorScheme.dark(
+      primary: accent,
+      secondary: accentStrong,
+      surface: surface,
+      surfaceContainerHighest: surfaceAlt,
+      onPrimary: buttonForeground,
+      onSurface: textPrimary,
+      onSecondary: textPrimary,
+    );
+
     return base.copyWith(
-      scaffoldBackgroundColor: background,
-      colorScheme: const ColorScheme.dark(
-        primary: accent,
-        secondary: accentStrong,
-        surface: surface,
-        surfaceContainerHighest: surfaceAlt,
-        onPrimary: surface,
-        onSurface: textPrimary,
-        onSecondary: textPrimary,
-      ),
+      scaffoldBackgroundColor: Colors.transparent,
+      canvasColor: Colors.transparent,
+      colorScheme: colorScheme,
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
         foregroundColor: textPrimary,
@@ -32,11 +103,18 @@ class AppTheme {
         centerTitle: false,
       ),
       cardTheme: CardThemeData(
-        color: surface.withValues(alpha: 0.88),
+        color: surface.withValues(alpha: 0.90),
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
-          side: const BorderSide(color: border),
+          side: BorderSide(color: border),
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: surface.withValues(alpha: 0.96),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: border),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -76,21 +154,63 @@ class AppTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: accent,
-          foregroundColor: surface,
+          foregroundColor: buttonForeground,
+          disabledBackgroundColor: accent.withValues(alpha: 0.55),
+          disabledForegroundColor: textPrimary.withValues(alpha: 0.75),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
           textStyle: const TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: accent,
+          foregroundColor: buttonForeground,
+          disabledBackgroundColor: accent.withValues(alpha: 0.55),
+          disabledForegroundColor: textPrimary.withValues(alpha: 0.75),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: accent,
+          textStyle: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: textPrimary,
-          side: const BorderSide(color: border),
+          foregroundColor: accent,
+          side: BorderSide(color: accent.withValues(alpha: 0.32)),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
         ),
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: accent,
+        foregroundColor: buttonForeground,
+      ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: accent,
+        circularTrackColor: Colors.white.withValues(alpha: 0.18),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return buttonForeground;
+          }
+          return textPrimary;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return accent.withValues(alpha: 0.78);
+          }
+          return Colors.white.withValues(alpha: 0.18);
+        }),
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: surfaceAlt,
@@ -112,5 +232,15 @@ class AppTheme {
         displayColor: textPrimary,
       ),
     );
+  }
+
+  static Color _mix(Color base, Color tint, double amount) {
+    return Color.lerp(base, tint, amount) ?? base;
+  }
+
+  static Color onColorFor(Color color) {
+    return color.computeLuminance() > 0.58
+        ? const Color(0xFF08111F)
+        : Colors.white;
   }
 }
