@@ -45,12 +45,14 @@ class _MyAppState extends State<MyApp> {
   Future<void> _initializeServices() async {
     try {
       // Initialize optional native services after the first frame can render.
-      if (Firebase.apps.isEmpty) {
+      if (Firebase.apps.isEmpty && DefaultFirebaseOptions.isConfiguredForCurrentPlatform) {
         await Firebase.initializeApp(
           options: DefaultFirebaseOptions.currentPlatform,
         );
       }
-      await PushNotificationService.init();
+      if (Firebase.apps.isNotEmpty) {
+        await PushNotificationService.init();
+      }
     } catch (error) {
       debugPrint('[Main] Firebase/push init failed: $error');
     }
