@@ -43,13 +43,70 @@ export function getContrastTextColor(color, light = '#f8fafc', dark = '#0f172a')
     return contrastRatio(normalized, light) >= contrastRatio(normalized, dark) ? light : dark;
 }
 
+export function normalizeGradient(gradient, fallback = {
+    angle: 135,
+    colors: ['#0f172a', '#2563eb', '#7dd3fc'],
+}) {
+    const rawColors = Array.isArray(gradient?.colors) ? gradient.colors : fallback.colors;
+    const colors = rawColors
+        .map((color) => normalizeHexColor(color, ''))
+        .filter(Boolean);
+
+    return {
+        angle: Number.isFinite(Number(gradient?.angle)) ? Number(gradient.angle) : fallback.angle,
+        colors: colors.length >= 2 ? colors.slice(0, 3) : [...fallback.colors],
+    };
+}
+
+export function buildGradientCss(gradient, fallback = undefined) {
+    const normalized = normalizeGradient(gradient, fallback);
+    return `linear-gradient(${normalized.angle}deg, ${normalized.colors.join(', ')})`;
+}
+
+export function toCssBackgroundImage(value) {
+    if (!value) {
+        return null;
+    }
+
+    if (/gradient\(/i.test(value) || /^url\(/i.test(value)) {
+        return value;
+    }
+
+    return `url(${value})`;
+}
+
+function resolvePackGalleryImage(theme) {
+    if (theme?.images?.universal) {
+        return theme.images.universal;
+    }
+
+    if (theme?.selectedGalleryImage) {
+        return theme.selectedGalleryImage;
+    }
+
+    if (Array.isArray(theme?.galleryImages) && theme.galleryImages.length > 0) {
+        return theme.galleryImages[0];
+    }
+
+    return null;
+}
+
 export function resolveEffectiveBackground(theme, weatherBackground) {
     const fallbackImage = weatherBackground?.image || null;
-    if (!theme || theme.id === 'default') {
+    if (!theme) {
         return fallbackImage;
     }
 
     const images = theme.images || {};
+    if (theme.backgroundMode === 'gradient' && theme.gradient?.colors?.length >= 2) {
+        return buildGradientCss(theme.gradient);
+    }
+
+    const galleryImage = resolvePackGalleryImage(theme);
+    if (theme.backgroundMode !== 'perScene' && galleryImage) {
+        return galleryImage;
+    }
+
     if (images.universal) {
         return images.universal;
     }
@@ -57,6 +114,14 @@ export function resolveEffectiveBackground(theme, weatherBackground) {
     const sceneKey = weatherBackground?.sceneKey || '';
     if (sceneKey && images[sceneKey]) {
         return images[sceneKey];
+    }
+
+    if (galleryImage) {
+        return galleryImage;
+    }
+
+    if (theme.preview) {
+        return theme.preview;
     }
 
     return fallbackImage;

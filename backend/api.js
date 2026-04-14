@@ -110,6 +110,9 @@ const SUPPORTED_AVATAR_MIME_TYPES = new Set([
     'image/heif',
 ]);
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
+const MAX_SHARED_THEME_BYTES = 6 * 1024 * 1024;
+const THEME_SHARE_CODE_LENGTH = 6;
+const THEME_SHARE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9_-]{1,38}[a-z0-9])?$/;
 
 function base64ByteLength(value)
 {
@@ -1133,7 +1136,283 @@ async function resendVerificationEmail(db, user)
     );
 }
 
-function buildSettingsPayload(user)
+function normalizeHexColorValue(value, fallback = '#60a5fa')
+{
+    const normalized = String(value || '').trim().toLowerCase();
+    return /^#[0-9a-f]{6}$/.test(normalized) ? normalized : fallback;
+}
+
+function normalizeThemeGradient(gradient, fallback = {
+    angle: 135,
+    colors: ['#0f172a', '#2563eb', '#7dd3fc'],
+})
+{
+    const rawColors = Array.isArray(gradient?.colors) ? gradient.colors : fallback.colors;
+    const colors = rawColors
+        .map((color) => normalizeHexColorValue(color, ''))
+        .filter(Boolean);
+
+    return {
+        angle: Number.isFinite(Number(gradient?.angle)) ? Number(gradient.angle) : fallback.angle,
+        colors: colors.length >= 2 ? colors.slice(0, 3) : [...fallback.colors],
+    };
+}
+
+function normalizeThemeImageMap(images)
+{
+    if(!images || typeof images !== 'object')
+    {
+        return {};
+    }
+
+    return Object.fromEntries(
+        Object.entries(images)
+            .map(([key, value]) => [String(key || '').trim(), String(value || '').trim()])
+            .filter(([key, value]) => key && value)
+    );
+}
+
+function normalizeThemeGalleryImages(images)
+{
+    return Array.isArray(images)
+        ? images.map((value) => String(value || '').trim()).filter(Boolean)
+        : [];
+}
+
+function inferThemeBackgroundMode(theme)
+{
+    const mode = String(theme?.backgroundMode || '').trim();
+    if(['gradient', 'universal', 'perScene'].includes(mode))
+    {
+        return mode;
+    }
+
+    if(theme?.gradient?.colors?.length >= 2)
+    {
+        return 'gradient';
+    }
+
+    if(theme?.images?.universal || theme?.galleryImages?.length)
+    {
+        return 'universal';
+    }
+
+    return 'perScene';
+}
+
+function normalizeCustomThemePack(input)
+{
+    const images = normalizeThemeImageMap(input?.images);
+    const galleryImages = normalizeThemeGalleryImages(input?.galleryImages);
+    const gradient = normalizeThemeGradient(input?.gradient);
+    const backgroundMode = inferThemeBackgroundMode({
+        ...(input || {}),
+        images,
+        galleryImages,
+        gradient,
+    });
+
+    const normalized = {
+        id: String(input?.id || '').trim() || `shared-${Date.now()}`,
+        name: String(input?.name || 'Untitled Pack').trim() || 'Untitled Pack',
+        description: String(input?.description || '').trim(),
+        btnColor: normalizeHexColorValue(input?.btnColor),
+        images,
+        galleryImages,
+        selectedGalleryImage: String(input?.selectedGalleryImage || '').trim(),
+        imageFit: input?.imageFit === 'contain' || input?.imageFit === 'center' ? input.imageFit : 'cover',
+        backgroundMode,
+        gradient,
+        preview: String(input?.preview || '').trim(),
+        previewImage: String(input?.previewImage || '').trim(),
+        source: String(input?.source || 'user').trim() || 'user',
+    };
+
+    const serialized = JSON.stringify(normalized);
+    if(Buffer.byteLength(serialized, 'utf8') > MAX_SHARED_THEME_BYTES)
+    {
+        throw new Error('Theme is too large to sync or share. Keep the total uploaded theme data under 6 MB.');
+    }
+
+    return normalized;
+}
+
+function buildThemeShareSlugCandidate(name)
+{
+    return String(name || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 40);
+}
+
+function normalizeThemeShareSlug(value, fallbackName = '')
+{
+    const slug = String(value || '').trim().toLowerCase()
+        || buildThemeShareSlugCandidate(fallbackName);
+
+    if(!slug)
+    {
+        return '';
+    }
+
+    if(!THEME_SHARE_SLUG_PATTERN.test(slug))
+    {
+        throw new Error('Custom link ID must use 3-40 letters, numbers, underscores, or hyphens.');
+    }
+
+    return slug;
+}
+
+function buildThemeOwnerDisplayName(user)
+{
+    const firstName = String(user?.firstName || '').trim();
+    const lastName = String(user?.lastName || '').trim();
+    const fullName = `${firstName} ${lastName}`.trim();
+    return fullName || 'Anonymous';
+}
+
+function buildSharedThemeUrls(themeDoc)
+{
+    const clientOrigin = trimTrailingSlash(process.env.CLIENT_ORIGIN || 'http://localhost:3000');
+    const shareKey = String(themeDoc?.shareSlug || themeDoc?.shareCode || '').trim();
+    const encodedKey = encodeURIComponent(shareKey);
+
+    return {
+        shareKey,
+        shareUrl: shareKey ? `${clientOrigin}/?theme=${encodedKey}` : '',
+    };
+}
+
+function mapCustomThemeDocument(themeDoc, viewerUserId = '')
+{
+    const ownerUserId = String(themeDoc?.ownerUserId || '');
+    const ownerDisplayName = String(themeDoc?.ownerDisplayName || 'Anonymous').trim() || 'Anonymous';
+    const shareUrls = buildSharedThemeUrls(themeDoc);
+
+    return {
+        ...(themeDoc?.theme || {}),
+        id: `shared-${themeDoc?._id}`,
+        sharedThemeId: String(themeDoc?._id || ''),
+        shareCode: String(themeDoc?.shareCode || ''),
+        shareSlug: String(themeDoc?.shareSlug || ''),
+        shareKey: shareUrls.shareKey,
+        shareUrl: shareUrls.shareUrl,
+        isOwnedTheme: ownerUserId === String(viewerUserId || ''),
+        authorName: ownerDisplayName,
+        authorLabel: `By ${ownerDisplayName}`,
+        creatorLabel: `Theme created by ${ownerDisplayName}`,
+        source: ownerUserId === String(viewerUserId || '') ? 'user' : 'shared',
+    };
+}
+
+async function generateUniqueThemeShareCode(db)
+{
+    for(let attempt = 0; attempt < 8; attempt += 1)
+    {
+        const shareCode = crypto.randomBytes(THEME_SHARE_CODE_LENGTH / 2).toString('hex').toUpperCase();
+        const existing = await db.collection('customThemes').findOne(
+            { shareCode },
+            { projection: { _id: 1 } }
+        );
+        if(!existing)
+        {
+            return shareCode;
+        }
+    }
+
+    throw new Error('Could not generate a unique theme code. Please try again.');
+}
+
+function extractThemeShareLookupKey(value)
+{
+    const trimmed = String(value || '').trim();
+    if(!trimmed)
+    {
+        return '';
+    }
+
+    try
+    {
+        const parsedUrl = new URL(trimmed);
+        const fromQuery = parsedUrl.searchParams.get('theme');
+        if(fromQuery)
+        {
+            return String(fromQuery).trim();
+        }
+    }
+    catch
+    {
+        // Fall back to raw value parsing.
+    }
+
+    return trimmed;
+}
+
+function buildThemeLookupQuery(shareValue)
+{
+    const lookupKey = extractThemeShareLookupKey(shareValue);
+    if(!lookupKey)
+    {
+        throw new Error('Theme code or link is required.');
+    }
+
+    if(/^[a-f0-9]{6}$/i.test(lookupKey))
+    {
+        return { shareCode: lookupKey.toUpperCase() };
+    }
+
+    return { shareSlug: normalizeThemeShareSlug(lookupKey) };
+}
+
+async function listUserCustomThemes(db, user)
+{
+    const customThemeIds = Array.isArray(user?.customThemeIds)
+        ? user.customThemeIds
+            .map((value) => {
+                try
+                {
+                    return typeof value === 'string' ? new ObjectId(value) : value;
+                }
+                catch
+                {
+                    return null;
+                }
+            })
+            .filter(Boolean)
+        : [];
+
+    if(customThemeIds.length === 0)
+    {
+        return [];
+    }
+
+    const themeDocs = await db.collection('customThemes')
+        .find(
+            { _id: { $in: customThemeIds } },
+            {
+                projection: {
+                    theme: 1,
+                    ownerUserId: 1,
+                    ownerDisplayName: 1,
+                    shareCode: 1,
+                    shareSlug: 1,
+                    updatedAt: 1,
+                },
+            }
+        )
+        .toArray();
+
+    const themeById = new Map(themeDocs.map((themeDoc) => [String(themeDoc._id), themeDoc]));
+
+    return customThemeIds
+        .map((themeId) => themeById.get(String(themeId)))
+        .filter(Boolean)
+        .map((themeDoc) => mapCustomThemeDocument(themeDoc, user?._id));
+}
+
+async function buildSettingsPayload(db, user)
 {
     const reminderDefaults = normalizeReminderSettings(user?.reminderDefaults || {}, {
         reminderEnabled: false,
@@ -1141,6 +1420,7 @@ function buildSettingsPayload(user)
         reminderDelivery: 'email',
     });
     const feedUrls = buildCalendarFeedUrls(user);
+    const customThemes = await listUserCustomThemes(db, user);
 
     return {
         firstName: String(user?.firstName || ''),
@@ -1149,6 +1429,7 @@ function buildSettingsPayload(user)
         pendingEmail: String(user?.pendingEmail || ''),
         avatarUrl: String(user?.avatarUrl || ''),
         reminderDefaults,
+        customThemes,
         ...feedUrls,
     };
 }
@@ -3332,6 +3613,7 @@ exports.setApp = function(app, client)
                 email,
                 password: hashPassword(password),
                 isVerified: false,
+                customThemeIds: [],
             };
 
             const insertResult = await db.collection('users').insertOne(newUser);
@@ -3703,6 +3985,7 @@ exports.setApp = function(app, client)
                         avatarUrl: 1,
                         reminderDefaults: 1,
                         calendarFeedToken: 1,
+                        customThemeIds: 1,
                     },
                 }
             );
@@ -3714,7 +3997,7 @@ exports.setApp = function(app, client)
             }
 
             res.status(200).json({
-                settings: buildSettingsPayload(user),
+                settings: await buildSettingsPayload(db, user),
                 error: '',
                 jwtToken: refreshJwtToken(token, jwtToken),
             });
@@ -3781,6 +4064,7 @@ exports.setApp = function(app, client)
                         avatarUrl: 1,
                         reminderDefaults: 1,
                         calendarFeedToken: 1,
+                        customThemeIds: 1,
                     },
                 }
             );
@@ -3792,7 +4076,7 @@ exports.setApp = function(app, client)
             );
 
             res.status(200).json({
-                settings: buildSettingsPayload(refreshedUser),
+                settings: await buildSettingsPayload(db, refreshedUser),
                 error: '',
                 jwtToken: refreshedToken.error ? '' : refreshedToken.accessToken,
             });
@@ -3800,6 +4084,188 @@ exports.setApp = function(app, client)
         catch(error)
         {
             res.status(500).json({ settings: null, error: error.toString(), jwtToken: '' });
+        }
+    });
+
+    app.post('/api/upsertcustomtheme', async (req, res) =>
+    {
+        const { userId, jwtToken, theme } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        try
+        {
+            const db = getDatabase(client);
+            const userObjectId = safeObjectId(userId, 'userId');
+            const owner = await db.collection('users').findOne(
+                { _id: userObjectId },
+                { projection: { firstName: 1, lastName: 1 } }
+            );
+
+            if(!owner)
+            {
+                res.status(404).json({ theme: null, error: 'User not found', jwtToken: '' });
+                return;
+            }
+
+            const normalizedTheme = normalizeCustomThemePack(theme);
+            const requestedSharedThemeId = String(theme?.sharedThemeId || '').trim();
+            const explicitShareSlug = Object.prototype.hasOwnProperty.call(req.body, 'shareSlug')
+                ? String(req.body.shareSlug || '').trim()
+                : '';
+            let existingTheme = null;
+
+            if(requestedSharedThemeId && ObjectId.isValid(requestedSharedThemeId))
+            {
+                existingTheme = await db.collection('customThemes').findOne({
+                    _id: new ObjectId(requestedSharedThemeId),
+                    ownerUserId: userObjectId,
+                });
+            }
+
+            const nextShareSlug = explicitShareSlug
+                ? normalizeThemeShareSlug(explicitShareSlug, normalizedTheme.name)
+                : String(existingTheme?.shareSlug || '').trim();
+
+            if(nextShareSlug)
+            {
+                const conflictingTheme = await db.collection('customThemes').findOne({
+                    shareSlug: nextShareSlug,
+                    ...(existingTheme ? { _id: { $ne: existingTheme._id } } : {}),
+                });
+
+                if(conflictingTheme)
+                {
+                    res.status(409).json({
+                        theme: null,
+                        error: 'That custom link ID is already in use. Please choose another one.',
+                        jwtToken: '',
+                    });
+                    return;
+                }
+            }
+
+            const now = new Date();
+            const themeDocument = {
+                theme: normalizedTheme,
+                name: normalizedTheme.name,
+                description: normalizedTheme.description,
+                ownerUserId: userObjectId,
+                ownerDisplayName: buildThemeOwnerDisplayName(owner),
+                shareCode: String(existingTheme?.shareCode || await generateUniqueThemeShareCode(db)),
+                shareSlug: nextShareSlug,
+                updatedAt: now,
+            };
+
+            let savedThemeId;
+            if(existingTheme)
+            {
+                await db.collection('customThemes').updateOne(
+                    { _id: existingTheme._id, ownerUserId: userObjectId },
+                    {
+                        $set: themeDocument,
+                    }
+                );
+                savedThemeId = existingTheme._id;
+            }
+            else
+            {
+                savedThemeId = new ObjectId();
+                await db.collection('customThemes').insertOne({
+                    _id: savedThemeId,
+                    ...themeDocument,
+                    createdAt: now,
+                });
+            }
+
+            await db.collection('users').updateOne(
+                { _id: userObjectId },
+                { $addToSet: { customThemeIds: savedThemeId } }
+            );
+
+            const savedTheme = await db.collection('customThemes').findOne({ _id: savedThemeId });
+
+            res.status(200).json({
+                theme: mapCustomThemeDocument(savedTheme, userObjectId),
+                error: '',
+                jwtToken: refreshJwtToken(token, jwtToken),
+            });
+        }
+        catch(error)
+        {
+            res.status(500).json({ theme: null, error: error.toString(), jwtToken: '' });
+        }
+    });
+
+    app.post('/api/importsharedtheme', async (req, res) =>
+    {
+        const { userId, jwtToken, shareValue } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        try
+        {
+            const db = getDatabase(client);
+            const userObjectId = safeObjectId(userId, 'userId');
+            const themeDoc = await db.collection('customThemes').findOne(buildThemeLookupQuery(shareValue));
+
+            if(!themeDoc)
+            {
+                res.status(404).json({ theme: null, error: 'Theme not found', jwtToken: '' });
+                return;
+            }
+
+            await db.collection('users').updateOne(
+                { _id: userObjectId },
+                { $addToSet: { customThemeIds: themeDoc._id } }
+            );
+
+            res.status(200).json({
+                theme: mapCustomThemeDocument(themeDoc, userObjectId),
+                error: '',
+                jwtToken: refreshJwtToken(token, jwtToken),
+            });
+        }
+        catch(error)
+        {
+            res.status(500).json({ theme: null, error: error.toString(), jwtToken: '' });
+        }
+    });
+
+    app.post('/api/deletecustomtheme', async (req, res) =>
+    {
+        const { userId, jwtToken, sharedThemeId } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        try
+        {
+            const db = getDatabase(client);
+            const userObjectId = safeObjectId(userId, 'userId');
+            const themeObjectId = safeObjectId(sharedThemeId, 'sharedThemeId');
+
+            await db.collection('users').updateOne(
+                { _id: userObjectId },
+                { $pull: { customThemeIds: themeObjectId } }
+            );
+
+            res.status(200).json({
+                error: '',
+                jwtToken: refreshJwtToken(token, jwtToken),
+            });
+        }
+        catch(error)
+        {
+            res.status(500).json({ error: error.toString(), jwtToken: '' });
         }
     });
 
@@ -3833,12 +4299,13 @@ exports.setApp = function(app, client)
                         avatarUrl: 1,
                         reminderDefaults: 1,
                         calendarFeedToken: 1,
+                        customThemeIds: 1,
                     },
                 }
             );
 
             res.status(200).json({
-                settings: buildSettingsPayload(user),
+                settings: await buildSettingsPayload(db, user),
                 error: '',
                 jwtToken: refreshJwtToken(token, jwtToken),
             });
@@ -4922,6 +5389,10 @@ exports.__testables = {
     extractResponseText,
     base64ByteLength,
     normalizeAvatarDataUrl,
+    normalizeCustomThemePack,
+    normalizeThemeShareSlug,
+    extractThemeShareLookupKey,
+    buildSharedThemeUrls,
     readPositiveIntEnv,
     getConfiguredOpenAIModel,
     getConfiguredOpenAIReasoningEffort,

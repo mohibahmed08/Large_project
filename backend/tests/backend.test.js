@@ -5,6 +5,7 @@ process.env.ACCESS_TOKEN_SECRET = 'test-access-secret';
 process.env.OPENAI_MODEL = 'gpt-5.4';
 process.env.OPENAI_FALLBACK_MODEL = 'gpt-4.1-mini';
 process.env.OPENAI_REASONING_EFFORT = 'medium';
+process.env.CLIENT_ORIGIN = 'https://calendarplusplus.xyz';
 
 const tokenUtils = require('../createJWT.js');
 const { __testables } = require('../api.js');
@@ -75,6 +76,48 @@ const tests = [
             'data:image/svg+xml;base64,aGVsbG8=',
           ),
         /Profile picture must be PNG, JPEG, GIF, WEBP, AVIF, HEIC, or HEIF\./,
+      );
+    },
+  },
+  {
+    name: 'normalizeCustomThemePack keeps supported fields and enforces defaults',
+    run() {
+      const normalized = __testables.normalizeCustomThemePack({
+        name: 'My Theme',
+        btnColor: '#ABCDEF',
+        images: {
+          clearDay: 'clear.png',
+        },
+        gradient: {
+          angle: 90,
+          colors: ['#123456', '#654321'],
+        },
+      });
+
+      assert.equal(normalized.name, 'My Theme');
+      assert.equal(normalized.btnColor, '#abcdef');
+      assert.equal(normalized.images.clearDay, 'clear.png');
+      assert.equal(normalized.backgroundMode, 'gradient');
+      assert.deepEqual(normalized.gradient.colors, ['#123456', '#654321']);
+    },
+  },
+  {
+    name: 'theme share helpers parse links, validate slugs, and build share URLs',
+    run() {
+      assert.equal(
+        __testables.extractThemeShareLookupKey('https://calendarplusplus.xyz/?theme=mountain_theme'),
+        'mountain_theme',
+      );
+      assert.equal(
+        __testables.normalizeThemeShareSlug('Mountain_Theme'),
+        'mountain_theme',
+      );
+      assert.equal(
+        __testables.buildSharedThemeUrls({
+          shareSlug: 'mountain_theme',
+          shareCode: 'A1B2C3',
+        }).shareUrl,
+        'https://calendarplusplus.xyz/?theme=mountain_theme',
       );
     },
   },

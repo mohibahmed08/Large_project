@@ -5,11 +5,30 @@ import { useEffect, useRef, useState } from 'react';
 import Calendar from './Calendar';
 import Login, { ResetPasswordPage } from './login';
 import {
+    buildGradientCss,
     getContrastTextColor,
     hexToRgbString,
     normalizeHexColor,
     resolveEffectiveBackground,
+    toCssBackgroundImage,
 } from './themeUtils';
+import {
+    ACCENT_SWATCHES,
+    cloneThemePack,
+    EMPTY_CUSTOM_THEME,
+    FEATURED_THEMES,
+    inferThemeBackgroundMode,
+    sanitizeThemePack,
+} from './themeLibrary';
+import {
+    buildThemePackId,
+    buildThemeShareTargets,
+    clearSharedThemeValueFromLocation,
+    extractSharedThemeValue,
+    mergeThemePacks,
+    PENDING_SHARED_THEME_STORAGE_KEY,
+    readSharedThemeValueFromLocation,
+} from './themeSharing';
 import { WEATHER_SLOTS } from './weatherScenes';
 import { requestWeatherLocation } from './weatherLocation.js';
 
@@ -17,61 +36,79 @@ import leftOpenIcon from './icons/panel-left-open.svg';
 import leftCloseIcon from './icons/panel-left-close.svg';
 import rightOpenIcon from './icons/panel-right-open.svg';
 import rightCloseIcon from './icons/panel-right-close.svg';
+import shareIcon from './icons/share-theme.svg';
 
 const RAW_API_BASE = process.env.REACT_APP_API_URL ?? 'http://localhost:5000';
 const API_ROOT = RAW_API_BASE.endsWith('/api') ? RAW_API_BASE : `${RAW_API_BASE}/api`;
+const PUBLIC_ASSET_BASE = process.env.PUBLIC_URL || '';
 
 // ── Theme system ──────────────────────────────────────────────────────────────
+const LEGACY_THEME_STORAGE_KEY = 'calpp_theme';
 const THEME_STORAGE_KEY = 'calpp_theme';
+const SAVED_THEME_PACKS_STORAGE_KEY = 'calpp_theme_packs';
+
+function buildThemeSceneImages(themeId) {
+    return {
+        clearDay: `${PUBLIC_ASSET_BASE}/theme_packages/${themeId}/clearDay.png`,
+        clearSunrise: `${PUBLIC_ASSET_BASE}/theme_packages/${themeId}/clearSunrise.png`,
+        clearNight: `${PUBLIC_ASSET_BASE}/theme_packages/${themeId}/clearNight.png`,
+        cloudyDay: `${PUBLIC_ASSET_BASE}/theme_packages/${themeId}/cloudyDay.png`,
+        cloudySunrise: `${PUBLIC_ASSET_BASE}/theme_packages/${themeId}/cloudySunrise.png`,
+        cloudyNight: `${PUBLIC_ASSET_BASE}/theme_packages/${themeId}/cloudyNight.png`,
+        partlyCloudyDay: `${PUBLIC_ASSET_BASE}/theme_packages/${themeId}/partlyCloudyDay.png`,
+        partlyCloudySunrise: `${PUBLIC_ASSET_BASE}/theme_packages/${themeId}/partlyCloudySunrise.png`,
+        partlyCloudyNight: `${PUBLIC_ASSET_BASE}/theme_packages/${themeId}/partlyCloudyNight.png`,
+    };
+}
 
 const PRESET_THEMES = [
     {
         id: 'default',
-        name: 'Default',
-        description: 'Dynamic weather backgrounds',
+        name: 'Mountain',
+        description: 'Alpine skies across shifting weather',
         preview: 'linear-gradient(135deg,#1e3a5f 0%,#3b82f6 100%)',
         btnColor: '#60a5fa',
-        images: null,
+        images: buildThemeSceneImages('default'),
     },
     {
         id: 'aurora',
         name: 'Aurora',
-        description: 'Deep purples & cool blues',
+        description: 'Electric twilight over high ridges',
         preview: 'linear-gradient(135deg,#0d0221 0%,#5a0d82 50%,#1a6b8a 100%)',
         btnColor: '#a855f7',
-        images: { universal: 'https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=1920&q=80&auto=format&fit=crop' },
+        images: buildThemeSceneImages('aurora'),
     },
     {
         id: 'forest',
         name: 'Forest',
-        description: 'Lush greens & earthy tones',
+        description: 'Cedar silhouettes, mist, and rain',
         preview: 'linear-gradient(135deg,#0f2a0f 0%,#2d6a2d 50%,#1a3a1a 100%)',
         btnColor: '#22c55e',
-        images: { universal: 'https://images.unsplash.com/photo-1448375240586-882707db888b?w=1920&q=80&auto=format&fit=crop' },
+        images: buildThemeSceneImages('forest'),
     },
     {
         id: 'desert',
         name: 'Desert Dusk',
-        description: 'Warm oranges & sandy hues',
+        description: 'Wind-cut dunes in changing light',
         preview: 'linear-gradient(135deg,#7c2d12 0%,#ea580c 50%,#fbbf24 100%)',
         btnColor: '#f97316',
-        images: { universal: 'https://images.unsplash.com/photo-1509316785289-025f5b846b35?w=1920&q=80&auto=format&fit=crop' },
+        images: buildThemeSceneImages('desert'),
     },
     {
         id: 'ocean',
         name: 'Ocean',
-        description: 'Deep sea blues & teals',
+        description: 'Open water horizons and sea haze',
         preview: 'linear-gradient(135deg,#0c1a40 0%,#0e4d6e 50%,#0ea5e9 100%)',
         btnColor: '#06b6d4',
-        images: { universal: 'https://images.unsplash.com/photo-1505118380757-91f5f5632de0?w=1920&q=80&auto=format&fit=crop' },
+        images: buildThemeSceneImages('ocean'),
     },
     {
         id: 'midnight',
         name: 'Midnight',
-        description: 'Deep blacks & silver accents',
+        description: 'Steel blue night air over dark peaks',
         preview: 'linear-gradient(135deg,#0a0a0a 0%,#1c1c2e 50%,#2d2d44 100%)',
         btnColor: '#94a3b8',
-        images: { universal: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=1920&q=80&auto=format&fit=crop' },
+        images: buildThemeSceneImages('midnight'),
     },
     {
         id: 'custom',
@@ -85,11 +122,22 @@ const PRESET_THEMES = [
 
 function loadTheme() {
     try {
-        const raw = localStorage.getItem(THEME_STORAGE_KEY);
+        const raw = localStorage.getItem(THEME_STORAGE_KEY) || localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
         if (!raw) return null;
-        return JSON.parse(raw);
+        return sanitizeThemePack(JSON.parse(raw), FEATURED_THEMES[0]);
     } catch {
         return null;
+    }
+}
+
+function loadSavedThemePacks() {
+    try {
+        const raw = localStorage.getItem(SAVED_THEME_PACKS_STORAGE_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed.map((pack) => sanitizeThemePack(pack, EMPTY_CUSTOM_THEME)) : [];
+    } catch {
+        return [];
     }
 }
 
@@ -101,11 +149,27 @@ function persistTheme(theme) {
     }
 }
 
+function persistSavedThemePacks(packs) {
+    try {
+        localStorage.setItem(SAVED_THEME_PACKS_STORAGE_KEY, JSON.stringify(packs));
+    } catch {
+        // ignore quota errors
+    }
+}
+
 function applyBtnColorOverride(color) {
     const resolvedColor = normalizeHexColor(color);
     document.documentElement.style.setProperty('--btn-color', resolvedColor);
     document.documentElement.style.setProperty('--btn-color-rgb', hexToRgbString(resolvedColor));
     document.documentElement.style.setProperty('--btn-text-color', getContrastTextColor(resolvedColor));
+}
+
+function inferThemePreview(theme) {
+    return toCssBackgroundImage(resolveEffectiveBackground(theme, null)) || theme?.preview || buildGradientCss(theme?.gradient);
+}
+
+function inferImageFit(theme) {
+    return theme?.imageFit === 'contain' ? 'contain' : theme?.imageFit === 'center' ? 'auto' : 'cover';
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -438,11 +502,19 @@ function App() {
     // Theme state — loaded from localStorage on mount
     const [activeTheme, setActiveTheme] = useState(() => {
         const saved = loadTheme();
-        return saved || PRESET_THEMES[0];
+        return saved || FEATURED_THEMES[0];
     });
+    const [savedThemePacks, setSavedThemePacks] = useState(() => loadSavedThemePacks());
     // Scratch state for the theme editor (before Apply is clicked)
     const [themeDraft, setThemeDraft] = useState(null);
-    const [customBgMode, setCustomBgMode] = useState('universal'); // 'universal' | 'perScene'
+    const [customBgMode, setCustomBgMode] = useState('gradient'); // 'gradient' | 'universal' | 'perScene'
+    const [themeImportValue, setThemeImportValue] = useState('');
+    const [themeShareState, setThemeShareState] = useState({
+        open: false,
+        loading: false,
+        theme: null,
+        customLinkId: '',
+    });
     const [accountSettings, setAccountSettings] = useState(null);
     const [accountDraft, setAccountDraft] = useState({
         firstName: '',
@@ -465,6 +537,8 @@ function App() {
     const [pendingAvatarUrl, setPendingAvatarUrl] = useState(null);
     const searchInputRef = useRef(null);
     const locationRequestRef = useRef(null);
+    const themeImportInputRef = useRef(null);
+    const sharedThemeImportInFlight = useRef(false);
 
     const currentDate = new Date();
     const verticalDateString = selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -540,6 +614,7 @@ function App() {
                 avatarUrl: '',
                 calendarFeedUrl: '',
                 calendarFeedWebcalUrl: '',
+                customThemes: [],
                 reminderDefaults: {
                     reminderEnabled: false,
                     reminderMinutesBefore: 30,
@@ -550,12 +625,27 @@ function App() {
             setAvatarUrl(nextSettings.avatarUrl || null);
             setEmailDraft('');
             setPendingAvatarUrl(null);
+            setSavedThemePacks((prev) => {
+                const merged = mergeThemePacks(prev, nextSettings.customThemes || []);
+                persistSavedThemePacks(merged);
+                return merged;
+            });
         } catch (error) {
             setAccountFeedback(error.message);
         } finally {
             setAccountLoading(false);
         }
     };
+
+    useEffect(() => {
+        const sharedThemeValue = readSharedThemeValueFromLocation();
+        if (!sharedThemeValue) {
+            return;
+        }
+
+        localStorage.setItem(PENDING_SHARED_THEME_STORAGE_KEY, sharedThemeValue);
+        clearSharedThemeValueFromLocation();
+    }, []);
 
     useEffect(() => {
         if (isAuthenticated) {
@@ -576,6 +666,27 @@ function App() {
         }
 
         ensureLocation();
+    }, [isAuthenticated]);
+
+    useEffect(() => {
+        if (!isAuthenticated || sharedThemeImportInFlight.current) {
+            return;
+        }
+
+        const pendingSharedTheme = localStorage.getItem(PENDING_SHARED_THEME_STORAGE_KEY) || '';
+        if (!pendingSharedTheme) {
+            return;
+        }
+
+        sharedThemeImportInFlight.current = true;
+        importSharedTheme(pendingSharedTheme, { openDashboard: true })
+            .catch((error) => {
+                localStorage.removeItem(PENDING_SHARED_THEME_STORAGE_KEY);
+                setAccountFeedback(error.message);
+            })
+            .finally(() => {
+                sharedThemeImportInFlight.current = false;
+            });
     }, [isAuthenticated]);
 
     // Apply btn-color override whenever theme changes
@@ -622,6 +733,370 @@ function App() {
         } else {
             loadAccountSettings();
         }
+        if (tab === 'themes') {
+            const nextDraft = sanitizeThemePack(cloneThemePack(activeTheme), EMPTY_CUSTOM_THEME);
+            setThemeDraft(nextDraft);
+            setCustomBgMode(inferThemeBackgroundMode(nextDraft));
+        }
+    };
+
+    const syncThemeDraft = (nextTheme) => {
+        const nextDraft = sanitizeThemePack(nextTheme, EMPTY_CUSTOM_THEME);
+        setThemeDraft(nextDraft);
+        setCustomBgMode(inferThemeBackgroundMode(nextDraft));
+        return nextDraft;
+    };
+
+    const themePackMatches = (first, second) => {
+        if (!first || !second) {
+            return false;
+        }
+
+        if (first.sharedThemeId || second.sharedThemeId) {
+            return String(first.sharedThemeId || '') === String(second.sharedThemeId || '');
+        }
+
+        return String(first.id || '') === String(second.id || '');
+    };
+
+    const upsertSavedThemePack = (nextTheme) => {
+        const normalized = sanitizeThemePack(nextTheme, EMPTY_CUSTOM_THEME);
+        setSavedThemePacks((prev) => {
+            const nextPacks = mergeThemePacks(prev, [normalized]);
+            persistSavedThemePacks(nextPacks);
+            return nextPacks;
+        });
+        setAccountSettings((prev) => (
+            prev
+                ? { ...prev, customThemes: mergeThemePacks(prev.customThemes || [], [normalized]) }
+                : prev
+        ));
+        return normalized;
+    };
+
+    const replaceSavedThemePack = (previousTheme, nextTheme) => {
+        const normalized = sanitizeThemePack(nextTheme, EMPTY_CUSTOM_THEME);
+        setSavedThemePacks((prev) => {
+            const filtered = prev.filter((pack) => (
+                !themePackMatches(pack, previousTheme) && !themePackMatches(pack, normalized)
+            ));
+            const nextPacks = mergeThemePacks(filtered, [normalized]);
+            persistSavedThemePacks(nextPacks);
+            return nextPacks;
+        });
+        setAccountSettings((prev) => (
+            prev
+                ? {
+                    ...prev,
+                    customThemes: mergeThemePacks(
+                        (prev.customThemes || []).filter((pack) => !themePackMatches(pack, previousTheme)),
+                        [normalized],
+                    ),
+                }
+                : prev
+        ));
+        return normalized;
+    };
+
+    const syncThemePackToServer = async (nextTheme, options = {}) => {
+        const session = getSession();
+        if (!session) {
+            throw new Error('Please log in again to sync this theme.');
+        }
+
+        const response = await fetch(`${API_ROOT}/upsertcustomtheme`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: session.userId,
+                jwtToken: session.jwtToken,
+                theme: nextTheme,
+                ...(options.shareSlug ? { shareSlug: options.shareSlug } : {}),
+            }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Could not sync that theme.');
+        }
+
+        updateToken(data.jwtToken);
+        return replaceSavedThemePack(nextTheme, data.theme);
+    };
+
+    const applyImportedTheme = (nextTheme, feedbackText = '') => {
+        const importedTheme = upsertSavedThemePack(nextTheme);
+        syncThemeDraft(importedTheme);
+        setActiveTheme(importedTheme);
+        persistTheme(importedTheme);
+        if (feedbackText) {
+            setAccountFeedback(feedbackText);
+        }
+        return importedTheme;
+    };
+
+    const importSharedTheme = async (shareValue, options = {}) => {
+        const resolvedShareValue = extractSharedThemeValue(shareValue);
+        if (!resolvedShareValue) {
+            throw new Error('Paste a theme code or share link first.');
+        }
+
+        const session = getSession();
+        if (!session) {
+            localStorage.setItem(PENDING_SHARED_THEME_STORAGE_KEY, resolvedShareValue);
+            throw new Error('Log in to import that theme.');
+        }
+
+        const response = await fetch(`${API_ROOT}/importsharedtheme`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: session.userId,
+                jwtToken: session.jwtToken,
+                shareValue: resolvedShareValue,
+            }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Could not import that theme.');
+        }
+
+        updateToken(data.jwtToken);
+        const importedTheme = applyImportedTheme(
+            sanitizeThemePack(data.theme, EMPTY_CUSTOM_THEME),
+            `Imported "${data.theme?.name || 'theme'}" and applied it.`,
+        );
+
+        localStorage.removeItem(PENDING_SHARED_THEME_STORAGE_KEY);
+        setThemeImportValue('');
+
+        if (options.openDashboard) {
+            setAccountTab('themes');
+            setAccountModalOpen(true);
+        }
+
+        return importedTheme;
+    };
+
+    const openThemeShareDialog = (theme) => {
+        if (!theme) {
+            return;
+        }
+
+        setThemeShareState({
+            open: true,
+            loading: false,
+            theme,
+            customLinkId: theme.shareSlug || '',
+        });
+    };
+
+    const closeThemeShareDialog = () => {
+        setThemeShareState({
+            open: false,
+            loading: false,
+            theme: null,
+            customLinkId: '',
+        });
+    };
+
+    const saveSharedThemeDetails = async () => {
+        if (!themeShareState.theme) {
+            return;
+        }
+
+        setThemeShareState((prev) => ({ ...prev, loading: true }));
+        try {
+            const syncedTheme = await syncThemePackToServer(themeShareState.theme, {
+                shareSlug: themeShareState.customLinkId,
+            });
+
+            if (themePackMatches(themeDraft, themeShareState.theme)) {
+                syncThemeDraft(syncedTheme);
+            }
+            if (themePackMatches(activeTheme, themeShareState.theme)) {
+                setActiveTheme(syncedTheme);
+                persistTheme(syncedTheme);
+            }
+
+            setThemeShareState({
+                open: true,
+                loading: false,
+                theme: syncedTheme,
+                customLinkId: syncedTheme.shareSlug || '',
+            });
+            setAccountFeedback(`Share ready for "${syncedTheme.name}".`);
+        } catch (error) {
+            setThemeShareState((prev) => ({ ...prev, loading: false }));
+            setAccountFeedback(error.message);
+        }
+    };
+
+    const saveThemePackDraft = async () => {
+        if (!themeDraft) {
+            return;
+        }
+
+        const baseId = savedThemePacks.some((pack) => themePackMatches(pack, themeDraft))
+            ? themeDraft.id
+            : buildThemePackId(themeDraft.name);
+        const savedPack = upsertSavedThemePack({
+            ...themeDraft,
+            id: baseId,
+            source: 'user',
+        });
+        syncThemeDraft(savedPack);
+        setAccountFeedback(`Saved "${savedPack.name}" to your theme packs.`);
+
+        try {
+            const syncedTheme = await syncThemePackToServer(savedPack);
+            syncThemeDraft(syncedTheme);
+            if (themePackMatches(activeTheme, savedPack)) {
+                setActiveTheme(syncedTheme);
+                persistTheme(syncedTheme);
+            }
+            setAccountFeedback(`Saved "${syncedTheme.name}" to your theme packs.`);
+        } catch (error) {
+            setAccountFeedback(`Saved "${savedPack.name}" locally. ${error.message}`);
+        }
+    };
+
+    const exportThemePackDraft = () => {
+        if (!themeDraft) {
+            return;
+        }
+
+        const pack = sanitizeThemePack({
+            ...themeDraft,
+            source: 'shared',
+        }, EMPTY_CUSTOM_THEME);
+        const blob = new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${pack.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'theme-pack'}.calpp-theme.json`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+    };
+
+    const importThemePackFile = async (file) => {
+        if (!file) {
+            return;
+        }
+
+        try {
+            const text = await file.text();
+            const parsed = JSON.parse(text);
+            const importedPack = sanitizeThemePack({
+                ...parsed,
+                id: buildThemePackId(parsed?.name || 'imported-pack'),
+                source: 'user',
+            }, EMPTY_CUSTOM_THEME);
+            applyImportedTheme(importedPack, `Imported "${importedPack.name}" and applied it.`);
+        } catch {
+            setAccountFeedback('Could not import that theme pack.');
+        }
+    };
+
+    const deleteThemePack = async (packToDelete) => {
+        if (!packToDelete) {
+            return;
+        }
+
+        const session = getSession();
+        if (packToDelete.sharedThemeId && session) {
+            try {
+                const response = await fetch(`${API_ROOT}/deletecustomtheme`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userId: session.userId,
+                        jwtToken: session.jwtToken,
+                        sharedThemeId: packToDelete.sharedThemeId,
+                    }),
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Could not remove that theme.');
+                }
+
+                updateToken(data.jwtToken);
+            } catch (error) {
+                setAccountFeedback(error.message);
+                return;
+            }
+        }
+
+        setSavedThemePacks((prev) => {
+            const nextPacks = prev.filter((pack) => !themePackMatches(pack, packToDelete));
+            persistSavedThemePacks(nextPacks);
+            return nextPacks;
+        });
+        setAccountSettings((prev) => (
+            prev
+                ? {
+                    ...prev,
+                    customThemes: (prev.customThemes || []).filter((pack) => !themePackMatches(pack, packToDelete)),
+                }
+                : prev
+        ));
+
+        if (themePackMatches(themeDraft, packToDelete)) {
+            syncThemeDraft(EMPTY_CUSTOM_THEME);
+        }
+        if (themePackMatches(activeTheme, packToDelete)) {
+            setActiveTheme(FEATURED_THEMES[0]);
+            persistTheme(FEATURED_THEMES[0]);
+        }
+        if (themePackMatches(themeShareState.theme, packToDelete)) {
+            closeThemeShareDialog();
+        }
+
+        setAccountFeedback('Saved theme pack removed.');
+    };
+
+    const copyThemeShareValue = async (value, label) => {
+        if (!value) {
+            setAccountFeedback(`${label} is not ready yet.`);
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(value);
+            setAccountFeedback(`${label} copied.`);
+        } catch {
+            setAccountFeedback(value);
+        }
+    };
+
+    const openThemeShareTarget = (targetUrl) => {
+        if (!targetUrl) {
+            return;
+        }
+
+        if (targetUrl.startsWith('mailto:') || targetUrl.startsWith('sms:')) {
+            window.location.href = targetUrl;
+            return;
+        }
+
+        window.open(targetUrl, '_blank', 'noopener,noreferrer');
+    };
+
+    const shareThemeThroughSystem = async (theme) => {
+        if (!theme?.shareUrl || typeof navigator.share !== 'function') {
+            return;
+        }
+
+        const targets = buildThemeShareTargets(theme);
+        await navigator.share({
+            title: `Calendar++ theme: ${theme.name}`,
+            text: targets.shareText,
+            url: theme.shareUrl,
+        });
     };
 
     const openCalendarModal = (kind) => {
@@ -1068,7 +1543,7 @@ function App() {
     const profileInitials = `${profileFirstName.charAt(0)}${profileLastName.charAt(0)}`.toUpperCase();
 
     // Compute the effective background: theme override takes precedence over weather
-    const effectiveBackground = resolveEffectiveBackground(activeTheme, background);
+    const effectiveBackground = toCssBackgroundImage(resolveEffectiveBackground(activeTheme, background));
 
     // Render the password reset screen directly when the reset route is active.
     const isResetRoute = window.location.pathname === '/resetpassword' &&
@@ -1084,8 +1559,8 @@ function App() {
                     <div
                         className="main-layout"
                         style={{
-                            '--bg-img': effectiveBackground ? `url(${effectiveBackground})` : 'none',
-                            backgroundSize: activeTheme?.imageFit === 'contain' ? 'contain' : activeTheme?.imageFit === 'center' ? 'auto' : 'cover',
+                            '--bg-img': effectiveBackground || 'none',
+                            backgroundSize: inferImageFit(activeTheme),
                         }}
                     >
                         <div className={`sidebar left-sidebar ${leftOpen ? 'open' : 'closed'}`}>
@@ -1378,11 +1853,7 @@ function App() {
                                     className={`account-tab-btn ${accountTab === 'themes' ? 'active' : ''}`}
                                     onClick={() => {
                                         setAccountTab('themes');
-                                        // Initialise draft from active theme when opening
-                                        setThemeDraft(JSON.parse(JSON.stringify(activeTheme)));
-                                        setCustomBgMode(
-                                            activeTheme?.images?.universal !== undefined ? 'universal' : 'perScene'
-                                        );
+                                        syncThemeDraft(cloneThemePack(activeTheme));
                                     }}
                                 >
                                     Themes
@@ -1490,7 +1961,7 @@ function App() {
                                             /* ── THEMES TAB ─────────────────────────────────────────── */
                                             <div className="account-section-stack">
                                                 <div className="account-section-card">
-                                                    <h3>Choose a theme</h3>
+                                                    <h3>Theme Packs</h3>
                                                     <p className="account-section-copy">Select a preset or build your own. Changes apply instantly — click Apply to keep them.</p>
                                                     <div className="theme-preset-grid">
                                                         {PRESET_THEMES.map((preset) => {
@@ -1520,6 +1991,146 @@ function App() {
                                                 </div>
 
                                                 {/* Custom theme editor — shown only when Custom is selected */}
+                                                <div className="account-section-card">
+                                                    <div className="theme-library-header">
+                                                        <div>
+                                                            <h3>Your Saved & Shared Themes</h3>
+                                                            <p className="account-section-copy">Save custom packs, import shared links or codes, and keep imported themes on your dashboard until you remove them.</p>
+                                                        </div>
+                                                        <div className="theme-library-actions">
+                                                            <button
+                                                                type="button"
+                                                                className="account-secondary-btn"
+                                                                onClick={saveThemePackDraft}
+                                                                disabled={!themeDraft}
+                                                            >
+                                                                Save pack
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="theme-icon-btn"
+                                                                onClick={() => openThemeShareDialog(themeDraft)}
+                                                                disabled={!themeDraft}
+                                                                title="Share theme"
+                                                                aria-label="Share theme"
+                                                            >
+                                                                <img src={shareIcon} alt="" />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="account-secondary-btn"
+                                                                onClick={exportThemePackDraft}
+                                                                disabled={!themeDraft}
+                                                            >
+                                                                Export file
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="account-secondary-btn"
+                                                                onClick={() => themeImportInputRef.current?.click()}
+                                                            >
+                                                                Import file
+                                                            </button>
+                                                            <input
+                                                                ref={themeImportInputRef}
+                                                                type="file"
+                                                                accept=".json,.calpp-theme.json,application/json"
+                                                                style={{ display: 'none' }}
+                                                                onChange={async (event) => {
+                                                                    const file = event.target.files?.[0];
+                                                                    event.target.value = '';
+                                                                    await importThemePackFile(file);
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="theme-import-row">
+                                                        <label className="account-field theme-import-field">
+                                                            <span>Import a shared theme</span>
+                                                            <input
+                                                                value={themeImportValue}
+                                                                onChange={(event) => setThemeImportValue(event.target.value)}
+                                                                placeholder="Paste a share link or 6-digit code"
+                                                            />
+                                                        </label>
+                                                        <button
+                                                            type="button"
+                                                            className="account-primary-btn"
+                                                            onClick={async () => {
+                                                                try {
+                                                                    await importSharedTheme(themeImportValue);
+                                                                } catch (error) {
+                                                                    setAccountFeedback(error.message);
+                                                                }
+                                                            }}
+                                                            disabled={!themeImportValue.trim()}
+                                                        >
+                                                            Import & apply
+                                                        </button>
+                                                    </div>
+
+                                                    {savedThemePacks.length > 0 ? (
+                                                        <div className="saved-theme-grid">
+                                                            {savedThemePacks.map((pack) => {
+                                                                const isSelected = themePackMatches(themeDraft, pack);
+                                                                const previewBackground = inferThemePreview(pack) || pack.preview;
+                                                                return (
+                                                                    <div
+                                                                        key={pack.sharedThemeId || pack.id}
+                                                                        className={`saved-theme-card${isSelected ? ' selected' : ''}`}
+                                                                        onClick={() => syncThemeDraft(pack)}
+                                                                        onKeyDown={(event) => {
+                                                                            if (event.key === 'Enter' || event.key === ' ') {
+                                                                                event.preventDefault();
+                                                                                syncThemeDraft(pack);
+                                                                            }
+                                                                        }}
+                                                                        role="button"
+                                                                        tabIndex={0}
+                                                                    >
+                                                                        <div
+                                                                            className="saved-theme-swatch"
+                                                                            style={{ background: previewBackground }}
+                                                                        />
+                                                                        <div className="saved-theme-copy">
+                                                                            <span className="saved-theme-name">{pack.name}</span>
+                                                                            <span className="saved-theme-meta">{pack.authorLabel || 'By you'}</span>
+                                                                            <span className="saved-theme-desc">{pack.description || 'Custom theme pack'}</span>
+                                                                        </div>
+                                                                        <div className="saved-theme-actions">
+                                                                            <button
+                                                                                type="button"
+                                                                                className="theme-icon-btn"
+                                                                                title="Share theme"
+                                                                                aria-label={`Share ${pack.name}`}
+                                                                                onClick={(event) => {
+                                                                                    event.stopPropagation();
+                                                                                    openThemeShareDialog(pack);
+                                                                                }}
+                                                                            >
+                                                                                <img src={shareIcon} alt="" />
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                className="account-secondary-btn"
+                                                                                onClick={(event) => {
+                                                                                    event.stopPropagation();
+                                                                                    deleteThemePack(pack);
+                                                                                }}
+                                                                            >
+                                                                                Delete
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    ) : (
+                                                        <p className="theme-empty-state">No saved or imported themes yet.</p>
+                                                    )}
+                                                </div>
+
                                                 {themeDraft?.id === 'custom' && (
                                                     <div className="account-section-card">
                                                         <h3>Customize</h3>
@@ -1669,7 +2280,7 @@ function App() {
                                                         <div className="theme-preview-strip" style={{
                                                             backgroundImage: (() => {
                                                                 const imgs = themeDraft.images || {};
-                                                                const src = imgs.universal || null;
+                                                                const src = imgs.universal || imgs.clearDay || null;
                                                                 return src ? `url(${src})` : themeDraft.preview;
                                                             })(),
                                                             backgroundSize: themeDraft.imageFit === 'contain' ? 'contain' : themeDraft.imageFit === 'center' ? 'auto' : 'cover',
@@ -1687,6 +2298,118 @@ function App() {
                                                                 </button>
                                                                 <span className="theme-preview-label">Accent: {themeDraft.btnColor || '#60a5fa'}</span>
                                                             </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {themeShareState.open && themeShareState.theme && (
+                                                    <div className="account-section-card theme-share-card">
+                                                        <div className="theme-library-header">
+                                                            <div>
+                                                                <h3>Share Theme</h3>
+                                                                <p className="account-section-copy">{themeShareState.theme.creatorLabel || `Theme created by ${themeShareState.theme.authorName || 'you'}`}</p>
+                                                            </div>
+                                                            <button type="button" className="account-secondary-btn" onClick={closeThemeShareDialog}>
+                                                                Close share
+                                                            </button>
+                                                        </div>
+
+                                                        <label className="account-field">
+                                                            <span>Custom link ID</span>
+                                                            <input
+                                                                value={themeShareState.customLinkId}
+                                                                onChange={(event) => setThemeShareState((prev) => ({ ...prev, customLinkId: event.target.value }))}
+                                                                placeholder="mountain_theme"
+                                                                disabled={themeShareState.loading || (themeShareState.theme.sharedThemeId && themeShareState.theme.isOwnedTheme !== true)}
+                                                            />
+                                                        </label>
+                                                        {themeShareState.theme.sharedThemeId && themeShareState.theme.isOwnedTheme !== true && (
+                                                            <p className="theme-share-note">This imported theme keeps the original creator name. You can still share the existing link or code.</p>
+                                                        )}
+
+                                                        <div className="account-inline-actions account-inline-actions-wrap">
+                                                            <button
+                                                                type="button"
+                                                                className="account-primary-btn"
+                                                                onClick={saveSharedThemeDetails}
+                                                                disabled={themeShareState.loading}
+                                                            >
+                                                                {themeShareState.loading ? 'Saving...' : themeShareState.theme.shareCode ? 'Update share details' : 'Create share link'}
+                                                            </button>
+                                                            {themeShareState.theme.shareUrl && typeof navigator.share === 'function' && (
+                                                                <button
+                                                                    type="button"
+                                                                    className="account-secondary-btn"
+                                                                    onClick={async () => {
+                                                                        try {
+                                                                            await shareThemeThroughSystem(themeShareState.theme);
+                                                                        } catch {
+                                                                            setAccountFeedback('Native share was canceled.');
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    Share...
+                                                                </button>
+                                                            )}
+                                                            <button
+                                                                type="button"
+                                                                className="account-secondary-btn"
+                                                                onClick={() => copyThemeShareValue(themeShareState.theme.shareUrl, 'Share link')}
+                                                                disabled={!themeShareState.theme.shareUrl}
+                                                            >
+                                                                Copy link
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="account-secondary-btn"
+                                                                onClick={() => copyThemeShareValue(themeShareState.theme.shareCode, 'Theme code')}
+                                                                disabled={!themeShareState.theme.shareCode}
+                                                            >
+                                                                Copy code
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="account-secondary-btn"
+                                                                onClick={() => openThemeShareTarget(buildThemeShareTargets(themeShareState.theme).email)}
+                                                                disabled={!themeShareState.theme.shareUrl}
+                                                            >
+                                                                Email
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="account-secondary-btn"
+                                                                onClick={() => openThemeShareTarget(buildThemeShareTargets(themeShareState.theme).sms)}
+                                                                disabled={!themeShareState.theme.shareUrl}
+                                                            >
+                                                                Messages
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="account-secondary-btn"
+                                                                onClick={() => openThemeShareTarget(buildThemeShareTargets(themeShareState.theme).facebook)}
+                                                                disabled={!themeShareState.theme.shareUrl}
+                                                            >
+                                                                Facebook
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="account-secondary-btn"
+                                                                onClick={() => openThemeShareTarget(buildThemeShareTargets(themeShareState.theme).whatsapp)}
+                                                                disabled={!themeShareState.theme.shareUrl}
+                                                            >
+                                                                WhatsApp
+                                                            </button>
+                                                        </div>
+
+                                                        <div className="account-field-row">
+                                                            <label className="account-field">
+                                                                <span>Share link</span>
+                                                                <input value={themeShareState.theme.shareUrl || ''} readOnly />
+                                                            </label>
+                                                            <label className="account-field">
+                                                                <span>Theme code</span>
+                                                                <input value={themeShareState.theme.shareCode || ''} readOnly />
+                                                            </label>
                                                         </div>
                                                     </div>
                                                 )}
