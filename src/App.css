@@ -657,7 +657,9 @@
 .account-modal {
   width: min(780px, 100%);
   max-height: calc(100vh - 48px);
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   border-radius: 14px;
   background:
     linear-gradient(180deg, rgba(29, 39, 63, 0.84), rgba(16, 22, 39, 0.74)),
@@ -740,6 +742,14 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.account-modal-actions {
+  flex-shrink: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .account-hero {
@@ -770,6 +780,22 @@
   font-weight: 700;
   background: linear-gradient(180deg, rgba(96, 165, 250, 0.94), rgba(59, 130, 246, 0.82));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.account-avatar-img {
+  object-fit: cover;
+  background: none;
+}
+
+.account-avatar-remove-btn {
+  border: none;
+  background: none;
+  color: #f87171;
+  font-size: 0.82rem;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .account-hero-copy h3 {
