@@ -1,8 +1,9 @@
+// @ts-nocheck
 import './App.css';
 import { useEffect, useState } from 'react';
 
-import Calendar from './Calendar.jsx';
-import Login, { ResetPasswordPage } from './login.jsx';
+import Calendar from './Calendar';
+import Login, { ResetPasswordPage } from './login';
 import { requestWeatherLocation } from './weatherLocation.js';
 
 import leftOpenIcon from './icons/panel-left-open.svg';

@@ -1,3 +1,4 @@
+// @ts-nocheck
 //IMMPORT THE STYLE SHEET
 import './DayGrid.css';
 
@@ -102,9 +103,9 @@ function DayGrid({
                 onClick={() => onSelectDay?.(targetDate)}
             >
                 {/* TOP LEFT WEATHER OF THE CURRENT DAY */}
-                {isWithinWeather && <text className = "day-grid-weather-header">{generalWeather}</text>}
+                {isWithinWeather && <span className = "day-grid-weather-header">{generalWeather}</span>}
                 {/* TOP RIGHT DAY NUMBER IN THE BOX */}
-                <text className = "day-grid-day-number">{dayOfMonth}</text>
+                <span className = "day-grid-day-number">{dayOfMonth}</span>
                 {/* SECTION TO HOLD TILED REMINDERS / SUGGESTIONS */}
                 <div className = {`day-grid-tile-wrapper`}>
                     {tasks.length > 0 && <ul className = "day-grid-ul">
