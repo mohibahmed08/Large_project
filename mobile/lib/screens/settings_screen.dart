@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/account_settings.dart';
 import '../models/user_model.dart';
@@ -50,6 +52,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isRegenerating = false;
+  bool _isRequestingEmailChange = false;
+  bool _isExportingCalendar = false;
+  final TextEditingController _newEmailController = TextEditingController();
+  String _emailChangeFeedback = '';
   bool _reminderEnabled = false;
   bool _biometricAvailable = false;
   bool _biometricUnlockEnabled = false;
@@ -153,6 +159,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     _firstNameController.dispose();
     _lastNameController.dispose();
+    _newEmailController.dispose();
     super.dispose();
   }
 
@@ -556,6 +563,74 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) {
         setState(() {
           _isRegenerating = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _requestEmailChange() async {
+    final nextEmail = _newEmailController.text.trim();
+    if (nextEmail.isEmpty) return;
+    setState(() {
+      _isRequestingEmailChange = true;
+      _emailChangeFeedback = '';
+    });
+    try {
+      final result = await _accountService.requestEmailChange(
+        session: _session,
+        nextEmail: nextEmail,
+      );
+      if (!mounted) return;
+      _session = result.session;
+      widget.onSessionUpdated(_session);
+      _newEmailController.clear();
+      setState(() {
+        _emailChangeFeedback = result.message;
+      });
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _emailChangeFeedback = error.toString().replaceFirst('Exception: ', '');
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRequestingEmailChange = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _exportCalendar() async {
+    setState(() {
+      _isExportingCalendar = true;
+    });
+    try {
+      final result = await _accountService.exportCalendar(session: _session);
+      if (!mounted) return;
+      _session = result.session;
+      widget.onSessionUpdated(_session);
+      if (result.icsContent.isEmpty) {
+        _showSnackBar('No calendar data to export.');
+        return;
+      }
+      // Write the ICS file to the app's temp directory then share it via the system share sheet
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/${result.filename}');
+      await file.writeAsString(result.icsContent, encoding: const Utf8Codec());
+      if (!mounted) return;
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'text/calendar', name: result.filename)],
+        subject: result.filename,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isExportingCalendar = false;
         });
       }
     }
@@ -1164,14 +1239,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         const SizedBox(height: 12),
                         InputDecorator(
-                          decoration: const InputDecoration(labelText: 'Email'),
+                          decoration: const InputDecoration(labelText: 'Current email'),
                           child: Text(_settings?.email ?? ''),
                         ),
                         if ((_settings?.pendingEmail ?? '').isNotEmpty) ...[
                           const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              const Icon(Icons.mark_email_unread_outlined, size: 14, color: AppTheme.textMuted),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  'Pending: ${_settings!.pendingEmail}',
+                                  style: const TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _newEmailController,
+                          keyboardType: TextInputType.emailAddress,
+                          autocorrect: false,
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => _requestEmailChange(),
+                          decoration: const InputDecoration(
+                            labelText: 'New email address',
+                            hintText: 'Enter new email',
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.tonal(
+                            onPressed: _isRequestingEmailChange ? null : _requestEmailChange,
+                            child: Text(_isRequestingEmailChange ? 'Sending...' : 'Change email'),
+                          ),
+                        ),
+                        if (_emailChangeFeedback.isNotEmpty) ...[
+                          const SizedBox(height: 8),
                           Text(
-                            'Pending email: ${_settings!.pendingEmail}',
-                            style: const TextStyle(color: AppTheme.textMuted),
+                            _emailChangeFeedback,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: _emailChangeFeedback.toLowerCase().contains('error') ||
+                                      _emailChangeFeedback.toLowerCase().contains('could not') ||
+                                      _emailChangeFeedback.toLowerCase().contains('invalid')
+                                  ? Theme.of(context).colorScheme.error
+                                  : AppTheme.textMuted,
+                            ),
                           ),
                         ],
                       ],
@@ -1349,6 +1466,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 _isRegenerating
                                     ? 'Regenerating...'
                                     : 'Regenerate',
+                              ),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: _isExportingCalendar ? null : _exportCalendar,
+                              icon: const Icon(Icons.download_outlined, size: 16),
+                              label: Text(
+                                _isExportingCalendar ? 'Exporting...' : 'Export .ics',
                               ),
                             ),
                           ],

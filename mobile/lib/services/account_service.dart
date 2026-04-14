@@ -82,6 +82,30 @@ class AccountService {
     );
   }
 
+  Future<({UserSession session, String message})> requestEmailChange({
+    required UserSession session,
+    required String nextEmail,
+  }) async {
+    final json = await _post('requestemailchange', session, {
+      'nextEmail': nextEmail.trim(),
+    });
+    return (
+      session: _updatedSession(session, json),
+      message: (json['message'] ?? 'Verification sent to the new email address.').toString(),
+    );
+  }
+
+  Future<({UserSession session, String icsContent, String filename})> exportCalendar({
+    required UserSession session,
+  }) async {
+    final json = await _post('exportcalendar', session, {});
+    return (
+      session: _updatedSession(session, json),
+      icsContent: (json['ics'] ?? '').toString(),
+      filename: (json['filename'] ?? 'calendar-plus-plus.ics').toString(),
+    );
+  }
+
   Future<Map<String, dynamic>> _post(
     String path,
     UserSession session,
