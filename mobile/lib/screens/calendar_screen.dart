@@ -1029,8 +1029,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
           {
             'role': 'user',
             'content':
-                'Create exactly one calendar task for $selectedDateIso from this quick-add text: "$value". '
+                'Create exactly one well-formatted calendar event or task for $selectedDateIso from this quick-add text: "$value". '
+                'Use a clean, user-facing title in title case, like "Dinner" instead of "dinner". '
+                'If the text implies an everyday personal activity and no group is specified, prefer the Personal group. '
                 'Infer a local time only if the user implied one. '
+                'If a start time is implied but no end time is given, make it a sensible one-hour event. '
                 'If no time is implied, make it an untimed or all-day task on that date. '
                 'Do not ask follow-up questions.',
           },

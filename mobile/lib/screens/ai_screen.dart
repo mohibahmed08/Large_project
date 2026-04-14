@@ -73,7 +73,13 @@ class _AIScreenState extends State<AIScreen> {
     setState(() {
       _isSending = true;
       _messages.add(_ChatBubbleData(role: 'user', text: text));
-      _messages.add(const _ChatBubbleData(role: 'assistant', text: ''));
+      _messages.add(
+        const _ChatBubbleData(
+          role: 'assistant',
+          text: '',
+          status: 'Thinking...',
+        ),
+      );
       _messageController.clear();
     });
 
@@ -98,12 +104,32 @@ class _AIScreenState extends State<AIScreen> {
             _messages[lastIndex] = _ChatBubbleData(
               role: previous.role,
               text: previous.text + event.delta,
+              status: '',
+            );
+          });
+        } else if (event.type == AiChatStreamEventType.status) {
+          setState(() {
+            final lastIndex = _messages.length - 1;
+            final previous = _messages[lastIndex];
+            _messages[lastIndex] = _ChatBubbleData(
+              role: previous.role,
+              text: previous.text,
+              status: event.status,
             );
           });
         } else if (event.type == AiChatStreamEventType.done &&
             event.session != null) {
           _session = event.session!;
           widget.onSessionUpdated(_session);
+          setState(() {
+            final lastIndex = _messages.length - 1;
+            final previous = _messages[lastIndex];
+            _messages[lastIndex] = _ChatBubbleData(
+              role: previous.role,
+              text: previous.text,
+              status: '',
+            );
+          });
           if (event.calendarChanged) {
             await widget.onCalendarChanged();
           }
@@ -437,7 +463,11 @@ class _AIScreenState extends State<AIScreen> {
                           border: Border.all(color: AppTheme.border),
                         ),
                         child: MarkdownBody(
-                          data: message.text,
+                          data: message.text.isNotEmpty
+                              ? message.text
+                              : (message.status?.isNotEmpty ?? false)
+                                  ? '_${message.status}..._'
+                                  : '',
                           selectable: true,
                           styleSheet: MarkdownStyleSheet(
                             p: const TextStyle(
@@ -520,8 +550,10 @@ class _ChatBubbleData {
   const _ChatBubbleData({
     required this.role,
     required this.text,
+    this.status,
   });
 
   final String role;
   final String text;
+  final String? status;
 }
