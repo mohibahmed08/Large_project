@@ -39,8 +39,10 @@
 }
 
 .calendar-month-header-row {
-  /* becomes a flex row wrapper */
-  display: contents;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
 }
 
 /* The month title is absolutely centred in the header so it's always visually centred
@@ -80,6 +82,8 @@
   flex: 1 1 0;
   max-width: min(580px, 55%);
   min-width: 180px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .calendar-month-header-search-inner {

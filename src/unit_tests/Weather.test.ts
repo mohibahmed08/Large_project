@@ -1,5 +1,4 @@
 //UNIT TEST IMPORT FOR TESTING LOGIC IN DAYGRID
-import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getDateRange } from "../Weather";
 
 /// GET DATE RANGE TESTS ////
@@ -39,8 +38,8 @@ describe("getDateRange", () => {
     });
 
     it("caps year rollover due to max range", () => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date(2026, 11, 1)); // Dec 1
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date(2026, 11, 1)); // Dec 1
 
         const date = new Date(2026, 11, 30);
         const result = getDateRange(date, 5);
@@ -48,7 +47,7 @@ describe("getDateRange", () => {
         expect(result.startDate).toBe("2026-12-30");
         expect(result.endDate).toBe("2026-12-16"); // capped
 
-        vi.useRealTimers();
+        jest.useRealTimers();
     });
     // -------------------------
     // 3. Max date cap (15 days)
@@ -105,7 +104,7 @@ export async function fetchWeatherLogic({ coords, startDate, endDate, setWeather
     }
 }
 
-global.fetch = vi.fn();
+global.fetch = jest.fn();
 
 describe("weather fetch", () => {
 
@@ -114,7 +113,7 @@ describe("weather fetch", () => {
     const endDate = "2026-01-02";
 
     beforeEach(() => {
-        vi.clearAllMocks();
+        jest.clearAllMocks();
     });
 
     // -------------------------
@@ -129,7 +128,7 @@ describe("weather fetch", () => {
             json: async () => mockData,
         });
 
-        const setWeather = vi.fn();
+        const setWeather = jest.fn();
 
         await fetchWeatherLogic({ coords, startDate, endDate, setWeather });
 

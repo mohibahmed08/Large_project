@@ -1,5 +1,4 @@
 //UNIT TEST IMPORT FOR TESTING LOGIC IN DAYGRID
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import { decodeToken, suggestionKey, dateWithSuggestedTime, extractJsonArray, normalizeSuggestions, displayAssistantStatus, waitForNextPaint, renderInlineMarkdown, renderAssistantMessage } from "../App";
 // import { requestEmailChange } from "../App";
 
@@ -224,7 +223,7 @@ Object.defineProperty(window, "localStorage", {
     value: localStorageMock,
 });
 
-global.fetch = vi.fn();
+global.fetch = jest.fn();
 
 describe("save account settings", () => {
 
@@ -243,7 +242,7 @@ describe("save account settings", () => {
     };
 
     beforeEach(() => {
-        vi.clearAllMocks();
+        jest.clearAllMocks();
         localStorage.clear();
     });
 
@@ -261,13 +260,13 @@ describe("save account settings", () => {
             }),
         });
 
-        const updateToken = vi.fn();
-        const setAccountSettings = vi.fn();
-        const setAccountDraft = vi.fn();
-        const setAccountFeedback = vi.fn();
-        const setAccountSaving = vi.fn();
-        const setAvatarUrl = vi.fn();
-        const setPendingAvatarUrl = vi.fn();
+        const updateToken = jest.fn();
+        const setAccountSettings = jest.fn();
+        const setAccountDraft = jest.fn();
+        const setAccountFeedback = jest.fn();
+        const setAccountSaving = jest.fn();
+        const setAvatarUrl = jest.fn();
+        const setPendingAvatarUrl = jest.fn();
 
         await saveAccountSettings({
             session,
@@ -303,18 +302,18 @@ describe("save account settings", () => {
             }),
         });
 
-        const setAvatarUrl = vi.fn();
-        const setPendingAvatarUrl = vi.fn();
+        const setAvatarUrl = jest.fn();
+        const setPendingAvatarUrl = jest.fn();
 
         await saveAccountSettings({
             session,
             accountDraft,
             pendingAvatarUrl: "https://avatar.png",
-            updateToken: vi.fn(),
-            setAccountSettings: vi.fn(),
-            setAccountDraft: vi.fn(),
-            setAccountFeedback: vi.fn(),
-            setAccountSaving: vi.fn(),
+            updateToken: jest.fn(),
+            setAccountSettings: jest.fn(),
+            setAccountDraft: jest.fn(),
+            setAccountFeedback: jest.fn(),
+            setAccountSaving: jest.fn(),
             setAvatarUrl,
             setPendingAvatarUrl,
         });
@@ -338,19 +337,19 @@ describe("save account settings", () => {
             }),
         });
 
-        const setAvatarUrl = vi.fn();
+        const setAvatarUrl = jest.fn();
 
         await saveAccountSettings({
             session,
             accountDraft,
             pendingAvatarUrl: "REMOVED",
-            updateToken: vi.fn(),
-            setAccountSettings: vi.fn(),
-            setAccountDraft: vi.fn(),
-            setAccountFeedback: vi.fn(),
-            setAccountSaving: vi.fn(),
+            updateToken: jest.fn(),
+            setAccountSettings: jest.fn(),
+            setAccountDraft: jest.fn(),
+            setAccountFeedback: jest.fn(),
+            setAccountSaving: jest.fn(),
             setAvatarUrl,
-            setPendingAvatarUrl: vi.fn(),
+            setPendingAvatarUrl: jest.fn(),
         });
 
         expect(setAvatarUrl).toHaveBeenCalledWith(null);
@@ -423,7 +422,7 @@ describe("save account settings", () => {
 
 /// REQUEST EMAIL CHANGE TESTS ////
 
-global.fetch = vi.fn();
+global.fetch = jest.fn();
 
 describe("request email change", () => {
 
@@ -433,7 +432,7 @@ describe("request email change", () => {
     };
 
     beforeEach(() => {
-        vi.clearAllMocks();
+        jest.clearAllMocks();
     });
 
     // -------------------------
@@ -449,11 +448,11 @@ describe("request email change", () => {
             }),
         });
 
-        const updateToken = vi.fn();
-        const setEmailFeedback = vi.fn();
-        const setEmailDraft = vi.fn();
-        const setAccountSaving = vi.fn();
-        const loadAccountSettings = vi.fn();
+        const updateToken = jest.fn();
+        const setEmailFeedback = jest.fn();
+        const setEmailDraft = jest.fn();
+        const setAccountSaving = jest.fn();
+        const loadAccountSettings = jest.fn();
 
         await requestEmailChange({
             session,
@@ -487,17 +486,17 @@ describe("request email change", () => {
             }),
         });
 
-        const setEmailFeedback = vi.fn();
-        const setAccountSaving = vi.fn();
+        const setEmailFeedback = jest.fn();
+        const setAccountSaving = jest.fn();
 
         await requestEmailChange({
             session,
             emailDraft: "bad@email.com",
-            updateToken: vi.fn(),
+            updateToken: jest.fn(),
             setEmailFeedback,
-            setEmailDraft: vi.fn(),
+            setEmailDraft: jest.fn(),
             setAccountSaving,
-            loadAccountSettings: vi.fn(),
+            loadAccountSettings: jest.fn(),
         });
 
         expect(setEmailFeedback).toHaveBeenCalledWith("Invalid email");
@@ -515,16 +514,16 @@ describe("request email change", () => {
             json: async () => ({}),
         });
 
-        const setEmailFeedback = vi.fn();
+        const setEmailFeedback = jest.fn();
 
         await requestEmailChange({
             session,
             emailDraft: "test@email.com",
-            updateToken: vi.fn(),
+            updateToken: jest.fn(),
             setEmailFeedback,
-            setEmailDraft: vi.fn(),
-            setAccountSaving: vi.fn(),
-            loadAccountSettings: vi.fn(),
+            setEmailDraft: jest.fn(),
+            setAccountSaving: jest.fn(),
+            loadAccountSettings: jest.fn(),
         });
 
         expect(setEmailFeedback).toHaveBeenCalledWith(
@@ -540,17 +539,17 @@ describe("request email change", () => {
 
         (fetch as any).mockRejectedValue(new Error("Network down"));
 
-        const setEmailFeedback = vi.fn();
-        const setAccountSaving = vi.fn();
+        const setEmailFeedback = jest.fn();
+        const setAccountSaving = jest.fn();
 
         await requestEmailChange({
             session,
             emailDraft: "test@email.com",
-            updateToken: vi.fn(),
+            updateToken: jest.fn(),
             setEmailFeedback,
-            setEmailDraft: vi.fn(),
+            setEmailDraft: jest.fn(),
             setAccountSaving,
-            loadAccountSettings: vi.fn(),
+            loadAccountSettings: jest.fn(),
         });
 
         expect(setEmailFeedback).toHaveBeenCalledWith("Network down");
@@ -601,7 +600,7 @@ export async function requestEmailChange({
 
 /// EXPORT CALENDAR TESTS ////
 
-global.fetch = vi.fn();
+global.fetch = jest.fn();
 
 describe("export calendar", () => {
 
@@ -611,7 +610,7 @@ describe("export calendar", () => {
     };
 
     beforeEach(() => {
-        vi.clearAllMocks();
+        jest.clearAllMocks();
 
         // reset DOM
         document.body.innerHTML = "";
@@ -623,7 +622,7 @@ describe("export calendar", () => {
 
     it("exports calendar and triggers download", async () => {
 
-        const mockClick = vi.fn();
+        const mockClick = jest.fn();
 
         // -------------------------
         // FIX: proper anchor element
@@ -632,18 +631,18 @@ describe("export calendar", () => {
             href: "",
             download: "",
             click: mockClick,
-            remove: vi.fn(),
+            remove: jest.fn(),
         };
 
-        vi.spyOn(document, "createElement").mockReturnValue(link as any);
+        jest.spyOn(document, "createElement").mockReturnValue(link as any);
 
-        vi.spyOn(document.body, "appendChild").mockImplementation(() => link as any);
+        jest.spyOn(document.body, "appendChild").mockImplementation(() => link as any);
 
         // -------------------------
         // FIX: URL mock
         // -------------------------
-        const createObjectURL = vi.fn(() => "blob:url");
-        const revokeObjectURL = vi.fn();
+        const createObjectURL = jest.fn(() => "blob:url");
+        const revokeObjectURL = jest.fn();
 
         Object.defineProperty(window, "URL", {
             value: {
@@ -664,8 +663,8 @@ describe("export calendar", () => {
             }),
         });
 
-        const updateToken = vi.fn();
-        const setAccountFeedback = vi.fn();
+        const updateToken = jest.fn();
+        const setAccountFeedback = jest.fn();
 
         await exportCalendar({
             session,
@@ -695,11 +694,11 @@ describe("export calendar", () => {
             }),
         });
 
-        const setAccountFeedback = vi.fn();
+        const setAccountFeedback = jest.fn();
 
         await exportCalendar({
             session,
-            updateToken: vi.fn(),
+            updateToken: jest.fn(),
             setAccountFeedback,
         });
 
@@ -717,11 +716,11 @@ describe("export calendar", () => {
             json: async () => ({}),
         });
 
-        const setAccountFeedback = vi.fn();
+        const setAccountFeedback = jest.fn();
 
         await exportCalendar({
             session,
-            updateToken: vi.fn(),
+            updateToken: jest.fn(),
             setAccountFeedback,
         });
 
@@ -738,11 +737,11 @@ describe("export calendar", () => {
 
         (fetch as any).mockRejectedValue(new Error("Network down"));
 
-        const setAccountFeedback = vi.fn();
+        const setAccountFeedback = jest.fn();
 
         await exportCalendar({
             session,
-            updateToken: vi.fn(),
+            updateToken: jest.fn(),
             setAccountFeedback,
         });
 
@@ -799,7 +798,7 @@ export async function exportCalendar({
 
 /// REGENERATE CALENDAR FEED TESTS ////
 
-global.fetch = vi.fn();
+global.fetch = jest.fn();
 
 describe("regenerate calendar feed", () => {
 
@@ -809,7 +808,7 @@ describe("regenerate calendar feed", () => {
     };
 
     beforeEach(() => {
-        vi.clearAllMocks();
+        jest.clearAllMocks();
     });
 
     // -------------------------
@@ -831,11 +830,11 @@ describe("regenerate calendar feed", () => {
             }),
         });
 
-        const updateToken = vi.fn();
-        const setAccountSettings = vi.fn();
-        const setAccountDraft = vi.fn();
-        const setAccountFeedback = vi.fn();
-        const setAccountSaving = vi.fn();
+        const updateToken = jest.fn();
+        const setAccountSettings = jest.fn();
+        const setAccountDraft = jest.fn();
+        const setAccountFeedback = jest.fn();
+        const setAccountSaving = jest.fn();
 
         await regenerateCalendarFeed({
             session,
@@ -868,14 +867,14 @@ describe("regenerate calendar feed", () => {
             }),
         });
 
-        const setAccountFeedback = vi.fn();
-        const setAccountSaving = vi.fn();
+        const setAccountFeedback = jest.fn();
+        const setAccountSaving = jest.fn();
 
         await regenerateCalendarFeed({
             session,
-            updateToken: vi.fn(),
-            setAccountSettings: vi.fn(),
-            setAccountDraft: vi.fn(),
+            updateToken: jest.fn(),
+            setAccountSettings: jest.fn(),
+            setAccountDraft: jest.fn(),
             setAccountFeedback,
             setAccountSaving,
         });
@@ -895,15 +894,15 @@ describe("regenerate calendar feed", () => {
             json: async () => ({}),
         });
 
-        const setAccountFeedback = vi.fn();
+        const setAccountFeedback = jest.fn();
 
         await regenerateCalendarFeed({
             session,
-            updateToken: vi.fn(),
-            setAccountSettings: vi.fn(),
-            setAccountDraft: vi.fn(),
+            updateToken: jest.fn(),
+            setAccountSettings: jest.fn(),
+            setAccountDraft: jest.fn(),
             setAccountFeedback,
-            setAccountSaving: vi.fn(),
+            setAccountSaving: jest.fn(),
         });
 
         expect(setAccountFeedback).toHaveBeenCalledWith(
@@ -919,14 +918,14 @@ describe("regenerate calendar feed", () => {
 
         (fetch as any).mockRejectedValue(new Error("Network down"));
 
-        const setAccountFeedback = vi.fn();
-        const setAccountSaving = vi.fn();
+        const setAccountFeedback = jest.fn();
+        const setAccountSaving = jest.fn();
 
         await regenerateCalendarFeed({
             session,
-            updateToken: vi.fn(),
-            setAccountSettings: vi.fn(),
-            setAccountDraft: vi.fn(),
+            updateToken: jest.fn(),
+            setAccountSettings: jest.fn(),
+            setAccountDraft: jest.fn(),
             setAccountFeedback,
             setAccountSaving,
         });
@@ -980,7 +979,7 @@ export async function regenerateCalendarFeed({
 
 /// SUGGEST EVENTS TESTS ////
 
-global.fetch = vi.fn();
+global.fetch = jest.fn();
 
 describe("suggest events", () => {
 
@@ -990,7 +989,7 @@ describe("suggest events", () => {
     };
 
     beforeEach(() => {
-        vi.clearAllMocks();
+        jest.clearAllMocks();
     });
 
     // -------------------------
@@ -1000,15 +999,15 @@ describe("suggest events", () => {
     it("loads event suggestions successfully", async () => {
 
         // FIXED TIME (stable test)
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date("2026-01-01T12:00:00Z"));
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date("2026-01-01T12:00:00Z"));
 
         const mockCoords = {
             latitude: 10,
             longitude: 20,
         };
 
-        const ensureLocation = vi.fn().mockResolvedValue(mockCoords);
+        const ensureLocation = jest.fn().mockResolvedValue(mockCoords);
 
         (fetch as any).mockResolvedValue({
             ok: true,
@@ -1020,10 +1019,10 @@ describe("suggest events", () => {
             }),
         });
 
-        const updateToken = vi.fn();
-        const setSuggestions = vi.fn();
-        const setAiLoading = vi.fn();
-        const setMessages = vi.fn();
+        const updateToken = jest.fn();
+        const setSuggestions = jest.fn();
+        const setAiLoading = jest.fn();
+        const setMessages = jest.fn();
 
         await suggestEvents({
             session,
@@ -1040,7 +1039,7 @@ describe("suggest events", () => {
             { title: "Event A" },
         ]);
 
-        vi.useRealTimers();
+        jest.useRealTimers();
     });
 
     // -------------------------
@@ -1049,7 +1048,7 @@ describe("suggest events", () => {
 
     it("handles API error response", async () => {
 
-        const ensureLocation = vi.fn().mockResolvedValue(null);
+        const ensureLocation = jest.fn().mockResolvedValue(null);
 
         (fetch as any).mockResolvedValue({
             ok: false,
@@ -1058,16 +1057,16 @@ describe("suggest events", () => {
             }),
         });
 
-        const setMessages = vi.fn();
+        const setMessages = jest.fn();
 
         await suggestEvents({
             session,
             suggestionPreferences: "",
             ensureLocation,
-            updateToken: vi.fn(),
-            setSuggestions: vi.fn(),
+            updateToken: jest.fn(),
+            setSuggestions: jest.fn(),
             setMessages,
-            setAiLoading: vi.fn(),
+            setAiLoading: jest.fn(),
         });
 
         expect(setMessages).toHaveBeenCalledTimes(1);
@@ -1090,23 +1089,23 @@ describe("suggest events", () => {
 
     it("uses default error message when missing", async () => {
 
-        const ensureLocation = vi.fn().mockResolvedValue(null);
+        const ensureLocation = jest.fn().mockResolvedValue(null);
 
         (fetch as any).mockResolvedValue({
             ok: false,
             json: async () => ({}),
         });
 
-        const setMessages = vi.fn();
+        const setMessages = jest.fn();
 
         await suggestEvents({
             session,
             suggestionPreferences: "",
             ensureLocation,
-            updateToken: vi.fn(),
-            setSuggestions: vi.fn(),
+            updateToken: jest.fn(),
+            setSuggestions: jest.fn(),
             setMessages,
-            setAiLoading: vi.fn(),
+            setAiLoading: jest.fn(),
         });
 
         const updater = setMessages.mock.calls[0][0];
@@ -1124,18 +1123,18 @@ describe("suggest events", () => {
 
     it("handles network failure", async () => {
 
-        const ensureLocation = vi.fn().mockRejectedValue(new Error("Network down"));
+        const ensureLocation = jest.fn().mockRejectedValue(new Error("Network down"));
 
-        const setMessages = vi.fn();
+        const setMessages = jest.fn();
 
         await suggestEvents({
             session,
             suggestionPreferences: "",
             ensureLocation,
-            updateToken: vi.fn(),
-            setSuggestions: vi.fn(),
+            updateToken: jest.fn(),
+            setSuggestions: jest.fn(),
             setMessages,
-            setAiLoading: vi.fn(),
+            setAiLoading: jest.fn(),
         });
 
         const updater = setMessages.mock.calls[0][0];
@@ -1198,7 +1197,7 @@ describe("suggest events", () => {
 
 /// SAVE CALENDAR SUGGESTION TESTS ////
 
-global.fetch = vi.fn();
+global.fetch = jest.fn();
 
 describe("save calendar suggestion", () => {
 
@@ -1216,7 +1215,7 @@ describe("save calendar suggestion", () => {
   const currentDate = new Date("2026-01-01T00:00:00Z");
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
   });
 
   // -------------------------
@@ -1232,10 +1231,10 @@ describe("save calendar suggestion", () => {
       }),
     });
 
-    const updateToken = vi.fn();
-    const setSavedSuggestionKeys = vi.fn();
-    const refreshCalendar = vi.fn();
-    const setAiLoading = vi.fn();
+    const updateToken = jest.fn();
+    const setSavedSuggestionKeys = jest.fn();
+    const refreshCalendar = jest.fn();
+    const setAiLoading = jest.fn();
 
     await saveSuggestion({
       session,
@@ -1246,8 +1245,8 @@ describe("save calendar suggestion", () => {
       updateToken,
       setSavedSuggestionKeys,
       refreshCalendar,
-      setMessages: vi.fn(),
-      setAiMode: vi.fn(),
+      setMessages: jest.fn(),
+      setAiMode: jest.fn(),
       setAiLoading,
     });
 
@@ -1269,8 +1268,8 @@ describe("save calendar suggestion", () => {
       }),
     });
 
-    const setMessages = vi.fn();
-    const setAiMode = vi.fn();
+    const setMessages = jest.fn();
+    const setAiMode = jest.fn();
 
     await saveSuggestion({
       session,
@@ -1278,12 +1277,12 @@ describe("save calendar suggestion", () => {
       currentDate,
       key: "key-1",
       dateWithSuggestedTime,
-      updateToken: vi.fn(),
-      setSavedSuggestionKeys: vi.fn(),
-      refreshCalendar: vi.fn(),
+      updateToken: jest.fn(),
+      setSavedSuggestionKeys: jest.fn(),
+      refreshCalendar: jest.fn(),
       setMessages,
       setAiMode,
-      setAiLoading: vi.fn(),
+      setAiLoading: jest.fn(),
     });
 
     const updater = setMessages.mock.calls[0][0];
@@ -1306,8 +1305,8 @@ describe("save calendar suggestion", () => {
       json: async () => ({}),
     });
 
-    const setMessages = vi.fn();
-    const setAiMode = vi.fn();
+    const setMessages = jest.fn();
+    const setAiMode = jest.fn();
 
     await saveSuggestion({
       session,
@@ -1315,12 +1314,12 @@ describe("save calendar suggestion", () => {
       currentDate,
       key: "key-1",
       dateWithSuggestedTime,
-      updateToken: vi.fn(),
-      setSavedSuggestionKeys: vi.fn(),
-      refreshCalendar: vi.fn(),
+      updateToken: jest.fn(),
+      setSavedSuggestionKeys: jest.fn(),
+      refreshCalendar: jest.fn(),
       setMessages,
       setAiMode,
-      setAiLoading: vi.fn(),
+      setAiLoading: jest.fn(),
     });
 
     const updater = setMessages.mock.calls[0][0];
@@ -1340,8 +1339,8 @@ describe("save calendar suggestion", () => {
 
     (fetch as any).mockRejectedValue(new Error("Network down"));
 
-    const setMessages = vi.fn();
-    const setAiMode = vi.fn();
+    const setMessages = jest.fn();
+    const setAiMode = jest.fn();
 
     await saveSuggestion({
       session,
@@ -1349,12 +1348,12 @@ describe("save calendar suggestion", () => {
       currentDate,
       key: "key-1",
       dateWithSuggestedTime,
-      updateToken: vi.fn(),
-      setSavedSuggestionKeys: vi.fn(),
-      refreshCalendar: vi.fn(),
+      updateToken: jest.fn(),
+      setSavedSuggestionKeys: jest.fn(),
+      refreshCalendar: jest.fn(),
       setMessages,
       setAiMode,
-      setAiLoading: vi.fn(),
+      setAiLoading: jest.fn(),
     });
 
     const updater = setMessages.mock.calls[0][0];

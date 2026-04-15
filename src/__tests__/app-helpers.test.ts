@@ -78,7 +78,7 @@ describe('frontend app helpers', () => {
 
     const invalidType = new File(['avatar'], 'avatar.txt', { type: 'text/plain' });
     expect(() => validateAvatarFile(invalidType)).toThrow(
-      'Profile picture must be PNG, JPEG, GIF, WEBP, AVIF, HEIC, or HEIF.',
+      'Profile picture must be PNG, JPEG, GIF, WEBP, AVIF, HEIC, HEIF, BMP, or TIFF.',
     );
 
     const largeFile = { type: 'image/png', size: (2 * 1024 * 1024) + 1 };

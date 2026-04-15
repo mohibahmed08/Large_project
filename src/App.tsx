@@ -262,10 +262,14 @@ const SUPPORTED_AVATAR_TYPES = new Set([
     'image/avif',
     'image/heic',
     'image/heif',
+    'image/bmp',
+    'image/tiff',
 ]);
-const AVATAR_ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,image/avif,image/heic,image/heif';
+const AVATAR_ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,image/avif,image/heic,image/heif,image/bmp,image/tiff';
+const THEME_IMAGE_ACCEPT = AVATAR_ACCEPT;
 const MAX_AVATAR_FILE_BYTES = 2 * 1024 * 1024;
-const AVATAR_FORMAT_LABEL = 'PNG, JPEG, GIF, WEBP, AVIF, HEIC, or HEIF';
+const MAX_THEME_IMAGE_FILE_BYTES = 6 * 1024 * 1024;
+const AVATAR_FORMAT_LABEL = 'PNG, JPEG, GIF, WEBP, AVIF, HEIC, HEIF, BMP, or TIFF';
 
 export function decodeToken(token) {
     if (!token) {
@@ -374,6 +378,20 @@ export function validateAvatarFile(file) {
     }
 }
 
+export function validateThemeImageFile(file, label = 'Image') {
+    if (!file) {
+        throw new Error(`Choose a ${label.toLowerCase()} to upload.`);
+    }
+
+    if (!SUPPORTED_AVATAR_TYPES.has(String(file.type || '').toLowerCase())) {
+        throw new Error(`${label} must be ${AVATAR_FORMAT_LABEL}.`);
+    }
+
+    if (file.size > MAX_THEME_IMAGE_FILE_BYTES) {
+        throw new Error(`${label} must be 6 MB or smaller.`);
+    }
+}
+
 function readFileAsDataUrl(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -430,6 +448,7 @@ async function uploadImageDataUrl(session, imageDataUrl, purpose, fileName) {
 }
 
 async function uploadThemeImageFile(file, session, purpose, fileName) {
+    validateThemeImageFile(file, 'Image');
     const dataUrl = await readFileAsDataUrl(file);
     const result = await uploadImageDataUrl(session, dataUrl, purpose, fileName);
     return result.imageUrl;
@@ -1217,7 +1236,9 @@ function App() {
 
     // Convert btnGradient (colors array) to the same stop format as background gradient
     const btnGradientToStops = (draft) => {
-        const colors = draft?.btnGradient?.colors || [draft?.btnColor || '#60a5fa', '#2563eb'];
+        const colors = Array.isArray(draft?.btnGradient?.colors) && draft.btnGradient.colors.length
+            ? draft.btnGradient.colors
+            : [draft?.btnColor || '#60a5fa'];
         return colors.map((color, i) => ({ color, position: Math.round((i / Math.max(colors.length - 1, 1)) * 100) }));
     };
 
@@ -1233,7 +1254,9 @@ function App() {
     const getActiveCssPreview = () => {
         if (isButtonGrad) {
             const colors = activeEditStops.map((s) => s.color);
-            return `linear-gradient(${activeEditAngle}deg, ${colors.join(', ')})`;
+            return colors.length >= 2
+                ? `linear-gradient(${activeEditAngle}deg, ${colors.join(', ')})`
+                : colors[0] || (themeDraft?.btnColor || '#60a5fa');
         }
         return buildGradientCss(themeDraft?.gradient);
     };
@@ -1243,8 +1266,10 @@ function App() {
             setThemeDraft((prev) => {
                 const currentStops = btnGradientToStops(prev);
                 const nextStops = mutator(currentStops);
+                const nextPrimaryColor = nextStops[0]?.color || prev?.btnColor || '#60a5fa';
                 return {
                     ...prev,
+                    btnColor: nextPrimaryColor,
                     btnGradient: {
                         angle: Number.isFinite(Number(prev?.btnGradient?.angle)) ? Number(prev.btnGradient.angle) : 135,
                         colors: nextStops.map((s) => s.color),
@@ -1298,7 +1323,7 @@ function App() {
             setThemeDraft((prev) => ({
                 ...prev,
                 btnGradient: {
-                    colors: [...(prev?.btnGradient?.colors || [prev?.btnColor || '#60a5fa', '#2563eb'])],
+                    colors: [...(prev?.btnGradient?.colors || [prev?.btnColor || '#60a5fa'])],
                     angle: Number(angle),
                 },
             }));
@@ -1331,8 +1356,8 @@ function App() {
                     {/* ── Pill header ── */}
                     <div className="gx-header">
                         <div className="gx-header-titles">
-                            <span className="gx-kicker">{isButtonGrad ? 'Button Gradient' : 'Background Gradient'}</span>
-                            <span className="gx-title">Custom Gradient</span>
+                            <span className="gx-kicker">{isButtonGrad ? 'Button Color' : 'Background Gradient'}</span>
+                            <span className="gx-title">{isButtonGrad ? 'Solid or gradient fill' : 'Custom Gradient'}</span>
                         </div>
                         <button type="button" className="gx-close-btn" onClick={() => setGradientEditorOpen(false)} aria-label="Close">✕</button>
                     </div>
@@ -1375,7 +1400,7 @@ function App() {
                     )}
 
                     {/* ── Angle slider (button grad) ── */}
-                    {isButtonGrad && (
+                    {isButtonGrad && modalStops.length >= 2 && (
                         <div className="gx-row">
                             <span className="gx-field-label">Angle — {activeEditAngle}°</span>
                             <input
@@ -1432,6 +1457,11 @@ function App() {
                             <button type="button" className="gx-stop-btn" onClick={removeGradientStop} disabled={modalStops.length <= 1}>− Remove</button>
                         </div>
                     </div>
+                    {isButtonGrad && (
+                        <p className="theme-button-gradient-note">
+                            Keep one stop for a solid button color, or add another stop to turn it into a gradient.
+                        </p>
+                    )}
 
                     {/* ── Stop pills (quick select) ── */}
                     <div className="gx-stop-pills">
@@ -1458,15 +1488,36 @@ function App() {
         )
         : null;
 
+    const themeShareCreatorName = themeShareState.theme?.authorName || 'You';
+    const themeShareCreatorInitials = themeShareCreatorName
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase() || '')
+        .join('') || 'Y';
+
     const themeShareModal = themeShareState.open && themeShareState.theme && typeof document !== 'undefined'
         ? createPortal(
             <div className="theme-overlay-backdrop" onClick={closeThemeShareDialog}>
                 <div className="theme-share-floating-modal" onClick={(event) => event.stopPropagation()}>
                     <div className="theme-share-modal-header theme-share-floating-header">
-                        <div>
+                        <div className="theme-share-header-copy">
                             <div className="account-modal-kicker">Share Theme</div>
                             <h3>{themeShareState.theme.name}</h3>
-                            <p>{themeShareState.theme.creatorLabel || `Theme created by ${themeShareState.theme.authorName || 'you'}`}</p>
+                            <div className="theme-share-creator-row">
+                                {themeShareState.theme.creatorAvatarUrl || themeShareState.theme.authorAvatarUrl ? (
+                                    <img
+                                        src={themeShareState.theme.creatorAvatarUrl || themeShareState.theme.authorAvatarUrl}
+                                        alt={themeShareCreatorName}
+                                        className="theme-share-creator-avatar"
+                                    />
+                                ) : (
+                                    <span className="theme-share-creator-avatar theme-share-creator-avatar-fallback">
+                                        {themeShareCreatorInitials}
+                                    </span>
+                                )}
+                                <p>{themeShareState.theme.creatorLabel || `Theme created by ${themeShareCreatorName}`}</p>
+                            </div>
                         </div>
                         <button type="button" className="account-close-btn" onClick={closeThemeShareDialog}>
                             Done
@@ -2828,13 +2879,12 @@ function App() {
                                                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
                                                                         <input
                                                                             type="file"
-                                                                            accept="image/png,image/jpeg,image/webp"
+                                                                            accept={THEME_IMAGE_ACCEPT}
                                                                             style={{ display: 'none' }}
                                                                             onChange={async (e) => {
                                                                                 const file = e.target.files?.[0];
                                                                                 e.target.value = '';
                                                                                 if (!file) return;
-                                                                                if (file.size > 4 * 1024 * 1024) { setAccountFeedback('Cover photo must be under 4 MB.'); return; }
                                                                                 try {
                                                                                     const session = getSession();
                                                                                     if (!session) throw new Error('Please log in again to upload.');
@@ -2882,7 +2932,7 @@ function App() {
                                                         </div>
 
                                                         {/* Button color picker */}
-                                                        <div className="theme-custom-row">
+                                                        <div className="theme-custom-row theme-color-inline-grid">
                                                             <label className="theme-color-label">
                                                                 <span>Button color</span>
                                                                 <div className="theme-color-row">
@@ -2890,7 +2940,21 @@ function App() {
                                                                         type="color"
                                                                         className="theme-color-input"
                                                                         value={themeDraft.btnColor || '#60a5fa'}
-                                                                        onChange={(e) => setThemeDraft((prev) => ({ ...prev, btnColor: e.target.value, btnGradient: undefined }))}
+                                                                        onChange={(e) => setThemeDraft((prev) => {
+                                                                            const nextColor = e.target.value;
+                                                                            const nextGradientColors = Array.isArray(prev?.btnGradient?.colors) ? [...prev.btnGradient.colors] : [];
+                                                                            if (nextGradientColors.length <= 1) {
+                                                                                return {
+                                                                                    ...prev,
+                                                                                    btnColor: nextColor,
+                                                                                    btnGradient: nextGradientColors.length
+                                                                                        ? { ...(prev?.btnGradient || {}), colors: [nextColor] }
+                                                                                        : prev?.btnGradient,
+                                                                                };
+                                                                            }
+
+                                                                            return { ...prev, btnColor: nextColor };
+                                                                        })}
                                                                     />
                                                                     <input
                                                                         type="text"
@@ -2900,15 +2964,25 @@ function App() {
                                                                         onChange={(e) => {
                                                                             const v = e.target.value;
                                                                             if (/^#[0-9a-fA-F]{0,6}$/.test(v)) {
-                                                                                setThemeDraft((prev) => ({ ...prev, btnColor: v, btnGradient: undefined }));
+                                                                                setThemeDraft((prev) => {
+                                                                                    const nextGradientColors = Array.isArray(prev?.btnGradient?.colors) ? [...prev.btnGradient.colors] : [];
+                                                                                    if (nextGradientColors.length <= 1) {
+                                                                                        return {
+                                                                                            ...prev,
+                                                                                            btnColor: v,
+                                                                                            btnGradient: nextGradientColors.length
+                                                                                                ? { ...(prev?.btnGradient || {}), colors: [v] }
+                                                                                                : prev?.btnGradient,
+                                                                                        };
+                                                                                    }
+
+                                                                                    return { ...prev, btnColor: v };
+                                                                                });
                                                                             }
                                                                         }}
                                                                     />
                                                                 </div>
                                                             </label>
-                                                        </div>
-
-                                                        <div className="theme-custom-row">
                                                             <label className="theme-color-label">
                                                                 <span>Button text color</span>
                                                                 <div className="theme-color-row">
@@ -2934,34 +3008,25 @@ function App() {
                                                             </label>
                                                         </div>
 
-                                                        {/* Button gradient — opens shared gradient editor */}
-                                                        <div className="theme-gradient-summary-card">
-                                                            <div
-                                                                className="theme-gradient-summary-preview"
-                                                                style={{
-                                                                    backgroundImage: themeDraft.btnGradient?.colors?.length
-                                                                        ? `linear-gradient(${themeDraft.btnGradient.angle ?? 135}deg, ${themeDraft.btnGradient.colors.join(', ')})`
-                                                                        : `linear-gradient(135deg, ${themeDraft.btnColor || '#60a5fa'}, #2563eb)`,
-                                                                }}
-                                                            />
-                                                            <div className="theme-gradient-summary-copy">
-                                                                <strong>Button Gradient</strong>
-                                                                <span>{`${themeDraft.btnGradient?.colors?.length ?? 0} stop${(themeDraft.btnGradient?.colors?.length ?? 0) === 1 ? '' : 's'} · ${themeDraft.btnGradient?.angle ?? 135}°`}</span>
+                                                        <div className="theme-button-style-row">
+                                                            <div className="theme-button-style-copy">
+                                                                <strong>Button fill</strong>
+                                                                <span>{(themeDraft.btnGradient?.colors?.length || 1) >= 2 ? 'Gradient is active on preview buttons.' : 'Solid color is active. Add another stop for a gradient.'}</span>
                                                             </div>
                                                             <button
                                                                 type="button"
-                                                                className="account-primary-btn"
+                                                                className="account-secondary-btn"
                                                                 onClick={() => { setGradientEditorTarget('button'); setGradientEditorOpen(true); }}
                                                             >
-                                                                Edit
+                                                                Edit button fill
                                                             </button>
-                                                            {themeDraft.btnGradient && (
+                                                            {(themeDraft.btnGradient?.colors?.length || 0) >= 2 && (
                                                                 <button
                                                                     type="button"
                                                                     className="account-secondary-btn"
                                                                     onClick={() => setThemeDraft((prev) => ({ ...prev, btnGradient: undefined }))}
                                                                 >
-                                                                    Clear
+                                                                    Use solid color
                                                                 </button>
                                                             )}
                                                         </div>
@@ -3045,13 +3110,12 @@ function App() {
                                                                     </div>
                                                                     <input
                                                                         type="file"
-                                                                        accept="image/png,image/jpeg,image/webp"
+                                                                        accept={THEME_IMAGE_ACCEPT}
                                                                         style={{ display: 'none' }}
                                                                     onChange={async (e) => {
                                                                             const file = e.target.files?.[0];
                                                                             e.target.value = '';
                                                                             if (!file) return;
-                                                                            if (file.size > 4 * 1024 * 1024) { setAccountFeedback('Background image must be under 4 MB.'); return; }
                                                                             try {
                                                                                 const session = getSession();
                                                                                 if (!session) {
@@ -3110,13 +3174,12 @@ function App() {
                                                                             <span className="theme-scene-label">{label}</span>
                                                                             <input
                                                                                 type="file"
-                                                                                accept="image/png,image/jpeg,image/webp"
+                                                                                accept={THEME_IMAGE_ACCEPT}
                                                                                 style={{ display: 'none' }}
                                                                                 onChange={async (e) => {
                                                                                     const file = e.target.files?.[0];
                                                                                     e.target.value = '';
                                                                                     if (!file) return;
-                                                                                    if (file.size > 4 * 1024 * 1024) { setAccountFeedback('Image must be under 4 MB.'); return; }
                                                                                     try {
                                                                                         const session = getSession();
                                                                                         if (!session) {

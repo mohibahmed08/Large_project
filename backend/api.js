@@ -108,12 +108,15 @@ const SUPPORTED_AVATAR_MIME_TYPES = new Set([
     'image/avif',
     'image/heic',
     'image/heif',
+    'image/bmp',
+    'image/tiff',
 ]);
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const MAX_IMAGE_UPLOAD_BYTES = 6 * 1024 * 1024;
 const MAX_SHARED_THEME_BYTES = 6 * 1024 * 1024;
 const THEME_SHARE_CODE_LENGTH = 6;
 const THEME_SHARE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9_-]{1,38}[a-z0-9])?$/;
+const SUPPORTED_IMAGE_FORMAT_LABEL = 'PNG, JPEG, GIF, WEBP, AVIF, HEIC, HEIF, BMP, or TIFF';
 
 function base64ByteLength(value)
 {
@@ -157,7 +160,7 @@ function normalizeImageDataUrl(value, {
     const base64Payload = match[2].replace(/\s+/g, '');
     if(!SUPPORTED_AVATAR_MIME_TYPES.has(mimeType))
     {
-        throw new Error(`${errorPrefix} must be PNG, JPEG, GIF, WEBP, AVIF, HEIC, or HEIF.`);
+        throw new Error(`${errorPrefix} must be ${SUPPORTED_IMAGE_FORMAT_LABEL}.`);
     }
 
     if(base64ByteLength(base64Payload) > maxBytes)
@@ -208,6 +211,123 @@ function getFirebaseStorageBucket()
     return bucketName ? admin.storage().bucket(bucketName) : admin.storage().bucket();
 }
 
+function buildFirebaseStorageMediaUrl(bucketName, objectPath, downloadToken)
+{
+    const encodedObjectPath = encodeURIComponent(String(objectPath || ''));
+    return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedObjectPath}?alt=media&token=${encodeURIComponent(downloadToken)}`;
+}
+
+async function ensureFirebaseStorageDownloadUrl(bucket, objectPath)
+{
+    const file = bucket.file(objectPath);
+    const [metadata] = await file.getMetadata();
+    const existingToken = String(metadata?.metadata?.firebaseStorageDownloadTokens || '')
+        .split(',')
+        .map((value) => String(value || '').trim())
+        .find(Boolean);
+
+    if(existingToken)
+    {
+        return buildFirebaseStorageMediaUrl(bucket.name, objectPath, existingToken);
+    }
+
+    const downloadToken = crypto.randomUUID();
+    await file.setMetadata({
+        metadata: {
+            ...(metadata?.metadata || {}),
+            firebaseStorageDownloadTokens: downloadToken,
+        },
+    });
+
+    return buildFirebaseStorageMediaUrl(bucket.name, objectPath, downloadToken);
+}
+
+function parseFirebaseStorageUrl(value)
+{
+    const trimmed = String(value || '').trim();
+    if(!trimmed)
+    {
+        return null;
+    }
+
+    try
+    {
+        const parsed = new URL(trimmed);
+        if(parsed.hostname === 'storage.googleapis.com')
+        {
+            const [, bucketName, ...rest] = parsed.pathname.split('/');
+            const objectPath = rest.join('/');
+            if(bucketName && objectPath)
+            {
+                return {
+                    bucketName,
+                    objectPath: decodeURIComponent(objectPath),
+                };
+            }
+        }
+
+        if(parsed.hostname === 'firebasestorage.googleapis.com')
+        {
+            const match = /^\/v0\/b\/([^/]+)\/o\/(.+)$/.exec(parsed.pathname);
+            if(match)
+            {
+                return {
+                    bucketName: decodeURIComponent(match[1]),
+                    objectPath: decodeURIComponent(match[2]),
+                };
+            }
+        }
+    }
+    catch
+    {
+        return null;
+    }
+
+    return null;
+}
+
+async function normalizeStorageAssetUrl(value)
+{
+    const parsed = parseFirebaseStorageUrl(value);
+    if(!parsed)
+    {
+        return String(value || '');
+    }
+
+    try
+    {
+        const bucket = admin.storage().bucket(parsed.bucketName);
+        return await ensureFirebaseStorageDownloadUrl(bucket, parsed.objectPath);
+    }
+    catch
+    {
+        return String(value || '');
+    }
+}
+
+async function normalizeStorageAssetTree(value)
+{
+    if(Array.isArray(value))
+    {
+        return Promise.all(value.map((entry) => normalizeStorageAssetTree(entry)));
+    }
+
+    if(value && typeof value === 'object')
+    {
+        const entries = await Promise.all(
+            Object.entries(value).map(async ([key, nestedValue]) => [key, await normalizeStorageAssetTree(nestedValue)])
+        );
+        return Object.fromEntries(entries);
+    }
+
+    if(typeof value === 'string')
+    {
+        return normalizeStorageAssetUrl(value);
+    }
+
+    return value;
+}
+
 async function uploadBase64ImageToFirebaseStorage({
     folder,
     fileName,
@@ -236,11 +356,13 @@ async function uploadBase64ImageToFirebaseStorage({
         },
     });
 
+    const downloadUrl = await ensureFirebaseStorageDownloadUrl(bucket, objectPath);
+
     return {
         bucket: bucket.name,
         path: objectPath,
         mimeType: normalized.mimeType,
-        url: `https://storage.googleapis.com/${bucket.name}/${encodeURI(objectPath)}`,
+        url: downloadUrl,
     };
 }
 
@@ -1331,14 +1453,27 @@ function buildSharedThemeUrls(themeDoc)
     };
 }
 
-function mapCustomThemeDocument(themeDoc, viewerUserId = '')
+async function mapCustomThemeDocument(db, themeDoc, viewerUserId = '')
 {
     const ownerUserId = String(themeDoc?.ownerUserId || '');
     const ownerDisplayName = String(themeDoc?.ownerDisplayName || 'Anonymous').trim() || 'Anonymous';
     const shareUrls = buildSharedThemeUrls(themeDoc);
+    let ownerAvatarUrl = String(themeDoc?.ownerAvatarUrl || '').trim();
+
+    if(!ownerAvatarUrl && ownerUserId && ObjectId.isValid(ownerUserId))
+    {
+        const ownerAccount = await db.collection('users').findOne(
+            { _id: new ObjectId(ownerUserId) },
+            { projection: { avatarUrl: 1 } }
+        );
+        ownerAvatarUrl = String(ownerAccount?.avatarUrl || '').trim();
+    }
+
+    const normalizedTheme = await normalizeStorageAssetTree(themeDoc?.theme || {});
+    const normalizedOwnerAvatarUrl = await normalizeStorageAssetUrl(ownerAvatarUrl);
 
     return {
-        ...(themeDoc?.theme || {}),
+        ...normalizedTheme,
         id: `shared-${themeDoc?._id}`,
         sharedThemeId: String(themeDoc?._id || ''),
         shareCode: String(themeDoc?.shareCode || ''),
@@ -1349,6 +1484,8 @@ function mapCustomThemeDocument(themeDoc, viewerUserId = '')
         authorName: ownerDisplayName,
         authorLabel: `By ${ownerDisplayName}`,
         creatorLabel: `Theme created by ${ownerDisplayName}`,
+        authorAvatarUrl: normalizedOwnerAvatarUrl,
+        creatorAvatarUrl: normalizedOwnerAvatarUrl,
         source: ownerUserId === String(viewerUserId || '') ? 'user' : 'shared',
     };
 }
@@ -1442,6 +1579,7 @@ async function listUserCustomThemes(db, user)
                     theme: 1,
                     ownerUserId: 1,
                     ownerDisplayName: 1,
+                    ownerAvatarUrl: 1,
                     shareCode: 1,
                     shareSlug: 1,
                     updatedAt: 1,
@@ -1455,7 +1593,14 @@ async function listUserCustomThemes(db, user)
     return customThemeIds
         .map((themeId) => themeById.get(String(themeId)))
         .filter(Boolean)
-        .map((themeDoc) => mapCustomThemeDocument(themeDoc, user?._id));
+        .length
+        ? Promise.all(
+            customThemeIds
+                .map((themeId) => themeById.get(String(themeId)))
+                .filter(Boolean)
+                .map((themeDoc) => mapCustomThemeDocument(db, themeDoc, user?._id))
+        )
+        : [];
 }
 
 async function buildSettingsPayload(db, user)
@@ -1473,7 +1618,7 @@ async function buildSettingsPayload(db, user)
         lastName: String(user?.lastName || ''),
         email: String(user?.email || ''),
         pendingEmail: String(user?.pendingEmail || ''),
-        avatarUrl: String(user?.avatarUrl || ''),
+        avatarUrl: await normalizeStorageAssetUrl(user?.avatarUrl),
         reminderDefaults,
         customThemes,
         ...feedUrls,
@@ -4207,7 +4352,7 @@ exports.setApp = function(app, client)
             const userObjectId = safeObjectId(userId, 'userId');
             const owner = await db.collection('users').findOne(
                 { _id: userObjectId },
-                { projection: { firstName: 1, lastName: 1 } }
+                { projection: { firstName: 1, lastName: 1, avatarUrl: 1 } }
             );
 
             if(!owner)
@@ -4260,6 +4405,7 @@ exports.setApp = function(app, client)
                 description: normalizedTheme.description,
                 ownerUserId: userObjectId,
                 ownerDisplayName: buildThemeOwnerDisplayName(owner),
+                ownerAvatarUrl: String(owner?.avatarUrl || '').trim(),
                 shareCode: String(existingTheme?.shareCode || await generateUniqueThemeShareCode(db)),
                 shareSlug: nextShareSlug,
                 updatedAt: now,
@@ -4294,7 +4440,7 @@ exports.setApp = function(app, client)
             const savedTheme = await db.collection('customThemes').findOne({ _id: savedThemeId });
 
             res.status(200).json({
-                theme: mapCustomThemeDocument(savedTheme, userObjectId),
+                theme: await mapCustomThemeDocument(db, savedTheme, userObjectId),
                 error: '',
                 jwtToken: refreshJwtToken(token, jwtToken),
             });
@@ -4365,7 +4511,7 @@ exports.setApp = function(app, client)
             );
 
             res.status(200).json({
-                theme: mapCustomThemeDocument(themeDoc, userObjectId),
+                theme: await mapCustomThemeDocument(db, themeDoc, userObjectId),
                 error: '',
                 jwtToken: refreshJwtToken(token, jwtToken),
             });
