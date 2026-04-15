@@ -48,7 +48,8 @@ class DayGrid extends StatelessWidget {
     for (final task in tasks) {
       final normalized = task.color.trim().replaceFirst('#', '');
       final parsed = int.tryParse(normalized, radix: 16);
-      if (parsed == null || (normalized.length != 6 && normalized.length != 8)) {
+      if (parsed == null ||
+          (normalized.length != 6 && normalized.length != 8)) {
         continue;
       }
       final colorValue = normalized.length == 6 ? 0xFF000000 | parsed : parsed;
@@ -77,11 +78,15 @@ class DayGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final groupColor = taskCount > 0 ? _groupMajorityColor(tasks) : AppTheme.accent;
+    final groupColor = taskCount > 0
+        ? _groupMajorityColor(tasks)
+        : AppTheme.accent;
     final previewColors = <Color>[];
     for (final task in tasks) {
       final color = _taskDisplayColor(task, groupColor);
-      if (previewColors.any((existing) => existing.toARGB32() == color.toARGB32())) {
+      if (previewColors.any(
+        (existing) => existing.toARGB32() == color.toARGB32(),
+      )) {
         continue;
       }
       previewColors.add(color);
@@ -90,52 +95,45 @@ class DayGrid extends StatelessWidget {
       }
     }
 
-    // Compact cell: day number centred, today ring, selected fill, 3 dot max
+    // Keep the month grid light so the themed background stays visible.
     return GestureDetector(
       onTap: () => onDayTap(day),
       child: Container(
         decoration: BoxDecoration(
           color: isSelected
-              ? AppTheme.accent.withValues(alpha: 0.22)
+              ? AppTheme.accent.withValues(alpha: 0.12)
               : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(14),
           border: isSelected
-              ? Border.all(color: AppTheme.accent, width: 1.5)
+              ? Border.all(color: AppTheme.accent, width: 1.8)
               : isToday
-                  ? Border.all(color: AppTheme.accentStrong, width: 1.5)
-                  : null,
+              ? Border.all(
+                  color: Colors.white.withValues(alpha: 0.3),
+                  width: 1.2,
+                )
+              : null,
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Day number
             Container(
               width: 28,
               height: 28,
               alignment: Alignment.center,
-              decoration: isToday && !isSelected
-                  ? BoxDecoration(
-                      color: AppTheme.accentStrong,
-                      shape: BoxShape.circle,
-                    )
-                  : null,
               child: Text(
                 '$day',
                 style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: isToday || isSelected
+                  fontSize: 14,
+                  fontWeight: isSelected || isToday
                       ? FontWeight.w800
-                      : FontWeight.w500,
-                  color: isToday && !isSelected
-                      ? Colors.white
-                      : isSelected
-                          ? AppTheme.accent
-                          : AppTheme.textPrimary,
+                      : FontWeight.w600,
+                  color: isSelected
+                      ? const Color(0xFF8BD9FF)
+                      : Colors.white.withValues(alpha: isToday ? 0.96 : 0.9),
                 ),
               ),
             ),
-            const SizedBox(height: 3),
-            // Up to 3 colour dots for tasks
+            const SizedBox(height: 5),
             if (previewColors.isNotEmpty)
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -145,7 +143,7 @@ class DayGrid extends StatelessWidget {
                       (c) => Container(
                         width: 5,
                         height: 5,
-                        margin: const EdgeInsets.symmetric(horizontal: 1),
+                        margin: const EdgeInsets.symmetric(horizontal: 2),
                         decoration: BoxDecoration(
                           color: c,
                           shape: BoxShape.circle,
@@ -155,7 +153,7 @@ class DayGrid extends StatelessWidget {
                     .toList(),
               )
             else
-              const SizedBox(height: 8),
+              const SizedBox(height: 9),
           ],
         ),
       ),

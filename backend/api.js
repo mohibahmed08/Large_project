@@ -97,7 +97,27 @@ function extractResponseText(responseBody)
         }
     }
 
-    return textParts.join('\n').trim();
+    return normalizeAssistantReply(textParts.join('\n'));
+}
+
+function normalizeAssistantReply(value)
+{
+    const source = String(value || '')
+        .replace(/\r\n?/g, '\n')
+        .trim();
+
+    if(!source)
+    {
+        return '';
+    }
+
+    return source
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .replace(/([^\n])\s+(\d+\.\s+)/g, '$1\n$2')
+        .replace(/([^\n])\s+([*-]\s+)/g, '$1\n$2')
+        .replace(/([^\n])\s+(•\s+)/g, '$1\n$2')
+        .trim();
 }
 
 const SUPPORTED_AVATAR_MIME_TYPES = new Set([
@@ -111,7 +131,7 @@ const SUPPORTED_AVATAR_MIME_TYPES = new Set([
     'image/bmp',
     'image/tiff',
 ]);
-const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
+const MAX_AVATAR_BYTES = 12 * 1024 * 1024;
 const MAX_IMAGE_UPLOAD_BYTES = 6 * 1024 * 1024;
 const MAX_SHARED_THEME_BYTES = 6 * 1024 * 1024;
 const THEME_SHARE_CODE_LENGTH = 6;
@@ -284,6 +304,29 @@ function parseFirebaseStorageUrl(value)
     }
 
     return null;
+}
+
+function isAllowedStorageAssetUrl(value)
+{
+    const trimmed = String(value || '').trim();
+    if(!trimmed)
+    {
+        return false;
+    }
+
+    try
+    {
+        const parsed = new URL(trimmed);
+        return parsed.protocol === 'https:' &&
+            (
+                parsed.hostname === 'firebasestorage.googleapis.com' ||
+                parsed.hostname === 'storage.googleapis.com'
+            );
+    }
+    catch
+    {
+        return false;
+    }
 }
 
 async function normalizeStorageAssetUrl(value)
@@ -3545,7 +3588,7 @@ function describeAssistantTool(toolName)
 
 function splitAssistantReplyForStreaming(text)
 {
-    const source = String(text || '').trim();
+    const source = normalizeAssistantReply(text);
     if(!source) return [];
 
     const sentenceParts = source.match(/[^.!?\n]+(?:[.!?]+|$)|[^\n]+/g) || [source];
@@ -4268,6 +4311,69 @@ exports.setApp = function(app, client)
                 bucket: '',
                 mimeType: '',
             });
+        }
+    });
+
+    app.get('/api/storageasset', async (req, res) =>
+    {
+        try
+        {
+            const rawUrl = String(req.query.url || '').trim();
+            if(!rawUrl)
+            {
+                res.status(400).json({ error: 'Missing asset url.' });
+                return;
+            }
+
+            if(!isAllowedStorageAssetUrl(rawUrl))
+            {
+                res.status(400).json({ error: 'Unsupported asset url.' });
+                return;
+            }
+
+            const normalizedUrl = await normalizeStorageAssetUrl(rawUrl);
+            if(!isAllowedStorageAssetUrl(normalizedUrl))
+            {
+                res.status(400).json({ error: 'Unsupported normalized asset url.' });
+                return;
+            }
+
+            https.get(normalizedUrl, (upstream) =>
+            {
+                if((upstream.statusCode || 500) >= 400)
+                {
+                    res.status(upstream.statusCode || 502).json({ error: 'Could not fetch storage asset.' });
+                    upstream.resume();
+                    return;
+                }
+
+                const contentType = String(upstream.headers['content-type'] || '').trim();
+                if(contentType)
+                {
+                    res.setHeader('Content-Type', contentType);
+                }
+
+                const cacheControl = String(upstream.headers['cache-control'] || 'public, max-age=3600').trim();
+                if(cacheControl)
+                {
+                    res.setHeader('Cache-Control', cacheControl);
+                }
+
+                const contentLength = String(upstream.headers['content-length'] || '').trim();
+                if(contentLength)
+                {
+                    res.setHeader('Content-Length', contentLength);
+                }
+
+                upstream.pipe(res);
+            }).on('error', (error) =>
+            {
+                res.status(502).json({ error: error.message || 'Could not fetch storage asset.' });
+            });
+        }
+        catch(error)
+        {
+            res.status(500).json({ error: error.message || 'Could not fetch storage asset.' });
         }
     });
 
