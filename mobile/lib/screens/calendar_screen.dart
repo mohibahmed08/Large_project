@@ -84,9 +84,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   void _syncThemeWeather() {
+    final now = DateTime.now();
+    final referenceTime = DateUtils.isSameDay(_selectedDate, now)
+        ? now
+        : DateTime(
+            _selectedDate.year,
+            _selectedDate.month,
+            _selectedDate.day,
+            13,
+          );
     _themeService.setActiveWeatherCode(
       _selectedDayWeather?['code'] as int?,
-      at: _selectedDate,
+      at: referenceTime,
     );
   }
 

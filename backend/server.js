@@ -13,7 +13,7 @@ client.connect();
 const app = express();
 
 app.use(cors());
-app.use(bodyParser.json({ limit: '12mb' }));
+app.use(bodyParser.json({ limit: '24mb' }));
 
 app.use((req, res, next) =>
 {
@@ -34,6 +34,27 @@ const api = require('./api.js');
 api.setApp(app, client);
 api.verifyEmailTransporter();
 api.startReminderLoop(client);
+
+app.use((err, req, res, next) =>
+{
+    if(err?.type === 'entity.too.large')
+    {
+        res.status(413).json({
+            error: 'Upload too large. Try a smaller image.',
+        });
+        return;
+    }
+
+    if(err instanceof SyntaxError && err.status === 400 && 'body' in err)
+    {
+        res.status(400).json({
+            error: 'Invalid JSON request body.',
+        });
+        return;
+    }
+
+    next(err);
+});
 
 // Starting the server
 const PORT = process.env.PORT || 5000;

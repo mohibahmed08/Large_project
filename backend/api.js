@@ -132,7 +132,7 @@ const SUPPORTED_AVATAR_MIME_TYPES = new Set([
     'image/tiff',
 ]);
 const MAX_AVATAR_BYTES = 12 * 1024 * 1024;
-const MAX_IMAGE_UPLOAD_BYTES = 6 * 1024 * 1024;
+const MAX_IMAGE_UPLOAD_BYTES = 12 * 1024 * 1024;
 const MAX_SHARED_THEME_BYTES = 6 * 1024 * 1024;
 const THEME_SHARE_CODE_LENGTH = 6;
 const THEME_SHARE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9_-]{1,38}[a-z0-9])?$/;
