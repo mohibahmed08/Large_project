@@ -135,7 +135,7 @@ function DayGrid({
 }
 
 //TURNS THE WEATHER CODE TO MEANINGFUL TEXT 
-function weatherCodeToText(code) {
+export function weatherCodeToText(code) {
     switch (code) {
         case 0: return "Clear sky";               
         case 1: return "Mostly clear";                 
@@ -158,7 +158,7 @@ function weatherCodeToText(code) {
 
 //GETS THE MOST GENERAL WEATHER FOR THE DAY BASED ON CHOOSING 
 //THE WEATHERCODE THAT IS MOST OCCURING
-function getDailyGeneralWeather(hourlyWeather, dayIndex) {
+export function getDailyGeneralWeather(hourlyWeather, dayIndex) {
     const start = dayIndex * 24;
     const dayHours = hourlyWeather.slice(start, start + 24);
 

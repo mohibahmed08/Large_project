@@ -66,7 +66,7 @@ function Weather({ setWeather, desiredDate, additionalDays, priorDays }) {
  * @param {number} totalDays - number of days to include (optional, defaults to 0)
  * @returns {Object} { startDate: 'YYYY-MM-DD', endDate: 'YYYY-MM-DD' }
  */
-function getDateRange(date, totalDays = 0) {
+export function getDateRange(date, totalDays = 0) {
     // Use today if no date is provided
     const targetDate = date instanceof Date ? date : new Date();
 
