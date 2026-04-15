@@ -27,6 +27,34 @@ class AppTheme {
   static Color get border =>
       _mix(const Color(0xFF334155), accent, 0.18).withValues(alpha: 0.44);
 
+  static Color glassSurface({double opacity = 0.72}) =>
+      surface.withValues(alpha: opacity);
+
+  static BoxDecoration glassPanelDecoration({
+    double radius = 24,
+    double opacity = 0.74,
+  }) {
+    return BoxDecoration(
+      borderRadius: BorderRadius.circular(radius),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+      gradient: LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Colors.white.withValues(alpha: 0.12),
+          glassSurface(opacity: opacity),
+        ],
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.16),
+          blurRadius: 24,
+          offset: const Offset(0, 12),
+        ),
+      ],
+    );
+  }
+
   static List<Color> get backgroundGradientColors {
     final gradient = currentTheme.gradient.colors;
     final mid = gradient.length > 2

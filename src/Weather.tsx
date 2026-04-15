@@ -80,7 +80,7 @@ export function getDateRange(date, totalDays = 0) {
 
     // Can go a max of two weeks out
     const maxDate = new Date();
-    maxDate.setDate(maxDate.getDate() + 15);
+    maxDate.setDate(maxDate.getDate() + 14);
 
     // Max endDate to maxDate
     if (endDateObj > maxDate) {

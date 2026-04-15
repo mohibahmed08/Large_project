@@ -1367,33 +1367,36 @@ function Calendar({
 
     return (
         <div className="calendar-calendar-background">
-            <div className="calendar-month-interactable-header">
-                <div className="calendar-month-header-row">
-                    <div className="calendar-month-header-side calendar-month-header-left">
-                        {singleMonth && <img onClick={() => setCurrentMonthIndex(currentMonthIndex - 1)} className="calendar-month-arrow" src={UpArrow} alt="Previous month" />}
-                    </div>
-                    <h1 className="calendar-month-month-name">{monthName} {year}</h1>
-                    <div className="calendar-month-header-side calendar-month-header-right">
-                        {singleMonth && <img onClick={() => setCurrentMonthIndex(currentMonthIndex + 1)} className="calendar-month-arrow" src={DownArrow} alt="Next month" />}
-                    </div>
-                    <div className="calendar-month-header-search">
-                        <div className="calendar-month-header-search-inner">
-                            <input
-                                className="calendar-search-input"
-                                type="search"
-                                value={searchQuery}
-                                onChange={(event) => setSearchQuery?.(event.target.value)}
-                                placeholder="Search"
-                            />
+            <div className="calendar-top-chrome">
+                <div className="calendar-month-interactable-header">
+                    <div className="calendar-month-header-row">
+                        <div className="calendar-month-header-side calendar-month-header-left">
+                            {singleMonth && <img onClick={() => setCurrentMonthIndex(currentMonthIndex - 1)} className="calendar-month-arrow" src={UpArrow} alt="Previous month" />}
+                        </div>
+                        <h1 className="calendar-month-month-name">{monthName} {year}</h1>
+                        <div className="calendar-month-header-side calendar-month-header-right">
+                            {singleMonth && <img onClick={() => setCurrentMonthIndex(currentMonthIndex + 1)} className="calendar-month-arrow" src={DownArrow} alt="Next month" />}
+                        </div>
+                        <div className="calendar-month-header-search">
+                            <div className="calendar-month-header-search-inner">
+                                <span className="calendar-month-header-search-icon" aria-hidden="true" />
+                                <input
+                                    className="calendar-search-input"
+                                    type="search"
+                                    value={searchQuery}
+                                    onChange={(event) => setSearchQuery?.(event.target.value)}
+                                    placeholder="Search calendar"
+                                />
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <div className="calendar-weekdays">
-                {weekdays.map((day) => (
-                    <div key={day} className="weekday">{day}</div>
-                ))}
+                <div className="calendar-weekdays">
+                    {weekdays.map((day) => (
+                        <div key={day} className="weekday">{day}</div>
+                    ))}
+                </div>
             </div>
 
             {singleMonth ? (

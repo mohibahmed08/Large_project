@@ -25,7 +25,7 @@ function CalendarMonth({monthsFromNow, setBackgroundWeather, singleMonth, tasks 
     const earliestAllowed = new Date(date.getFullYear(), date.getMonth() - 4, date.getDate()); // 4 months ago
     
     const latestAllowed = new Date(date); // today
-    latestAllowed.setDate(latestAllowed.getDate() + 15); // 16 days in future
+    latestAllowed.setDate(latestAllowed.getDate() + 14); // two weeks ahead
 
     // Clamp the month range before making a weather request.
     const monthStart = targetDate < earliestAllowed ? earliestAllowed : targetDate;
