@@ -2,6 +2,7 @@ import {
   DEFAULT_WEATHER_LOCATION,
   requestWeatherLocation,
 } from '../weatherLocation.js';
+import { vi } from 'vitest';
 
 const originalGeolocation = window.navigator.geolocation;
 const originalPermissions = window.navigator.permissions;
@@ -31,10 +32,10 @@ describe('requestWeatherLocation', () => {
   });
 
   test('returns the fallback location when permission is denied', async () => {
-    const getCurrentPosition = jest.fn();
+    const getCurrentPosition = vi.fn();
 
     setNavigatorProperty('permissions', {
-      query: jest.fn().mockResolvedValue({ state: 'denied' }),
+      query: vi.fn().mockResolvedValue({ state: 'denied' }),
     });
     setNavigatorProperty('geolocation', { getCurrentPosition });
 
@@ -47,10 +48,10 @@ describe('requestWeatherLocation', () => {
 
   test('returns the current coordinates when geolocation succeeds', async () => {
     setNavigatorProperty('permissions', {
-      query: jest.fn().mockResolvedValue({ state: 'granted' }),
+      query: vi.fn().mockResolvedValue({ state: 'granted' }),
     });
     setNavigatorProperty('geolocation', {
-      getCurrentPosition: jest.fn((onSuccess) =>
+      getCurrentPosition: vi.fn((onSuccess) =>
         onSuccess({
           coords: {
             latitude: 28.60,

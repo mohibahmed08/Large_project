@@ -281,7 +281,7 @@ export function decodeToken(token) {
     }
 }
 
-function suggestionKey(suggestion) {
+export function suggestionKey(suggestion) {
     return `${suggestion.title}|${suggestion.suggestedTime}|${suggestion.description}`;
 }
 
@@ -350,7 +350,7 @@ export function displayAssistantStatus(status) {
     return (trimmed.endsWith('...') || /[.!?]$/.test(trimmed)) ? trimmed : `${trimmed}...`;
 }
 
-function waitForNextPaint() {
+export function waitForNextPaint() {
     return new Promise((resolve) => {
         const schedule =
             typeof window.requestAnimationFrame === 'function'
@@ -435,14 +435,14 @@ async function uploadThemeImageFile(file, session, purpose, fileName) {
     return result.imageUrl;
 }
 
-function normalizeAssistantMarkdown(text) {
+export function normalizeAssistantMarkdown(text) {
     return String(text || '')
         .replace(/\r\n?/g, '\n')
         .replace(/\]\s*\n\s*\(/g, '](')
         .replace(/^\s{0,3}#{1,6}\s+/gm, '');
 }
 
-function renderInlineMarkdown(text) {
+export function renderInlineMarkdown(text) {
     const source = normalizeAssistantMarkdown(text);
     const nodes = [];
     const pattern = /(\*\*[^*]+\*\*|__[^_]+__|(?<!\*)\*[^*\n]+\*(?!\*)|(?<!_)_[^_\n]+_(?!_)|`[^`\n]+`|\[[^\]]+\]\s*\((https?:\/\/[^\s)]+)\)|https?:\/\/[^\s<]+)/g;
@@ -508,7 +508,7 @@ function renderInlineMarkdown(text) {
     return nodes.length ? nodes : source;
 }
 
-function renderAssistantMessage(text) {
+export function renderAssistantMessage(text) {
     const normalizedText = normalizeAssistantMarkdown(text);
     const lines = normalizedText.split('\n');
     const blocks = [];
@@ -556,7 +556,7 @@ function renderAssistantMessage(text) {
     return blocks.length > 0 ? blocks : normalizedText;
 }
 
-function SparklesIcon() {
+export function SparklesIcon() {
     return (
         <svg viewBox="0 0 24 24" className="ai-inline-icon" aria-hidden="true">
             <path d="M12 3 13.8 8.2 19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z" fill="currentColor" />
@@ -565,7 +565,7 @@ function SparklesIcon() {
     );
 }
 
-function SendIcon() {
+export function SendIcon() {
     return (
         <svg viewBox="0 0 24 24" className="ai-inline-icon" aria-hidden="true">
             <path d="M3 20 21 12 3 4l3.8 7.2L15 12l-8.2.8Z" fill="currentColor" />
@@ -573,7 +573,7 @@ function SendIcon() {
     );
 }
 
-function LocationIcon() {
+export function LocationIcon() {
     return (
         <svg viewBox="0 0 24 24" className="ai-inline-icon" aria-hidden="true">
             <path d="M11 2h2v3h-2Z" fill="currentColor" />
