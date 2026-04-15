@@ -636,7 +636,9 @@ function App() {
         theme: null,
         customLinkId: '',
         activeTab: 'share',
+        linkAvailability: null as null | 'checking' | 'available' | 'taken' | 'invalid',
     });
+    const linkAvailCheckRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [accountSettings, setAccountSettings] = useState(null);
     const [accountDraft, setAccountDraft] = useState({
         firstName: '',
@@ -1144,7 +1146,36 @@ function App() {
     };
 
     const closeThemeLinkEditor = () => {
-        setThemeShareState((prev) => ({ ...prev, activeTab: 'share' }));
+        setThemeShareState((prev) => ({ ...prev, activeTab: 'share', linkAvailability: null }));
+    };
+
+    const checkLinkAvailability = (slug: string, currentThemeId?: string) => {
+        if (linkAvailCheckRef.current) clearTimeout(linkAvailCheckRef.current);
+        const trimmed = slug.trim().toLowerCase();
+        if (!trimmed) {
+            setThemeShareState((prev) => ({ ...prev, linkAvailability: null }));
+            return;
+        }
+        if (!/^[a-z0-9_-]{3,40}$/.test(trimmed)) {
+            setThemeShareState((prev) => ({ ...prev, linkAvailability: 'invalid' }));
+            return;
+        }
+        setThemeShareState((prev) => ({ ...prev, linkAvailability: 'checking' }));
+        linkAvailCheckRef.current = setTimeout(async () => {
+            try {
+                const session = getSession();
+                if (!session) return;
+                const res = await fetch(`${API_ROOT}/checkthemeslug`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ slug: trimmed, excludeThemeId: currentThemeId || '', jwtToken: session.jwtToken }),
+                });
+                const data = await res.json();
+                setThemeShareState((prev) => ({ ...prev, linkAvailability: data.available ? 'available' : 'taken' }));
+            } catch {
+                setThemeShareState((prev) => ({ ...prev, linkAvailability: null }));
+            }
+        }, 380);
     };
 
     const saveThemePackDraft = async () => {
@@ -1526,22 +1557,44 @@ function App() {
                                 <div className="theme-share-edit-card">
                                     <div>
                                         <strong>Custom link ID</strong>
-                                        <p>Use a short, memorable link ID or a six-digit code.</p>
+                                        <p>Pick a short, memorable ID — letters, numbers, hyphens, underscores (3-40 chars).</p>
                                     </div>
-                                    <label className="account-field">
-                                        <span>Custom link ID</span>
-                                        <input
-                                            value={themeShareState.customLinkId}
-                                            onChange={(event) => setThemeShareState((prev) => ({ ...prev, customLinkId: event.target.value }))}
-                                            placeholder="mountain-theme"
-                                            disabled={themeShareState.loading || (themeShareState.theme.sharedThemeId && themeShareState.theme.isOwnedTheme !== true)}
-                                        />
-                                    </label>
+                                    <div className="theme-slug-field-wrap">
+                                        <label className="account-field theme-slug-label">
+                                            <span>Link ID</span>
+                                            <div className="theme-slug-input-row">
+                                                <span className="theme-slug-prefix">theme/</span>
+                                                <input
+                                                    value={themeShareState.customLinkId}
+                                                    onChange={(event) => {
+                                                        const val = event.target.value;
+                                                        setThemeShareState((prev) => ({ ...prev, customLinkId: val }));
+                                                        checkLinkAvailability(val, themeShareState.theme?.sharedThemeId);
+                                                    }}
+                                                    placeholder="mountain-theme"
+                                                    disabled={themeShareState.loading || (themeShareState.theme.sharedThemeId && themeShareState.theme.isOwnedTheme !== true)}
+                                                    className="theme-slug-input"
+                                                />
+                                            </div>
+                                        </label>
+                                        {themeShareState.linkAvailability === 'checking' && (
+                                            <span className="theme-slug-badge checking">Checking…</span>
+                                        )}
+                                        {themeShareState.linkAvailability === 'available' && (
+                                            <span className="theme-slug-badge available">✓ Available</span>
+                                        )}
+                                        {themeShareState.linkAvailability === 'taken' && (
+                                            <span className="theme-slug-badge taken">✗ Already taken</span>
+                                        )}
+                                        {themeShareState.linkAvailability === 'invalid' && (
+                                            <span className="theme-slug-badge invalid">3-40 letters, numbers, - or _</span>
+                                        )}
+                                    </div>
                                 </div>
                                 <div className="theme-share-footer theme-share-footer-compact">
                                     <div>
-                                        <strong>Share export</strong>
-                                        <p>Export the current pack or save a custom share link from here.</p>
+                                        <strong>Export pack file</strong>
+                                        <p>Download this pack as a <code>.calpp-theme.json</code> file to back up or share offline.</p>
                                     </div>
                                     <div className="theme-share-footer-actions">
                                         <button
@@ -1552,8 +1605,13 @@ function App() {
                                         >
                                             Export file
                                         </button>
-                                        <button type="button" className="account-primary-btn" onClick={saveSharedThemeDetails} disabled={themeShareState.loading}>
-                                            {themeShareState.loading ? 'Saving...' : 'Save link ID'}
+                                        <button
+                                            type="button"
+                                            className="account-primary-btn"
+                                            onClick={saveSharedThemeDetails}
+                                            disabled={themeShareState.loading || themeShareState.linkAvailability === 'taken' || themeShareState.linkAvailability === 'invalid'}
+                                        >
+                                            {themeShareState.loading ? 'Saving…' : 'Save link ID'}
                                         </button>
                                     </div>
                                 </div>
@@ -2752,6 +2810,74 @@ function App() {
                                                             <div className="theme-section-masthead-copy">
                                                                 <h3>Customize</h3>
                                                                 <p className="account-section-copy">Colors, gradients, and backgrounds for <strong>{themeDraft?.name || 'your pack'}</strong>.</p>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* ── Pack Identity ─────────────────────────── */}
+                                                        <div className="theme-identity-section">
+                                                            <div className="theme-identity-cover-wrap">
+                                                                <div
+                                                                    className="theme-identity-cover"
+                                                                    style={{
+                                                                        backgroundImage: (themeDraft as any).coverPhoto
+                                                                            ? `url(${(themeDraft as any).coverPhoto})`
+                                                                            : draftPreviewBackground,
+                                                                    }}
+                                                                >
+                                                                    <label className="theme-identity-cover-upload-btn" title="Change cover photo">
+                                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                                                                        <input
+                                                                            type="file"
+                                                                            accept="image/png,image/jpeg,image/webp"
+                                                                            style={{ display: 'none' }}
+                                                                            onChange={async (e) => {
+                                                                                const file = e.target.files?.[0];
+                                                                                e.target.value = '';
+                                                                                if (!file) return;
+                                                                                if (file.size > 4 * 1024 * 1024) { setAccountFeedback('Cover photo must be under 4 MB.'); return; }
+                                                                                try {
+                                                                                    const session = getSession();
+                                                                                    if (!session) throw new Error('Please log in again to upload.');
+                                                                                    const url = await uploadThemeImageFile(file, session, 'theme-covers', `${themeDraft?.id || 'theme'}-cover.${file.name.split('.').pop() || 'jpg'}`);
+                                                                                    setThemeDraft((prev) => ({ ...prev, coverPhoto: url } as any));
+                                                                                } catch (error) { setAccountFeedback((error as any).message); }
+                                                                            }}
+                                                                        />
+                                                                    </label>
+                                                                    {(themeDraft as any).coverPhoto && (
+                                                                        <button
+                                                                            type="button"
+                                                                            className="theme-identity-cover-clear-btn"
+                                                                            title="Remove cover photo"
+                                                                            onClick={() => setThemeDraft((prev) => ({ ...prev, coverPhoto: undefined } as any))}
+                                                                        >×</button>
+                                                                    )}
+                                                                </div>
+                                                                <p className="theme-identity-cover-hint">Cover photo</p>
+                                                            </div>
+                                                            <div className="theme-identity-fields">
+                                                                <label className="account-field">
+                                                                    <span>Pack name</span>
+                                                                    <input
+                                                                        type="text"
+                                                                        value={themeDraft.name || ''}
+                                                                        maxLength={48}
+                                                                        placeholder="My Awesome Pack"
+                                                                        onChange={(e) => setThemeDraft((prev) => ({ ...prev, name: e.target.value }))}
+                                                                    />
+                                                                </label>
+                                                                <label className="account-field">
+                                                                    <span>Short description</span>
+                                                                    <textarea
+                                                                        className="theme-identity-desc"
+                                                                        value={themeDraft.description || ''}
+                                                                        maxLength={120}
+                                                                        rows={2}
+                                                                        placeholder="A quick note about this pack…"
+                                                                        onChange={(e) => setThemeDraft((prev) => ({ ...prev, description: e.target.value }))}
+                                                                    />
+                                                                    <span className="theme-identity-charcount">{(themeDraft.description || '').length}/120</span>
+                                                                </label>
                                                             </div>
                                                         </div>
 

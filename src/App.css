@@ -2772,3 +2772,212 @@
   background-clip: text;
 }
 
+
+/* ─── Search bar width — wider, jitter-free ─────────────────────────────────── */
+
+/* Lock the account-modal-body's min-height so search results loading
+   in doesn't cause the modal to jump/resize */
+.account-modal-body {
+  contain: layout;
+}
+
+/* Stabilise the theme grids so incoming cards don't reflow the modal width */
+.featured-theme-grid,
+.saved-theme-grid {
+  contain: layout;
+  min-height: 120px;
+}
+
+/* ─── Pack Identity section (Customize) ────────────────────────────────────── */
+.theme-identity-section {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 8px;
+  padding: 14px 16px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+}
+
+.theme-identity-cover-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.theme-identity-cover {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  border-radius: 10px;
+  background-size: cover;
+  background-position: center;
+  border: 1px solid rgba(255,255,255,0.1);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.theme-identity-cover-upload-btn {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.42);
+  opacity: 0;
+  transition: opacity 0.15s;
+  cursor: pointer;
+  color: #fff;
+}
+
+.theme-identity-cover:hover .theme-identity-cover-upload-btn {
+  opacity: 1;
+}
+
+.theme-identity-cover-clear-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.62);
+  border: none;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.theme-identity-cover:hover .theme-identity-cover-clear-btn {
+  opacity: 1;
+}
+
+.theme-identity-cover-hint {
+  font-size: 0.72rem;
+  color: rgba(255,255,255,0.38);
+  text-align: center;
+  margin: 0;
+}
+
+.theme-identity-fields {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.theme-identity-desc {
+  width: 100%;
+  resize: vertical;
+  min-height: 52px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  color: #e5e7eb;
+  padding: 8px 10px;
+  font-size: 0.875rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.theme-identity-desc:focus {
+  border-color: rgba(96,165,250,0.5);
+}
+
+.theme-identity-charcount {
+  font-size: 0.7rem;
+  color: rgba(255,255,255,0.3);
+  align-self: flex-end;
+  margin-top: -6px;
+}
+
+/* ─── Share modal — Edit Link tab slug field ───────────────────────────────── */
+.theme-slug-field-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.theme-slug-label {
+  margin-bottom: 0;
+}
+
+.theme-slug-input-row {
+  display: flex;
+  align-items: center;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+
+.theme-slug-input-row:focus-within {
+  border-color: rgba(96,165,250,0.5);
+}
+
+.theme-slug-prefix {
+  padding: 0 8px 0 12px;
+  color: rgba(255,255,255,0.35);
+  font-size: 0.82rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.theme-slug-input {
+  flex: 1;
+  background: transparent;
+  border: none !important;
+  border-radius: 0 !important;
+  outline: none;
+  color: #f1f5f9;
+  font-size: 0.9rem;
+  padding: 9px 12px 9px 0;
+  min-width: 0;
+}
+
+.theme-slug-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.theme-slug-badge.checking {
+  background: rgba(100,116,139,0.18);
+  color: #94a3b8;
+  border: 1px solid rgba(100,116,139,0.25);
+}
+
+.theme-slug-badge.available {
+  background: rgba(34,197,94,0.12);
+  color: #4ade80;
+  border: 1px solid rgba(34,197,94,0.25);
+}
+
+.theme-slug-badge.taken {
+  background: rgba(239,68,68,0.12);
+  color: #f87171;
+  border: 1px solid rgba(239,68,68,0.25);
+}
+
+.theme-slug-badge.invalid {
+  background: rgba(234,179,8,0.1);
+  color: #fbbf24;
+  border: 1px solid rgba(234,179,8,0.22);
+}

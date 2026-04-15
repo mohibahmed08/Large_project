@@ -177,6 +177,12 @@ function tryInitFirebaseAdmin()
     if(admin.apps.length > 0) return admin;
 
     const explicitServiceAccountPath = String(process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '').trim();
+    const storageBucket = String(process.env.FIREBASE_STORAGE_BUCKET || '').trim();
+
+    // Build the base app config — always include storageBucket if provided so
+    // admin.storage().bucket() works without an explicit bucket name argument.
+    const appConfig = storageBucket ? { storageBucket } : {};
+
     try
     {
         if(explicitServiceAccountPath)
@@ -185,11 +191,17 @@ function tryInitFirebaseAdmin()
                 ? explicitServiceAccountPath
                 : path.resolve(__dirname, explicitServiceAccountPath);
             const serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
-            admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+            admin.initializeApp({
+                ...appConfig,
+                credential: admin.credential.cert(serviceAccount),
+            });
         }
         else
         {
-            admin.initializeApp({ credential: admin.credential.applicationDefault() });
+            admin.initializeApp({
+                ...appConfig,
+                credential: admin.credential.applicationDefault(),
+            });
         }
     }
     catch { return null; }
@@ -202,8 +214,23 @@ function getFirebaseStorageBucket()
     const admin = tryInitFirebaseAdmin();
     if(!admin) return null;
 
+    // Always pass the bucket name explicitly — this works even if the app was
+    // initialized without storageBucket (graceful fallback), and is a no-op
+    // when the env var is empty (Firebase will then use the default bucket).
     const bucketName = String(process.env.FIREBASE_STORAGE_BUCKET || '').trim();
-    return bucketName ? admin.storage().bucket(bucketName) : admin.storage().bucket();
+    try
+    {
+        return bucketName ? admin.storage().bucket(bucketName) : admin.storage().bucket();
+    }
+    catch(err)
+    {
+        // Re-surface a clear error so the caller gets a useful message
+        throw new Error(
+            bucketName
+                ? `Firebase Storage bucket "${bucketName}" could not be accessed: ${err.message}`
+                : 'FIREBASE_STORAGE_BUCKET is not set. Add it to your .env file (e.g. FIREBASE_STORAGE_BUCKET=your-project.appspot.com).'
+        );
+    }
 }
 
 async function uploadBase64ImageToFirebaseStorage({
@@ -4303,6 +4330,39 @@ exports.setApp = function(app, client)
         }
     });
 
+    app.post('/api/checkthemeslug', async (req, res) =>
+    {
+        const { userId, jwtToken, slug, excludeThemeId } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        try
+        {
+            const trimmedSlug = String(slug || '').trim().toLowerCase();
+            if(!trimmedSlug || !THEME_SHARE_SLUG_PATTERN.test(trimmedSlug))
+            {
+                return res.json({ available: false, reason: 'invalid' });
+            }
+
+            const query = { shareSlug: trimmedSlug };
+            if(excludeThemeId && /^[a-f0-9]{24}$/i.test(excludeThemeId))
+            {
+                const { ObjectId } = require('mongodb');
+                query._id = { $ne: new ObjectId(excludeThemeId) };
+            }
+
+            const existing = await db.collection('customThemes').findOne(query, { projection: { _id: 1 } });
+            res.json({ available: !existing });
+        }
+        catch(error)
+        {
+            res.status(500).json({ available: false, error: error.message });
+        }
+    });
+
     app.post('/api/importsharedtheme', async (req, res) =>
     {
         const { userId, jwtToken, shareValue } = req.body;
@@ -5073,445 +5133,4 @@ exports.setApp = function(app, client)
                  You may use live web search when current or local information would improve your answer.
                  Respond ONLY with a valid JSON array of objects.
                  Each object must have: "title" (string), "description" (string), "suggestedTime" (HH:MM 24-hour local time).
-                 Suggest 3-5 events. Do not include any explanation or text outside the JSON array.`;
-
-            const locationContext = latitude != null && longitude != null
-                ? `Approximate user coordinates: latitude ${latitude}, longitude ${longitude}.`
-                : 'No exact coordinates were provided.';
-
-            const userPrompt =
-                `Today is ${formatDateForUser(targetDate, timeOptions)}.
-
-${localTimeSummary}
-
-Current weather: ${weatherSummary}
-
-${locationContext}
-
-Existing tasks for today:
-${taskSummary}
-
-Recent activity (interests): ${recentSummary}
-
-${preferences ? `Additional caller preferences: ${preferences}` : ''}
-
-Suggest practical, realistic calendar events that complement the existing tasks and fit the weather and preferences.`;
-
-            const rawResponse = await callOpenAI(
-                apiKey,
-                [{ role: 'user', content: userPrompt }],
-                {
-                    instructions: systemPrompt,
-                    useWebSearch: true,
-                }
-            );
-
-            let suggestions;
-            try   { suggestions = JSON.parse(rawResponse); }
-            catch { suggestions = [{ title: 'Parse error', description: rawResponse, suggestedTime: '' }]; }
-
-            res.status(200).json({
-                suggestions,
-                error:    '',
-                jwtToken: refreshJwtToken(token, jwtToken),
-            });
-        }
-        catch(error)
-        {
-            res.status(500).json({ suggestions: [], error: error.toString(), jwtToken: '' });
-        }
-    });
-
-
-    // Chat with ChatGPT Chat Completions
-    app.post('/api/chat', async (req, res) =>
-    {
-        const { userId, jwtToken, messages, latitude, longitude, localNow, timeZone, utcOffsetMinutes } = req.body;
-
-        if(!validateJwtOrRespond(token, res, jwtToken)) return;
-
-        const apiKey = process.env.OPENAI_API_KEY;
-        if(!apiKey)
-        {
-            res.status(500).json({ reply: '', error: 'OPENAI API key is not configured', jwtToken: '' });
-            return;
-        }
-
-        if(!Array.isArray(messages) || messages.length === 0)
-        {
-            res.status(400).json({ reply: '', error: 'messages array is required', jwtToken: '' });
-            return;
-        }
-
-        try
-        {
-            const db   = getDatabase(client);
-            const timeOptions = { timeZone, utcOffsetMinutes };
-            const now  = localNow ? parseDateTimeWithOffset(localNow, utcOffsetMinutes, timeZone) : new Date();
-            const { start: dayStart, end: dayEnd } = getDayRangeInUserZone(now, timeOptions);
-
-            // Current tasks for today
-            const todayTasks = await db.collection('tasks').find(
-            {
-                user_id: new ObjectId(userId),
-                dueDate: { $gte: dayStart, $lte: dayEnd },
-            })
-            .sort({ dueDate: 1 })
-            .toArray();
-
-            const todaySummary = todayTasks.length
-                ? todayTasks.map(t => `- ${t.title}${getTaskStartDate(t) ? ' at ' + formatTimeForUser(getTaskStartDate(t), timeOptions) : ''}`)
-                            .join('\n')
-                : 'No tasks today.';
-
-            // Current tasks for this week (where isCompleted: false)
-            const weekEnd = toUserDateTime(now, timeOptions).plus({ days: 7 }).endOf('day').toUTC().toJSDate();
-
-            const weekTasks = await db.collection('tasks').find({
-                user_id: new ObjectId(userId),
-                isCompleted: false,
-                dueDate: { $gt: dayEnd, $lte: weekEnd },
-            })
-            .sort({ dueDate: 1 })
-            .toArray();
-
-            const comingWeek = weekTasks.length
-                ? weekTasks.map(t => `- ${t.title}${getTaskStartDate(t) ? ' on ' + formatDateTimeForUser(getTaskStartDate(t), timeOptions) : ''}`).join('\n')
-                : 'No upcoming tasks this week.';
-
-            // Get user preferences by getting recent task history
-            const recent = await db.collection('tasks').find(
-            {
-                user_id:     new ObjectId(userId),
-                isCompleted: true,
-            })
-            .sort({ dueDate: -1 })
-            .limit(30)
-            .toArray();
-
-            const recentTitles = recent.length
-                ? [...new Set(recent.map(t => t.title))].slice(0, 15).join(', ')
-                : 'None';
-
-            // Get the weather
-            let weatherLine = 'Weather: not available.';
-            if(latitude != null && longitude != null)
-            {
-                const w = await fetchWeather(latitude, longitude);
-                if(w) weatherLine = `Current weather: ${w.description}, ${w.temperatureF}°F, wind ${w.windSpeedMph} mph.`;
-            }
-
-            const localTimeLine = [
-                `Local time: ${formatLocalTimeContext(now, timeOptions)}.`,
-                timeZone ? `Timezone: ${timeZone}.` : '',
-                utcOffsetMinutes !== undefined ? `UTC offset minutes: ${utcOffsetMinutes}.` : '',
-            ].filter(Boolean).join(' ');
-
-            // Build system prompt and user prompt
-            const systemPrompt =
-                `You are a knowledgeable personal calendar assistant.
-                 You have access to the user's current schedule and preferences.
-                 You should proactively use live web search when the user asks about current, nearby, local, recommended, or otherwise time-sensitive things.
-                 Do not claim you lack real-time access if web search would help; use it instead.
-                 Questions about store, restaurant, venue, or campus building hours are not calendar-edit requests. Use web search for those unless the user clearly refers to one of their scheduled items.
-                 When the user asks to create, edit, move, reschedule, complete, or delete calendar tasks, use the available calendar tools.
-                 Never say you cannot directly edit the calendar when the request is covered by the available tools. Either make the change or explain the exact missing detail that still prevents it.
-                 For move, reschedule, and update requests, search the calendar first when needed and carry out the edit whenever the intended event and new timing can be reasonably inferred from the conversation.
-                 Ask a follow-up question only when the target item or the new date/time is still genuinely ambiguous after checking the calendar.
-                 When the user asks for repeating tasks like "every Monday and Wednesday until June", use the recurring calendar tool instead of many one-off creates.
-                 Think carefully before editing or deleting. If the exact task id is not already known from tool results, search or list first. You may use an exact id, or a unique title/reference if it clearly identifies a single task. Do not invent task ids.
-                 You can also enable email reminders when the user asks for a reminder before a task.
-                 Respect task color or grouping requests when the user mentions them.
-                 Treat times mentioned by the user as local to the user unless they say otherwise.
-                 When calling calendar tools, provide ISO datetimes. If you only know a local wall-clock time, include the user's local offset if possible.
-                 The schedule shown in this prompt is only a summary. If the user asks about future events or anything beyond the visible summary, use the calendar tools to search broader ranges before answering.
-                 Your final reply should sound conversational, warm, and natural rather than robotic.
-                 Keep replies short and text-message friendly.
-                 Prefer 1 to 4 short sentences or a very short list when needed.
-                 Do not use markdown headings, tables, or long formatted sections.
-                 If you include a link, keep it brief and readable.
-                 When creating tasks from casual phrasing, normalize them into polished calendar items. For example, use title case like "Dinner" instead of "dinner", and use a sensible group like Personal when the user did not specify one.
-
-Today is ${formatDateForUser(now, timeOptions)}.
-${localTimeLine}
-${weatherLine}
-
-Today's schedule:
-${todaySummary}
-
-Coming week schedule:
-${comingWeek}
-
-Recently completed tasks (interests): ${recentTitles}
-
-Help the user manage their schedule, suggest events, answer questions about their day, and offer practical advice. Be concise, conversational, and relatable.`;
-
-            const locationContext = latitude != null && longitude != null
-                ? `Approximate user coordinates: latitude ${latitude}, longitude ${longitude}.`
-                : 'No exact coordinates were provided.';
-
-            const assistantResult = await runCalendarAssistant(
-                apiKey,
-                db,
-                userId,
-                messages,
-                {
-                    systemPrompt,
-                    prefixMessages: [{ role: 'user', content: locationContext }],
-                    utcOffsetMinutes,
-                    timeZone,
-                }
-            );
-
-            res.status(200).json({
-                reply: assistantResult.reply,
-                calendarChanged: assistantResult.calendarChanged,
-                error:    '',
-                jwtToken: refreshJwtToken(token, jwtToken),
-            });
-        }
-        catch(error)
-        {
-            res.status(500).json({ reply: '', error: error.toString(), jwtToken: '' });
-        }
-    });
-
-
-    app.post('/api/deletecalendar', async (req, res) =>
-    {
-        const { userId, jwtToken, taskId } = req.body;
-
-        if(!validateJwtOrRespond(token, res, jwtToken))
-        {
-            return;
-        }
-
-        try
-        {
-            const db = getDatabase(client);
-            const result = await db.collection('tasks').deleteOne({
-                _id: new ObjectId(taskId),
-                user_id: new ObjectId(userId),
-            });
-
-            if(result.deletedCount === 0)
-            {
-                res.status(404).json({ error: 'Task not found', jwtToken: '' });
-                return;
-            }
-
-            res.status(200).json({ error: '', jwtToken: refreshJwtToken(token, jwtToken) });
-        }
-        catch(error)
-        {
-            res.status(500).json({ error: error.toString(), jwtToken: '' });
-        }
-    });
-
-
-    app.post('/api/chatstream', async (req, res) =>
-    {
-        const { userId, jwtToken, messages, latitude, longitude, localNow, timeZone, utcOffsetMinutes } = req.body;
-
-        if(!validateJwtOrRespond(token, res, jwtToken)) return;
-
-        const apiKey = process.env.OPENAI_API_KEY;
-        if(!apiKey)
-        {
-            res.status(500).json({ error: 'OPENAI API key is not configured', jwtToken: '' });
-            return;
-        }
-
-        if(!Array.isArray(messages) || messages.length === 0)
-        {
-            res.status(400).json({ error: 'messages array is required', jwtToken: '' });
-            return;
-        }
-
-        try
-        {
-            const db   = getDatabase(client);
-            const timeOptions = { timeZone, utcOffsetMinutes };
-            const now  = localNow ? parseDateTimeWithOffset(localNow, utcOffsetMinutes, timeZone) : new Date();
-            const { start: dayStart, end: dayEnd } = getDayRangeInUserZone(now, timeOptions);
-
-            const todayTasks = await db.collection('tasks').find(
-            {
-                user_id: new ObjectId(userId),
-                dueDate: { $gte: dayStart, $lte: dayEnd },
-            })
-            .sort({ dueDate: 1 })
-            .toArray();
-
-            const todaySummary = todayTasks.length
-                ? todayTasks.map(t => `- ${t.title}${getTaskStartDate(t) ? ' at ' + formatTimeForUser(getTaskStartDate(t), timeOptions) : ''}`).join('\n')
-                : 'No tasks today.';
-
-            const weekEnd = toUserDateTime(now, timeOptions).plus({ days: 7 }).endOf('day').toUTC().toJSDate();
-
-            const weekTasks = await db.collection('tasks').find({
-                user_id: new ObjectId(userId),
-                isCompleted: false,
-                dueDate: { $gt: dayEnd, $lte: weekEnd },
-            })
-            .sort({ dueDate: 1 })
-            .toArray();
-
-            const comingWeek = weekTasks.length
-                ? weekTasks.map(t => `- ${t.title}${getTaskStartDate(t) ? ' on ' + formatDateTimeForUser(getTaskStartDate(t), timeOptions) : ''}`).join('\n')
-                : 'No upcoming tasks this week.';
-
-            const recent = await db.collection('tasks').find(
-            {
-                user_id:     new ObjectId(userId),
-                isCompleted: true,
-            })
-            .sort({ dueDate: -1 })
-            .limit(30)
-            .toArray();
-
-            const recentTitles = recent.length
-                ? [...new Set(recent.map(t => t.title))].slice(0, 15).join(', ')
-                : 'None';
-
-            let weatherLine = 'Weather: not available.';
-            if(latitude != null && longitude != null)
-            {
-                const w = await fetchWeather(latitude, longitude);
-                if(w) weatherLine = `Current weather: ${w.description}, ${w.temperatureF}Â°F, wind ${w.windSpeedMph} mph.`;
-            }
-
-            const localTimeLine = [
-                `Local time: ${formatLocalTimeContext(now, timeOptions)}.`,
-                timeZone ? `Timezone: ${timeZone}.` : '',
-                utcOffsetMinutes !== undefined ? `UTC offset minutes: ${utcOffsetMinutes}.` : '',
-            ].filter(Boolean).join(' ');
-
-            const systemPrompt =
-                `You are a knowledgeable personal calendar assistant.
-                 You have access to the user's current schedule and preferences.
-                 You should proactively use live web search when the user asks about current, nearby, local, recommended, or otherwise time-sensitive things.
-                 Do not claim you lack real-time access if web search would help; use it instead.
-                 Questions about store, restaurant, venue, or campus building hours are not calendar-edit requests. Use web search for those unless the user clearly refers to one of their scheduled items.
-                 When the user asks to create, edit, move, reschedule, complete, or delete calendar tasks, use the available calendar tools.
-                 Never say you cannot directly edit the calendar when the request is covered by the available tools. Either make the change or explain the exact missing detail that still prevents it.
-                 For move, reschedule, and update requests, search the calendar first when needed and carry out the edit whenever the intended event and new timing can be reasonably inferred from the conversation.
-                 Ask a follow-up question only when the target item or the new date/time is still genuinely ambiguous after checking the calendar.
-                 When the user asks for repeating tasks like "every Monday and Wednesday until June", use the recurring calendar tool instead of many one-off creates.
-                 Think carefully before editing or deleting. If the exact task id is not already known from tool results, search or list first. You may use an exact id, or a unique title/reference if it clearly identifies a single task. Do not invent task ids.
-                 You can also enable email reminders when the user asks for a reminder before a task.
-                 Respect task color or grouping requests when the user mentions them.
-                 Treat times mentioned by the user as local to the user unless they say otherwise.
-                 When calling calendar tools, provide ISO datetimes. If you only know a local wall-clock time, include the user's local offset if possible.
-                 The schedule shown in this prompt is only a summary. If the user asks about future events or anything beyond the visible summary, use the calendar tools to search broader ranges before answering.
-                 Your final reply should sound conversational, warm, and natural rather than robotic.
-                 Keep replies short and text-message friendly.
-                 Prefer 1 to 4 short sentences or a very short list when needed.
-                 Do not use markdown headings, tables, or long formatted sections.
-                 If you include a link, keep it brief and readable.
-                 When creating tasks from casual phrasing, normalize them into polished calendar items. For example, use title case like "Dinner" instead of "dinner", and use a sensible group like Personal when the user did not specify one.
-
-Today is ${formatDateForUser(now, timeOptions)}.
-${localTimeLine}
-${weatherLine}
-
-Today's schedule:
-${todaySummary}
-
-Coming week schedule:
-${comingWeek}
-
-Recently completed tasks (interests): ${recentTitles}
-
-Help the user manage their schedule, suggest events, answer questions about their day, and offer practical advice. Be concise, conversational, and relatable.`;
-
-            const locationContext = latitude != null && longitude != null
-                ? `Approximate user coordinates: latitude ${latitude}, longitude ${longitude}.`
-                : 'No exact coordinates were provided.';
-
-            res.status(200);
-            res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
-            res.setHeader('Cache-Control', 'no-cache, no-transform');
-            res.setHeader('Connection', 'keep-alive');
-            res.flushHeaders?.();
-
-            const writeEvent = (payload) =>
-            {
-                res.write(`${JSON.stringify(payload)}\n`);
-                res.flush?.();
-            };
-
-            const assistantResult = await runCalendarAssistant(
-                apiKey,
-                db,
-                userId,
-                messages,
-                {
-                    systemPrompt,
-                    prefixMessages: [{ role: 'user', content: locationContext }],
-                    utcOffsetMinutes,
-                    timeZone,
-                    streamFinal: true,
-                    handlers: {
-                        onStatus(status)
-                        {
-                            writeEvent({ type: 'status', status });
-                        },
-                        onDelta(delta)
-                        {
-                            writeEvent({ type: 'delta', delta });
-                        },
-                    },
-                }
-            );
-
-            if(!assistantResult.streamedFinal && assistantResult.reply)
-            {
-                const replyChunks = splitAssistantReplyForStreaming(assistantResult.reply);
-                for(const chunk of replyChunks)
-                {
-                    writeEvent({ type: 'delta', delta: `${chunk} ` });
-                }
-            }
-
-            writeEvent({
-                type: 'done',
-                jwtToken: refreshJwtToken(token, jwtToken),
-                calendarChanged: assistantResult.calendarChanged,
-            });
-
-            res.end();
-        }
-        catch(error)
-        {
-            if(!res.headersSent)
-            {
-                res.status(500).json({ error: error.toString(), jwtToken: '' });
-                return;
-            }
-
-            res.write(`${JSON.stringify({ type: 'error', error: error.toString() })}\n`);
-            res.end();
-        }
-    });
-
-};
-
-exports.verifyEmailTransporter = verifyEmailTransporter;
-exports.startReminderLoop = startReminderLoop;
-exports.__testables = {
-    extractResponseText,
-    base64ByteLength,
-    normalizeAvatarDataUrl,
-    normalizeCustomThemePack,
-    normalizeThemeShareSlug,
-    extractThemeShareLookupKey,
-    buildSharedThemeUrls,
-    readPositiveIntEnv,
-    getConfiguredOpenAIModel,
-    getConfiguredOpenAIReasoningEffort,
-    isRetryableOpenAIStatus,
-    isRetryableOpenAINetworkError,
-    buildOpenAIRequestVariants,
-    buildOpenAIRequestBody,
-};
+                 Sugges
