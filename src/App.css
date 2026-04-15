@@ -2,6 +2,7 @@
   --btn-color: #60a5fa;
   --btn-color-rgb: 96, 165, 250;
   --btn-text-color: #0f172a;
+  --btn-background: #60a5fa;
 }
 
 /* --- GLOBAL RESETS --- */
@@ -190,16 +191,21 @@
 .calendar-search-clear-btn {
   height: 40px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.05);
-  color: #e2e8f0;
+  border: 1px solid rgba(var(--btn-color-rgb), 0.36);
+  background: var(--btn-background, var(--btn-color, #60a5fa));
+  color: var(--btn-text-color, #0f172a);
   padding: 0 14px;
   cursor: pointer;
   font-size: 0.9rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 8px 18px rgba(var(--btn-color-rgb), 0.16);
+  transition: filter 0.18s ease, transform 0.18s ease;
 }
 
 .calendar-search-clear-btn:hover {
-  background: rgba(255, 255, 255, 0.09);
+  filter: brightness(1.05);
+  transform: translateY(-1px);
 }
 
 /* Vertical Date */
@@ -425,12 +431,21 @@
   height: 34px;
   border-radius: 8px;
   border: 1px solid rgba(var(--btn-color-rgb), 0.45);
-  background: rgba(var(--btn-color-rgb), 0.12);
-  color: var(--btn-color, #60a5fa);
+  background: var(--btn-background, var(--btn-color, #60a5fa));
+  color: var(--btn-text-color, #0f172a);
   font-size: 1.2rem;
   font-weight: 700;
   cursor: pointer;
   flex-shrink: 0;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 8px 18px rgba(var(--btn-color-rgb), 0.16);
+  transition: filter 0.18s ease, transform 0.18s ease;
+}
+
+.ai-add-btn:hover:not(:disabled):not(.saved) {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
 }
 
 .ai-add-btn.saved {
@@ -564,7 +579,7 @@
 }
 
 .ai-send-btn {
-  background: var(--btn-color, #60a5fa);
+  background: var(--btn-background, var(--btn-color, #60a5fa));
   color: var(--btn-text-color, #0f172a);
   border: none;
   box-shadow:
@@ -574,10 +589,10 @@
   border-radius: 8px;
   font-weight: bold;
   cursor: pointer;
-  transition: 0.2s;
+  transition: filter 0.2s ease, transform 0.2s ease;
 }
 
-.ai-send-btn:hover { background: rgba(var(--btn-color-rgb), 0.86); }
+.ai-send-btn:hover { filter: brightness(1.05); }
 
 .ai-suggest-btn {
   display: flex;
@@ -585,15 +600,16 @@
   justify-content: center;
   gap: 8px;
   border-radius: 999px;
-  background: rgba(8, 13, 26, 0.52);
-  color: #eff6ff;
+  background: var(--btn-background, var(--btn-color, #60a5fa));
+  color: var(--btn-text-color, #0f172a);
   border: 1px solid rgba(var(--btn-color-rgb), 0.42);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 10px 24px rgba(var(--btn-color-rgb), 0.18);
 }
 
 .ai-suggest-btn:hover {
-  background: rgba(var(--btn-color-rgb), 0.18);
-  color: #ffffff;
+  filter: brightness(1.05);
 }
 
 .ai-chat-feed {
@@ -701,6 +717,14 @@
     justify-content: center;
     font-weight: 700;
     flex-shrink: 0;
+    overflow: hidden;
+}
+
+.profile-summary-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
 }
 
 .profile-summary-copy {
@@ -726,19 +750,21 @@
     align-items: center;
     gap: 12px;
     padding: 10px 12px;
-    background: transparent;
-    border: 1px solid #3e3e52;
+    background: var(--btn-background, var(--btn-color, #60a5fa));
+    border: 1px solid rgba(var(--btn-color-rgb), 0.42);
     border-radius: 8px;
-    color: #ffffff; 
+    color: var(--btn-text-color, #0f172a);
     font-size: 16px; 
     font-weight: bold; 
     cursor: pointer;
-    transition: all 0.2s ease;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+      0 10px 24px rgba(var(--btn-color-rgb), 0.18);
+    transition: filter 0.2s ease, transform 0.2s ease;
 }
 
 .logout-btn:hover {
-    background: rgba(255, 107, 107, 0.1);
-    border-color: #ff6b6b;
+    filter: brightness(1.05);
     transform: translateY(-1px);
 }
 
@@ -815,7 +841,7 @@
 }
 
 .account-primary-btn {
-  background: linear-gradient(180deg, rgba(var(--btn-color-rgb), 0.92), rgba(var(--btn-color-rgb), 0.76));
+  background: var(--btn-background, linear-gradient(180deg, rgba(var(--btn-color-rgb), 0.92), rgba(var(--btn-color-rgb), 0.76)));
   color: var(--btn-text-color, #0f172a);
   border-color: rgba(var(--btn-color-rgb), 0.3);
   font-weight: 700;
@@ -2296,7 +2322,7 @@
 }
 
 .theme-preview-btn {
-  background: var(--btn-color, #60a5fa);
+  background: var(--btn-background, var(--btn-color, #60a5fa));
   color: var(--btn-text-color, #0f172a);
   border: none;
   border-radius: 8px;
@@ -2305,6 +2331,33 @@
   font-weight: 700;
   cursor: default;
   white-space: nowrap;
+}
+
+.discard-confirm-modal {
+  width: min(440px, calc(100vw - 32px));
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.9));
+  box-shadow: 0 30px 80px rgba(2, 6, 23, 0.5);
+  padding: 24px;
+  color: #e5e7eb;
+}
+
+.discard-confirm-modal h3 {
+  margin: 8px 0 10px;
+}
+
+.discard-confirm-modal p {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.5;
+}
+
+.discard-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
 }
 
 .theme-preview-label {
@@ -2615,6 +2668,21 @@
   padding: 8px 10px;
 }
 .gx-color-text:focus { outline: none; border-color: var(--btn-color, #60a5fa); }
+
+.gx-position-input {
+  width: 84px;
+  min-width: 84px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f8fafc;
+}
+
+.gx-position-input:focus {
+  outline: none;
+  border-color: var(--btn-color, #60a5fa);
+}
 
 .gx-stop-btns {
   display: flex;

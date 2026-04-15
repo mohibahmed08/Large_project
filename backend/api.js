@@ -1326,6 +1326,25 @@ function normalizeThemeGradient(gradient, fallback = {
     };
 }
 
+function normalizeThemeButtonGradient(gradient)
+{
+    const rawColors = Array.isArray(gradient?.colors) ? gradient.colors : [];
+    const colors = rawColors
+        .map((color) => normalizeHexColorValue(color, ''))
+        .filter(Boolean)
+        .slice(0, 3);
+
+    if(colors.length === 0)
+    {
+        return null;
+    }
+
+    return {
+        angle: Number.isFinite(Number(gradient?.angle)) ? Number(gradient.angle) : 135,
+        colors,
+    };
+}
+
 function normalizeThemeImageMap(images)
 {
     if(!images || typeof images !== 'object')
@@ -1384,7 +1403,10 @@ function normalizeCustomThemePack(input)
         id: String(input?.id || '').trim() || `shared-${Date.now()}`,
         name: String(input?.name || 'Untitled Pack').trim() || 'Untitled Pack',
         description: String(input?.description || '').trim(),
+        coverPhoto: String(input?.coverPhoto || '').trim(),
         btnColor: normalizeHexColorValue(input?.btnColor),
+        btnTextColor: String(input?.btnTextColor || '').trim(),
+        btnGradient: normalizeThemeButtonGradient(input?.btnGradient),
         images,
         galleryImages,
         selectedGalleryImage: String(input?.selectedGalleryImage || '').trim(),

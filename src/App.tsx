@@ -153,10 +153,22 @@ function persistSavedThemePacks(packs) {
 }
 
 function applyBtnColorOverride(color) {
-    const resolvedColor = normalizeHexColor(color);
+    const theme = typeof color === 'object' && color !== null ? color : { btnColor: color };
+    const resolvedColor = normalizeHexColor(theme?.btnColor || '#60a5fa');
+    const btnTextColor = String(theme?.btnTextColor || '').trim()
+        ? normalizeHexColor(theme.btnTextColor, getContrastTextColor(resolvedColor))
+        : getContrastTextColor(resolvedColor);
+    const gradientColors = Array.isArray(theme?.btnGradient?.colors)
+        ? theme.btnGradient.colors.map((entry) => normalizeHexColor(entry, '')).filter(Boolean)
+        : [];
+    const buttonBackground = gradientColors.length >= 2
+        ? `linear-gradient(${Number.isFinite(Number(theme?.btnGradient?.angle)) ? Number(theme.btnGradient.angle) : 135}deg, ${gradientColors.slice(0, 3).join(', ')})`
+        : resolvedColor;
+
     document.documentElement.style.setProperty('--btn-color', resolvedColor);
     document.documentElement.style.setProperty('--btn-color-rgb', hexToRgbString(resolvedColor));
-    document.documentElement.style.setProperty('--btn-text-color', getContrastTextColor(resolvedColor));
+    document.documentElement.style.setProperty('--btn-text-color', btnTextColor);
+    document.documentElement.style.setProperty('--btn-background', buttonBackground);
 }
 
 function resolveThemeButtonStyle(theme) {
@@ -182,6 +194,10 @@ function resolveThemeButtonStyle(theme) {
 }
 
 function inferThemePreview(theme) {
+    if (theme?.coverPhoto) {
+        return toCssBackgroundImage(theme.coverPhoto);
+    }
+
     return toCssBackgroundImage(resolveEffectiveBackground(theme, null)) || theme?.preview || buildGradientCss(theme?.gradient);
 }
 
@@ -243,6 +259,10 @@ function isEditableThemePack(theme) {
     }
 
     return theme.id === 'custom' || !BUILT_IN_THEME_IDS.has(theme.id);
+}
+
+function serializeThemeDraft(theme) {
+    return JSON.stringify(sanitizeThemePack(theme, EMPTY_CUSTOM_THEME));
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -649,6 +669,12 @@ function App() {
     const [gradientEditorOpen, setGradientEditorOpen] = useState(false);
     const [gradientEditorTarget, setGradientEditorTarget] = useState('background'); // 'background' | 'button'
     const [themeImportValue, setThemeImportValue] = useState('');
+    const [themeDraftBaseline, setThemeDraftBaseline] = useState('');
+    const [discardThemeDialog, setDiscardThemeDialog] = useState({
+        open: false,
+        nextTab: '',
+        shouldCloseModal: false,
+    });
     const [themeShareState, setThemeShareState] = useState({
         open: false,
         loading: false,
@@ -704,6 +730,8 @@ function App() {
     }, EMPTY_CUSTOM_THEME);
     const featuredWeatherThemes = [DEFAULT_THEME, ...FEATURED_THEMES, customThemeCard];
     const draftPreviewBackground = themeDraft ? (inferThemePreview(themeDraft) || themeDraft.preview || 'none') : 'none';
+    const themeDraftSnapshot = themeDraft ? serializeThemeDraft(themeDraft) : '';
+    const themeDraftDirty = accountModalOpen && accountTab === 'themes' && Boolean(themeDraft) && themeDraftSnapshot !== themeDraftBaseline;
     const draftGradientStops = getEditableGradientStops(themeDraft?.gradient);
     const activeGradientStopIndex = Math.min(selectedGradientStopIndex, Math.max(0, draftGradientStops.length - 1));
     const activeGradientStop = draftGradientStops[activeGradientStopIndex] || draftGradientStops[0] || { color: '#60a5fa', position: 50 };
@@ -860,8 +888,22 @@ function App() {
 
     // Apply btn-color override whenever theme changes
     useEffect(() => {
-        applyBtnColorOverride(activeTheme?.btnColor || '#60a5fa');
+        applyBtnColorOverride(activeTheme || { btnColor: '#60a5fa' });
     }, [activeTheme]);
+
+    useEffect(() => {
+        if (!themeDraftDirty) {
+            return undefined;
+        }
+
+        const handleBeforeUnload = (event) => {
+            event.preventDefault();
+            event.returnValue = '';
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [themeDraftDirty]);
 
     useEffect(() => {
         if (!searchOpen) {
@@ -906,15 +948,66 @@ function App() {
             const nextDraft = sanitizeThemePack(cloneThemePack(activeTheme), EMPTY_CUSTOM_THEME);
             setThemeDraft(nextDraft);
             setCustomBgMode(inferThemeBackgroundMode(nextDraft));
+            setThemeDraftBaseline(serializeThemeDraft(nextDraft));
         }
     };
 
-    const syncThemeDraft = (nextTheme) => {
+    const syncThemeDraft = (nextTheme, options = {}) => {
         const nextDraft = sanitizeThemePack(nextTheme, EMPTY_CUSTOM_THEME);
         setThemeDraft(nextDraft);
         setCustomBgMode(inferThemeBackgroundMode(nextDraft));
         setSelectedGradientStopIndex(0);
+        if (options.markClean) {
+            setThemeDraftBaseline(serializeThemeDraft(nextDraft));
+        }
         return nextDraft;
+    };
+
+    const closeAccountModalNow = () => {
+        setAccountModalOpen(false);
+        setDiscardThemeDialog({ open: false, nextTab: '', shouldCloseModal: false });
+    };
+
+    const requestAccountModalClose = () => {
+        if (themeDraftDirty) {
+            setDiscardThemeDialog({ open: true, nextTab: '', shouldCloseModal: true });
+            return;
+        }
+
+        closeAccountModalNow();
+    };
+
+    const requestAccountTabChange = (nextTab) => {
+        if (nextTab === accountTab) {
+            return;
+        }
+
+        if (themeDraftDirty && accountTab === 'themes') {
+            setDiscardThemeDialog({ open: true, nextTab, shouldCloseModal: false });
+            return;
+        }
+
+        setAccountTab(nextTab);
+        if (nextTab === 'themes') {
+            syncThemeDraft(cloneThemePack(activeTheme), { markClean: true });
+        }
+    };
+
+    const confirmDiscardThemeChanges = () => {
+        const { nextTab, shouldCloseModal } = discardThemeDialog;
+        setDiscardThemeDialog({ open: false, nextTab: '', shouldCloseModal: false });
+
+        if (shouldCloseModal) {
+            closeAccountModalNow();
+            return;
+        }
+
+        if (nextTab) {
+            setAccountTab(nextTab);
+            if (nextTab === 'themes') {
+                syncThemeDraft(cloneThemePack(activeTheme), { markClean: true });
+            }
+        }
     };
 
     const themePackMatches = (first, second) => {
@@ -1014,6 +1107,15 @@ function App() {
             );
         }
 
+        const coverPhoto = String(uploaded.coverPhoto || '').trim();
+        if (coverPhoto.startsWith('data:')) {
+            uploaded.coverPhoto = await uploadDataUrl(
+                'theme-covers',
+                `${uploaded.id || 'theme'}-cover.png`,
+                coverPhoto,
+            );
+        }
+
         return uploaded;
     };
 
@@ -1045,7 +1147,7 @@ function App() {
 
     const applyImportedTheme = (nextTheme, feedbackText = '') => {
         const importedTheme = upsertSavedThemePack(nextTheme);
-        syncThemeDraft(importedTheme);
+        syncThemeDraft(importedTheme, { markClean: true });
         setActiveTheme(importedTheme);
         persistTheme(importedTheme);
         if (feedbackText) {
@@ -1139,7 +1241,7 @@ function App() {
             });
 
             if (themePackMatches(themeDraft, themeShareState.theme)) {
-                syncThemeDraft(syncedTheme);
+                syncThemeDraft(syncedTheme, { markClean: true });
             }
             if (themePackMatches(activeTheme, themeShareState.theme)) {
                 setActiveTheme(syncedTheme);
@@ -1210,7 +1312,7 @@ function App() {
             id: baseId,
             source: 'user',
         });
-        syncThemeDraft(savedPack);
+        syncThemeDraft(savedPack, { markClean: true });
         setAccountFeedback(`Saved "${savedPack.name}" to your theme packs.`);
 
         try {
@@ -1220,7 +1322,7 @@ function App() {
             }
             const syncedPack = await uploadThemeAssets(savedPack, session);
             const syncedTheme = await syncThemePackToServer(syncedPack);
-            syncThemeDraft(syncedTheme);
+            syncThemeDraft(syncedTheme, { markClean: true });
             if (themePackMatches(activeTheme, savedPack)) {
                 setActiveTheme(syncedTheme);
                 persistTheme(syncedTheme);
@@ -1452,6 +1554,14 @@ function App() {
                                 if (/^#[0-9a-fA-F]{0,6}$/.test(v)) updateGradientStopColor(v);
                             }}
                         />
+                        <input
+                            type="number"
+                            className="gx-position-input"
+                            min="0"
+                            max="100"
+                            value={modalActiveStop.position}
+                            onChange={(e) => updateGradientStopPosition(Number(e.target.value))}
+                        />
                         <div className="gx-stop-btns">
                             <button type="button" className="gx-stop-btn" onClick={addGradientStop}>＋ Add</button>
                             <button type="button" className="gx-stop-btn" onClick={removeGradientStop} disabled={modalStops.length <= 1}>− Remove</button>
@@ -1675,6 +1785,35 @@ function App() {
         )
         : null;
 
+    const discardThemeChangesModal = discardThemeDialog.open && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="theme-overlay-backdrop" onClick={() => setDiscardThemeDialog({ open: false, nextTab: '', shouldCloseModal: false })}>
+                <div className="discard-confirm-modal" onClick={(event) => event.stopPropagation()}>
+                    <div className="account-modal-kicker">Unsaved changes</div>
+                    <h3>Leave without saving?</h3>
+                    <p>Your theme edits will be discarded if you leave this screen now.</p>
+                    <div className="discard-confirm-actions">
+                        <button
+                            type="button"
+                            className="account-secondary-btn"
+                            onClick={() => setDiscardThemeDialog({ open: false, nextTab: '', shouldCloseModal: false })}
+                        >
+                            Keep editing
+                        </button>
+                        <button
+                            type="button"
+                            className="account-primary-btn"
+                            onClick={confirmDiscardThemeChanges}
+                        >
+                            Discard changes
+                        </button>
+                    </div>
+                </div>
+            </div>,
+            document.body,
+        )
+        : null;
+
     const exportThemePackDraft = (theme = themeDraft) => {
         if (!theme) {
             return;
@@ -1759,7 +1898,7 @@ function App() {
         ));
 
         if (themePackMatches(themeDraft, packToDelete)) {
-            syncThemeDraft(EMPTY_CUSTOM_THEME);
+            syncThemeDraft(EMPTY_CUSTOM_THEME, { markClean: true });
         }
         if (themePackMatches(activeTheme, packToDelete)) {
             setActiveTheme(DEFAULT_THEME);
@@ -2266,6 +2405,14 @@ function App() {
     const profileFirstName = accountSettings?.firstName || currentSession?.firstName || 'John';
     const profileLastName = accountSettings?.lastName || currentSession?.lastName || 'Doe';
     const profileInitials = `${profileFirstName.charAt(0)}${profileLastName.charAt(0)}`.toUpperCase();
+    const sidebarAvatarUrl = pendingAvatarUrl !== null
+        ? (pendingAvatarUrl === 'REMOVED' ? '' : pendingAvatarUrl)
+        : (avatarUrl || accountSettings?.avatarUrl || '');
+    const [profileAvatarFailed, setProfileAvatarFailed] = useState(false);
+
+    useEffect(() => {
+        setProfileAvatarFailed(false);
+    }, [sidebarAvatarUrl]);
 
     // Compute the effective background: theme override takes precedence over weather
     const effectiveBackground = toCssBackgroundImage(resolveEffectiveBackground(activeTheme, background));
@@ -2315,7 +2462,16 @@ function App() {
                                     onClick={() => openAccountModal('account')}
                                 >
                                     <div className="profile-summary-avatar">
-                                        {profileInitials}
+                                        {sidebarAvatarUrl && !profileAvatarFailed ? (
+                                            <img
+                                                src={sidebarAvatarUrl}
+                                                alt={`${profileFirstName} ${profileLastName}`}
+                                                className="profile-summary-avatar-img"
+                                                onError={() => setProfileAvatarFailed(true)}
+                                            />
+                                        ) : (
+                                            profileInitials
+                                        )}
                                     </div>
                                     <div className="profile-summary-copy">
                                         <span className="profile-summary-name">{`${profileFirstName} ${profileLastName}`}</span>
@@ -2509,14 +2665,14 @@ function App() {
                         </div>
                     </div>
                     {accountModalOpen && (
-                        <div className="account-modal-overlay" onClick={() => setAccountModalOpen(false)}>
+                        <div className="account-modal-overlay" onClick={requestAccountModalClose}>
                             <div className="account-modal" onClick={(event) => event.stopPropagation()}>
                             <div className="account-modal-header">
                                 <div>
                                     <div className="account-modal-kicker">Account</div>
                                     <h2>Account & Settings</h2>
                                 </div>
-                                <button type="button" className="account-close-btn" onClick={() => setAccountModalOpen(false)}>
+                                <button type="button" className="account-close-btn" onClick={requestAccountModalClose}>
                                     Close
                                 </button>
                             </div>
@@ -2525,24 +2681,21 @@ function App() {
                                 <button
                                     type="button"
                                     className={`account-tab-btn ${accountTab === 'account' ? 'active' : ''}`}
-                                    onClick={() => setAccountTab('account')}
+                                    onClick={() => requestAccountTabChange('account')}
                                 >
                                     Account
                                 </button>
                                 <button
                                     type="button"
                                     className={`account-tab-btn ${accountTab === 'settings' ? 'active' : ''}`}
-                                    onClick={() => setAccountTab('settings')}
+                                    onClick={() => requestAccountTabChange('settings')}
                                 >
                                     Settings
                                 </button>
                                 <button
                                     type="button"
                                     className={`account-tab-btn ${accountTab === 'themes' ? 'active' : ''}`}
-                                    onClick={() => {
-                                        setAccountTab('themes');
-                                        syncThemeDraft(cloneThemePack(activeTheme));
-                                    }}
+                                    onClick={() => requestAccountTabChange('themes')}
                                 >
                                     Themes
                                 </button>
@@ -3106,7 +3259,7 @@ function App() {
                                                                     <div className="theme-bg-info">
                                                                         <span className="theme-bg-title">Background image</span>
                                                                         <span className="theme-bg-hint">Used for all weather conditions</span>
-                                                                        <span className="theme-bg-hint">PNG or JPEG, &lt; 4 MB</span>
+                                                                        <span className="theme-bg-hint">Most image types supported, &lt; 6 MB</span>
                                                                     </div>
                                                                     <input
                                                                         type="file"
@@ -3275,7 +3428,7 @@ function App() {
                             </div>
 
                             <div className="account-modal-actions">
-                                <button type="button" className="account-secondary-btn" onClick={() => setAccountModalOpen(false)}>
+                                <button type="button" className="account-secondary-btn" onClick={requestAccountModalClose}>
                                     Close
                                 </button>
                                 {accountTab === 'themes' ? (
@@ -3286,7 +3439,7 @@ function App() {
                                             onClick={() => {
                                                 const reset = DEFAULT_THEME;
                                                 setActiveTheme(reset);
-                                                setThemeDraft(reset);
+                                                syncThemeDraft(reset, { markClean: true });
                                                 persistTheme(reset);
                                             }}
                                         >
@@ -3298,8 +3451,9 @@ function App() {
                                             disabled={!themeDraft}
                                             onClick={() => {
                                                 if (!themeDraft) return;
-                                                setActiveTheme(themeDraft);
-                                                persistTheme(themeDraft);
+                                                const appliedTheme = syncThemeDraft(themeDraft, { markClean: true });
+                                                setActiveTheme(appliedTheme);
+                                                persistTheme(appliedTheme);
                                                 setAccountFeedback('Theme applied.');
                                             }}
                                         >
@@ -3315,6 +3469,7 @@ function App() {
                             </div>
                         </div>
                     )}
+                    {discardThemeChangesModal}
                     {gradientEditorModal}
                     {themeShareModal}
                 </>

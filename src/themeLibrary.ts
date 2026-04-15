@@ -88,6 +88,7 @@ function buildFeaturedTheme({
         description,
         preview: `url(${coverImage})`,
         previewImage: coverImage,
+        coverPhoto: coverImage,
         btnColor,
         images: buildFeaturedSceneImages(packId, sceneExtension),
         galleryImages: [coverImage, ...buildFeaturedGallery(packId, sceneExtension)],
@@ -229,6 +230,7 @@ export const EMPTY_CUSTOM_THEME = {
     name: 'New Pack',
     description: 'Build a gradient or image-based theme pack and save it.',
     preview: 'linear-gradient(135deg,#2563eb 0%,#2563eb 100%)',
+    coverPhoto: '',
     btnColor: '#60a5fa',
     btnTextColor: '',
     btnGradient: null,
@@ -305,6 +307,7 @@ export function sanitizeThemePack(input, fallback = EMPTY_CUSTOM_THEME) {
         id: String(draft.id || base.id || `user-theme-${Date.now()}`),
         name: String(draft.name || base.name || 'Untitled Pack').trim() || 'Untitled Pack',
         description: String(draft.description || base.description || '').trim(),
+        coverPhoto: String(draft.coverPhoto || base.coverPhoto || '').trim(),
         btnColor: normalizeHexColor(draft.btnColor || base.btnColor || '#60a5fa'),
         btnTextColor: String(draft.btnTextColor || base.btnTextColor || '').trim(),
         btnGradient: draft.btnGradient && Array.isArray(draft.btnGradient.colors)
