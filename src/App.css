@@ -1138,7 +1138,8 @@
 
 .theme-library-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
   justify-content: flex-end;
   gap: 10px;
 }
@@ -1179,6 +1180,10 @@
   align-items: flex-end;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.theme-preview-card {
+  margin: 0;
 }
 
 .theme-import-field {

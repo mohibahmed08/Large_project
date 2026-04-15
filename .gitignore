@@ -25,6 +25,7 @@ yarn-error.log*
 # environment variables
 .env
 mobile/firebase.env.json
+backend/calendarplusplus-a24d5-firebase-adminsdk-fbsvc-4b6d771867.json
 
 # Node Modules
 node_modules

@@ -851,281 +851,6 @@ function App() {
         });
     }, [searchOpen]);
 
-    const gradientEditorModal = gradientEditorOpen && themeDraft && typeof document !== 'undefined'
-        ? createPortal(
-            <div className="theme-overlay-backdrop" onClick={() => setGradientEditorOpen(false)}>
-                <div className="theme-gradient-modal" onClick={(event) => event.stopPropagation()}>
-                    <div className="theme-gradient-modal-header">
-                        <div>
-                            <div className="account-modal-kicker">Gradient Background</div>
-                            <h3>Custom Gradient</h3>
-                        </div>
-                        <button type="button" className="account-close-btn" onClick={() => setGradientEditorOpen(false)}>
-                            Close
-                        </button>
-                    </div>
-                    <div className="theme-gradient-editor theme-gradient-editor-modal">
-                        <div className="theme-gradient-editor-top">
-                            <label className="account-field">
-                                <span>Type</span>
-                                <select
-                                    value={themeDraft.gradient?.type || 'linear'}
-                                    onChange={(event) => setThemeDraft((prev) => ({
-                                        ...prev,
-                                        backgroundMode: 'gradient',
-                                        gradient: {
-                                            ...(prev.gradient || EMPTY_CUSTOM_THEME.gradient),
-                                            type: event.target.value,
-                                        },
-                                    }))}
-                                >
-                                    <option value="linear">Linear</option>
-                                    <option value="radial">Radial</option>
-                                </select>
-                            </label>
-                            <label className="account-field">
-                                <span>Angle</span>
-                                <select
-                                    value={Number(themeDraft.gradient?.angle ?? EMPTY_CUSTOM_THEME.gradient.angle)}
-                                    onChange={(event) => setThemeDraft((prev) => ({
-                                        ...prev,
-                                        backgroundMode: 'gradient',
-                                        gradient: {
-                                            ...(prev.gradient || EMPTY_CUSTOM_THEME.gradient),
-                                            angle: Number(event.target.value),
-                                        },
-                                    }))}
-                                    disabled={themeDraft.gradient?.type === 'radial'}
-                                >
-                                    {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
-                                        <option key={angle} value={angle}>{`${angle} deg`}</option>
-                                    ))}
-                                </select>
-                            </label>
-                            <div className="theme-gradient-preview-card">
-                                <span className="theme-gradient-preview-label">Preview</span>
-                                <div className="theme-gradient-preview-swatch" style={{ backgroundImage: buildGradientCss(themeDraft.gradient) }} />
-                            </div>
-                        </div>
-                        <div className="theme-gradient-editor-controls">
-                            <div className="theme-gradient-editor-header">
-                                <span className="theme-gradient-editor-title">Gradient Stops</span>
-                            </div>
-                            <div className="theme-gradient-stop-toolbar">
-                                <div className="theme-gradient-stop-actions">
-                                    <button type="button" className="account-secondary-btn" onClick={addGradientStop}>
-                                        Add
-                                    </button>
-                                    <button type="button" className="account-secondary-btn" onClick={removeGradientStop} disabled={draftGradientStops.length <= 1}>
-                                        Remove
-                                    </button>
-                                </div>
-                                <div className="theme-gradient-stop-swatch">
-                                    <input
-                                        type="color"
-                                        className="theme-color-input theme-gradient-color-input"
-                                        value={activeGradientStop.color}
-                                        onChange={(event) => updateGradientStopColor(event.target.value)}
-                                    />
-                                </div>
-                            </div>
-                            <div className="theme-gradient-stop-editor">
-                                <label className="account-check-row theme-gradient-rotate-row">
-                                    <input type="checkbox" checked readOnly />
-                                    <span>Rotate with shape</span>
-                                </label>
-                                <label className="account-field">
-                                    <span>Selected color</span>
-                                    <input
-                                        type="text"
-                                        className="theme-color-text"
-                                        value={activeGradientStop.color}
-                                        maxLength={7}
-                                        onChange={(event) => {
-                                            const value = event.target.value;
-                                            if (/^#[0-9a-fA-F]{0,6}$/.test(value)) {
-                                                updateGradientStopColor(value);
-                                            }
-                                        }}
-                                    />
-                                </label>
-                            </div>
-                            <div className="theme-gradient-rail-shell">
-                                <div className="theme-gradient-rail" style={{ backgroundImage: buildGradientCss(themeDraft.gradient) }}>
-                                    {draftGradientStops.map((stop, index) => (
-                                        <button
-                                            key={`${stop.color}-${stop.position}-${index}`}
-                                            type="button"
-                                            className={`theme-gradient-stop-handle${index === activeGradientStopIndex ? ' active' : ''}`}
-                                            style={{ left: `${stop.position}%`, background: stop.color }}
-                                            onClick={() => setSelectedGradientStopIndex(index)}
-                                            aria-label={`Select gradient stop ${index + 1}`}
-                                        />
-                                    ))}
-                                </div>
-                            </div>
-                            <input
-                                className="theme-gradient-position-range"
-                                type="range"
-                                min="0"
-                                max="100"
-                                value={activeGradientStop.position}
-                                onChange={(event) => updateGradientStopPosition(Number(event.target.value))}
-                            />
-                        </div>
-                        <div className="theme-gradient-modal-actions">
-                            <button type="button" className="account-secondary-btn" onClick={() => setGradientEditorOpen(false)}>
-                                Cancel
-                            </button>
-                            <button type="button" className="account-primary-btn" onClick={() => setGradientEditorOpen(false)}>
-                                OK
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>,
-            document.body,
-        )
-        : null;
-
-    const themeShareModal = themeShareState.open && themeShareState.theme && typeof document !== 'undefined'
-        ? createPortal(
-            <div className="theme-overlay-backdrop" onClick={closeThemeShareDialog}>
-                <div className="theme-share-floating-modal" onClick={(event) => event.stopPropagation()}>
-                    <div className="theme-share-modal-header theme-share-floating-header">
-                        <div>
-                            <div className="account-modal-kicker">Share Theme</div>
-                            <h3>{themeShareState.theme.name}</h3>
-                            <p>{themeShareState.theme.creatorLabel || `Theme created by ${themeShareState.theme.authorName || 'you'}`}</p>
-                        </div>
-                        <button type="button" className="account-close-btn" onClick={closeThemeShareDialog}>
-                            Done
-                        </button>
-                    </div>
-
-                    <div className="theme-share-tabs" role="tablist" aria-label="Theme share tabs">
-                        <button
-                            type="button"
-                            className={`theme-share-tab${themeShareState.activeTab === 'share' ? ' active' : ''}`}
-                            onClick={closeThemeLinkEditor}
-                        >
-                            Share
-                        </button>
-                        <button
-                            type="button"
-                            className={`theme-share-tab${themeShareState.activeTab === 'edit' ? ' active' : ''}`}
-                            onClick={openThemeLinkEditor}
-                            disabled={themeShareState.theme.sharedThemeId && themeShareState.theme.isOwnedTheme !== true}
-                        >
-                            Edit Link
-                        </button>
-                    </div>
-
-                    <div className="theme-share-modal-body theme-share-compact-body">
-                        {themeShareState.activeTab === 'share' ? (
-                            <>
-                                <div className="theme-share-preview-panel theme-share-preview-panel-compact" style={{ backgroundImage: themeSharePreview }}>
-                                    <div className="theme-share-preview-overlay">
-                                        <span className="theme-share-preview-chip">{themeShareState.theme.authorLabel || 'By you'}</span>
-                                        <button
-                                            type="button"
-                                            className="theme-preview-btn"
-                                            style={resolveThemeButtonStyle(themeShareState.theme)}
-                                        >
-                                            Preview Theme
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {themeShareState.theme.sharedThemeId && themeShareState.theme.isOwnedTheme !== true && (
-                                    <p className="theme-share-note">This imported theme keeps the original creator name. You can share the existing link or code, but only the owner can edit the custom link.</p>
-                                )}
-
-                                <div className="theme-share-action-grid compact">
-                                    <button
-                                        type="button"
-                                        className="theme-share-action primary"
-                                        onClick={saveSharedThemeDetails}
-                                        disabled={themeShareState.loading}
-                                    >
-                                        <span className="theme-share-action-icon">+</span>
-                                        <span>{themeShareState.loading ? 'Saving...' : themeShareState.theme.shareCode ? 'Refresh Share' : 'Create Share'}</span>
-                                    </button>
-                                    {shareModalActions.map((action) => {
-                                        const Icon = action.icon;
-                                        return (
-                                            <button
-                                                key={action.key}
-                                                type="button"
-                                                className="theme-share-action"
-                                                onClick={action.onClick}
-                                                disabled={action.disabled}
-                                            >
-                                                <span className="theme-share-action-icon">
-                                                    <Icon />
-                                                </span>
-                                                <span>{action.label}</span>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-
-                                <div className="theme-share-value-stack compact">
-                                    <label className="theme-share-value-card">
-                                        <span>Share link</span>
-                                        <input value={themeShareState.theme.shareUrl || ''} readOnly />
-                                    </label>
-                                    <label className="theme-share-value-card">
-                                        <span>Theme code</span>
-                                        <input value={themeShareState.theme.shareCode || ''} readOnly />
-                                    </label>
-                                </div>
-                            </>
-                        ) : (
-                            <div className="theme-share-edit-stack">
-                                <div className="theme-share-edit-card">
-                                    <div>
-                                        <strong>Custom link ID</strong>
-                                        <p>Use a short, memorable link ID or a six-digit code.</p>
-                                    </div>
-                                    <label className="account-field">
-                                        <span>Custom link ID</span>
-                                        <input
-                                            value={themeShareState.customLinkId}
-                                            onChange={(event) => setThemeShareState((prev) => ({ ...prev, customLinkId: event.target.value }))}
-                                            placeholder="mountain-theme"
-                                            disabled={themeShareState.loading || (themeShareState.theme.sharedThemeId && themeShareState.theme.isOwnedTheme !== true)}
-                                        />
-                                    </label>
-                                </div>
-                                <div className="theme-share-footer theme-share-footer-compact">
-                                    <div>
-                                        <strong>Share export</strong>
-                                        <p>Export the current pack or save a custom share link from here.</p>
-                                    </div>
-                                    <div className="theme-share-footer-actions">
-                                        <button
-                                            type="button"
-                                            className="account-secondary-btn"
-                                            onClick={() => exportThemePackDraft(themeShareState.theme)}
-                                            disabled={!themeShareState.theme}
-                                        >
-                                            Export file
-                                        </button>
-                                        <button type="button" className="account-primary-btn" onClick={saveSharedThemeDetails} disabled={themeShareState.loading}>
-                                            {themeShareState.loading ? 'Saving...' : 'Save link ID'}
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>,
-            document.body,
-        )
-        : null;
-
     const refreshCalendar = () => {
         setCalendarRefreshKey((prev) => prev + 1);
     };
@@ -1498,6 +1223,281 @@ function App() {
             index === activeGradientStopIndex ? { ...stop, position } : stop
         )));
     };
+
+    const gradientEditorModal = gradientEditorOpen && themeDraft && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="theme-overlay-backdrop" onClick={() => setGradientEditorOpen(false)}>
+                <div className="theme-gradient-modal" onClick={(event) => event.stopPropagation()}>
+                    <div className="theme-gradient-modal-header">
+                        <div>
+                            <div className="account-modal-kicker">Gradient Background</div>
+                            <h3>Custom Gradient</h3>
+                        </div>
+                        <button type="button" className="account-close-btn" onClick={() => setGradientEditorOpen(false)}>
+                            Close
+                        </button>
+                    </div>
+                    <div className="theme-gradient-editor theme-gradient-editor-modal">
+                        <div className="theme-gradient-editor-top">
+                            <label className="account-field">
+                                <span>Type</span>
+                                <select
+                                    value={themeDraft.gradient?.type || 'linear'}
+                                    onChange={(event) => setThemeDraft((prev) => ({
+                                        ...prev,
+                                        backgroundMode: 'gradient',
+                                        gradient: {
+                                            ...(prev.gradient || EMPTY_CUSTOM_THEME.gradient),
+                                            type: event.target.value,
+                                        },
+                                    }))}
+                                >
+                                    <option value="linear">Linear</option>
+                                    <option value="radial">Radial</option>
+                                </select>
+                            </label>
+                            <label className="account-field">
+                                <span>Angle</span>
+                                <select
+                                    value={Number(themeDraft.gradient?.angle ?? EMPTY_CUSTOM_THEME.gradient.angle)}
+                                    onChange={(event) => setThemeDraft((prev) => ({
+                                        ...prev,
+                                        backgroundMode: 'gradient',
+                                        gradient: {
+                                            ...(prev.gradient || EMPTY_CUSTOM_THEME.gradient),
+                                            angle: Number(event.target.value),
+                                        },
+                                    }))}
+                                    disabled={themeDraft.gradient?.type === 'radial'}
+                                >
+                                    {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
+                                        <option key={angle} value={angle}>{`${angle} deg`}</option>
+                                    ))}
+                                </select>
+                            </label>
+                            <div className="theme-gradient-preview-card">
+                                <span className="theme-gradient-preview-label">Preview</span>
+                                <div className="theme-gradient-preview-swatch" style={{ backgroundImage: buildGradientCss(themeDraft.gradient) }} />
+                            </div>
+                        </div>
+                        <div className="theme-gradient-editor-controls">
+                            <div className="theme-gradient-editor-header">
+                                <span className="theme-gradient-editor-title">Gradient Stops</span>
+                            </div>
+                            <div className="theme-gradient-stop-toolbar">
+                                <div className="theme-gradient-stop-actions">
+                                    <button type="button" className="account-secondary-btn" onClick={addGradientStop}>
+                                        Add
+                                    </button>
+                                    <button type="button" className="account-secondary-btn" onClick={removeGradientStop} disabled={draftGradientStops.length <= 1}>
+                                        Remove
+                                    </button>
+                                </div>
+                                <div className="theme-gradient-stop-swatch">
+                                    <input
+                                        type="color"
+                                        className="theme-color-input theme-gradient-color-input"
+                                        value={activeGradientStop.color}
+                                        onChange={(event) => updateGradientStopColor(event.target.value)}
+                                    />
+                                </div>
+                            </div>
+                            <div className="theme-gradient-stop-editor">
+                                <label className="account-check-row theme-gradient-rotate-row">
+                                    <input type="checkbox" checked readOnly />
+                                    <span>Rotate with shape</span>
+                                </label>
+                                <label className="account-field">
+                                    <span>Selected color</span>
+                                    <input
+                                        type="text"
+                                        className="theme-color-text"
+                                        value={activeGradientStop.color}
+                                        maxLength={7}
+                                        onChange={(event) => {
+                                            const value = event.target.value;
+                                            if (/^#[0-9a-fA-F]{0,6}$/.test(value)) {
+                                                updateGradientStopColor(value);
+                                            }
+                                        }}
+                                    />
+                                </label>
+                            </div>
+                            <div className="theme-gradient-rail-shell">
+                                <div className="theme-gradient-rail" style={{ backgroundImage: buildGradientCss(themeDraft.gradient) }}>
+                                    {draftGradientStops.map((stop, index) => (
+                                        <button
+                                            key={`${stop.color}-${stop.position}-${index}`}
+                                            type="button"
+                                            className={`theme-gradient-stop-handle${index === activeGradientStopIndex ? ' active' : ''}`}
+                                            style={{ left: `${stop.position}%`, background: stop.color }}
+                                            onClick={() => setSelectedGradientStopIndex(index)}
+                                            aria-label={`Select gradient stop ${index + 1}`}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                            <input
+                                className="theme-gradient-position-range"
+                                type="range"
+                                min="0"
+                                max="100"
+                                value={activeGradientStop.position}
+                                onChange={(event) => updateGradientStopPosition(Number(event.target.value))}
+                            />
+                        </div>
+                        <div className="theme-gradient-modal-actions">
+                            <button type="button" className="account-secondary-btn" onClick={() => setGradientEditorOpen(false)}>
+                                Cancel
+                            </button>
+                            <button type="button" className="account-primary-btn" onClick={() => setGradientEditorOpen(false)}>
+                                OK
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>,
+            document.body,
+        )
+        : null;
+
+    const themeShareModal = themeShareState.open && themeShareState.theme && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="theme-overlay-backdrop" onClick={closeThemeShareDialog}>
+                <div className="theme-share-floating-modal" onClick={(event) => event.stopPropagation()}>
+                    <div className="theme-share-modal-header theme-share-floating-header">
+                        <div>
+                            <div className="account-modal-kicker">Share Theme</div>
+                            <h3>{themeShareState.theme.name}</h3>
+                            <p>{themeShareState.theme.creatorLabel || `Theme created by ${themeShareState.theme.authorName || 'you'}`}</p>
+                        </div>
+                        <button type="button" className="account-close-btn" onClick={closeThemeShareDialog}>
+                            Done
+                        </button>
+                    </div>
+
+                    <div className="theme-share-tabs" role="tablist" aria-label="Theme share tabs">
+                        <button
+                            type="button"
+                            className={`theme-share-tab${themeShareState.activeTab === 'share' ? ' active' : ''}`}
+                            onClick={closeThemeLinkEditor}
+                        >
+                            Share
+                        </button>
+                        <button
+                            type="button"
+                            className={`theme-share-tab${themeShareState.activeTab === 'edit' ? ' active' : ''}`}
+                            onClick={openThemeLinkEditor}
+                            disabled={themeShareState.theme.sharedThemeId && themeShareState.theme.isOwnedTheme !== true}
+                        >
+                            Edit Link
+                        </button>
+                    </div>
+
+                    <div className="theme-share-modal-body theme-share-compact-body">
+                        {themeShareState.activeTab === 'share' ? (
+                            <>
+                                <div className="theme-share-preview-panel theme-share-preview-panel-compact" style={{ backgroundImage: themeSharePreview }}>
+                                    <div className="theme-share-preview-overlay">
+                                        <span className="theme-share-preview-chip">{themeShareState.theme.authorLabel || 'By you'}</span>
+                                        <button
+                                            type="button"
+                                            className="theme-preview-btn"
+                                            style={resolveThemeButtonStyle(themeShareState.theme)}
+                                        >
+                                            Preview Theme
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {themeShareState.theme.sharedThemeId && themeShareState.theme.isOwnedTheme !== true && (
+                                    <p className="theme-share-note">This imported theme keeps the original creator name. You can share the existing link or code, but only the owner can edit the custom link.</p>
+                                )}
+
+                                <div className="theme-share-action-grid compact">
+                                    <button
+                                        type="button"
+                                        className="theme-share-action primary"
+                                        onClick={saveSharedThemeDetails}
+                                        disabled={themeShareState.loading}
+                                    >
+                                        <span className="theme-share-action-icon">+</span>
+                                        <span>{themeShareState.loading ? 'Saving...' : themeShareState.theme.shareCode ? 'Refresh Share' : 'Create Share'}</span>
+                                    </button>
+                                    {shareModalActions.map((action) => {
+                                        const Icon = action.icon;
+                                        return (
+                                            <button
+                                                key={action.key}
+                                                type="button"
+                                                className="theme-share-action"
+                                                onClick={action.onClick}
+                                                disabled={action.disabled}
+                                            >
+                                                <span className="theme-share-action-icon">
+                                                    <Icon />
+                                                </span>
+                                                <span>{action.label}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                <div className="theme-share-value-stack compact">
+                                    <label className="theme-share-value-card">
+                                        <span>Share link</span>
+                                        <input value={themeShareState.theme.shareUrl || ''} readOnly />
+                                    </label>
+                                    <label className="theme-share-value-card">
+                                        <span>Theme code</span>
+                                        <input value={themeShareState.theme.shareCode || ''} readOnly />
+                                    </label>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="theme-share-edit-stack">
+                                <div className="theme-share-edit-card">
+                                    <div>
+                                        <strong>Custom link ID</strong>
+                                        <p>Use a short, memorable link ID or a six-digit code.</p>
+                                    </div>
+                                    <label className="account-field">
+                                        <span>Custom link ID</span>
+                                        <input
+                                            value={themeShareState.customLinkId}
+                                            onChange={(event) => setThemeShareState((prev) => ({ ...prev, customLinkId: event.target.value }))}
+                                            placeholder="mountain-theme"
+                                            disabled={themeShareState.loading || (themeShareState.theme.sharedThemeId && themeShareState.theme.isOwnedTheme !== true)}
+                                        />
+                                    </label>
+                                </div>
+                                <div className="theme-share-footer theme-share-footer-compact">
+                                    <div>
+                                        <strong>Share export</strong>
+                                        <p>Export the current pack or save a custom share link from here.</p>
+                                    </div>
+                                    <div className="theme-share-footer-actions">
+                                        <button
+                                            type="button"
+                                            className="account-secondary-btn"
+                                            onClick={() => exportThemePackDraft(themeShareState.theme)}
+                                            disabled={!themeShareState.theme}
+                                        >
+                                            Export file
+                                        </button>
+                                        <button type="button" className="account-primary-btn" onClick={saveSharedThemeDetails} disabled={themeShareState.loading}>
+                                            {themeShareState.loading ? 'Saving...' : 'Save link ID'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>,
+            document.body,
+        )
+        : null;
 
     const exportThemePackDraft = (theme = themeDraft) => {
         if (!theme) {
@@ -2636,8 +2636,6 @@ function App() {
 
                                                 {isEditableThemePack(themeDraft) && (
                                                     <div className="account-section-card">
-                                                        <h3>Customize</h3>
-
                                                         <div className="theme-preview-card">
                                                             <div className="theme-library-header">
                                                                 <div>
@@ -2671,6 +2669,12 @@ function App() {
                                                                 </div>
                                                             </div>
                                                         </div>
+                                                    </div>
+                                                )}
+
+                                                {isEditableThemePack(themeDraft) && (
+                                                    <div className="account-section-card">
+                                                        <h3>Customize</h3>
 
                                                         {/* Button color picker */}
                                                         <div className="theme-custom-row">
