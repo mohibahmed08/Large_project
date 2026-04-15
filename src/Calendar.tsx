@@ -394,13 +394,15 @@ function Calendar({
     const [backgroundWeather, setBackgroundWeather] = useState(-1);
     const [currentMonthIndex, setCurrentMonthIndex] = useState(0);
     const containerRef = useRef(null);
-    const lastMonthRef = useRef();
+    const loadingMoreRef = useRef(false);
+    const MAX_RENDERED_MONTHS = 12;
     const weatherStripRef = useRef(null);
     const weatherCacheRef = useRef(new Map());
     const weatherCoordsRef = useRef(null);
 
     const [calendarTasks, setCalendarTasks] = useState([]);
     const [searchResults, setSearchResults] = useState([]);
+    const [stableSearchResults, setStableSearchResults] = useState([]);
     const [searchLoading, setSearchLoading] = useState(false);
     const [searchError, setSearchError] = useState('');
     const [calendarReloadTick, setCalendarReloadTick] = useState(0);
@@ -435,31 +437,58 @@ function Calendar({
     });
 
     useEffect(() => {
-        if (singleMonth) return;
+        if (singleMonth || !containerRef.current) return;
 
         const observer = new IntersectionObserver(
             (entries) => {
-                entries.forEach((entry) => {
-                    const index = Number(entry.target.dataset.index);
-                    if (entry.intersectionRatio >= 0.5) {
+                const visibleEntries = entries.filter(
+                    (entry) => entry.isIntersecting && Number(entry.target.dataset.index) >= 0
+                );
+
+                if (visibleEntries.length > 0) {
+                    const mostVisible = visibleEntries.reduce((best, entry) =>
+                        entry.intersectionRatio > best.intersectionRatio ? entry : best
+                    );
+
+                    const index = Number(mostVisible.target.dataset.index);
+                    if (!Number.isNaN(index)) {
                         setCurrentMonthIndex(index);
                     }
-                    if (entry.isIntersecting && index === renderedMonths - 1) {
-                        setRenderedMonths((prev) => prev + 1);
+                }
+
+                visibleEntries.forEach((entry) => {
+                    const index = Number(entry.target.dataset.index);
+                    if (Number.isNaN(index)) return;
+
+                    const isLastRenderedMonth = index === renderedMonths - 1;
+                    const shouldLoadMore =
+                        entry.intersectionRatio >= 0.92 &&
+                        isLastRenderedMonth &&
+                        !loadingMoreRef.current &&
+                        renderedMonths < MAX_RENDERED_MONTHS;
+
+                    if (shouldLoadMore) {
+                        loadingMoreRef.current = true;
+                        setRenderedMonths((prev) => Math.min(prev + 1, MAX_RENDERED_MONTHS));
                     }
                 });
             },
             {
                 root: containerRef.current,
-                threshold: Array.from({ length: 101 }, (_, i) => i / 100),
+                rootMargin: '0px 0px 240px 0px',
+                threshold: [0.5, 0.92],
             },
         );
 
-        const months = containerRef.current?.querySelectorAll('.calendar-month') || [];
+        const months = containerRef.current.querySelectorAll('.calendar-month');
         months.forEach((month) => observer.observe(month));
-        if (lastMonthRef.current) observer.observe(lastMonthRef.current);
+
         return () => observer.disconnect();
     }, [renderedMonths, singleMonth]);
+
+    useEffect(() => {
+        loadingMoreRef.current = false;
+    }, [renderedMonths]);
 
     const targetDate = new Date(date.getFullYear(), baseMonth + currentMonthIndex, 1);
     const monthName = targetDate.toLocaleString('default', { month: 'long' });
@@ -467,6 +496,10 @@ function Calendar({
     const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const trimmedSearchQuery = String(searchQuery || '').trim();
     const isSearchActive = trimmedSearchQuery.length > 0;
+
+    useEffect(() => {
+        loadingMoreRef.current = false;
+    }, [isSearchActive, trimmedSearchQuery]);
 
     const visibleRange = useMemo(() => {
         if (singleMonth) {
@@ -491,9 +524,23 @@ function Calendar({
         setCalendarReloadTick((prev) => prev + 1);
     };
 
-    const displayTasks = useMemo(() => (
-        isSearchActive ? searchResults : calendarTasks
-    ), [isSearchActive, searchResults, calendarTasks]);
+    const displayTasks = useMemo(() => {
+        if (!isSearchActive) return calendarTasks;
+
+        if (searchLoading) {
+            return stableSearchResults.length > 0
+                ? stableSearchResults
+                : calendarTasks;
+        }
+
+        return searchResults;
+    }, [
+        isSearchActive,
+        searchLoading,
+        stableSearchResults,
+        searchResults,
+        calendarTasks,
+    ]);
 
     const selectedDayTasks = useMemo(() => {
         const selectedKey = normalizeDateKey(selectedDate);
@@ -573,6 +620,12 @@ function Calendar({
     }, [apiRoot, session?.userId, session?.jwtToken, visibleRange, onSessionRefresh, refreshKey, calendarReloadTick]);
 
     useEffect(() => {
+        if (!isSearchActive) {
+            setStableSearchResults([]);
+        }
+    }, [isSearchActive]);
+
+    useEffect(() => {
         if (!session?.userId || !session?.jwtToken || !apiRoot || !isSearchActive) {
             setSearchResults([]);
             setSearchLoading(false);
@@ -602,7 +655,9 @@ function Calendar({
                 }
 
                 if (!ignore) {
-                    setSearchResults(Array.isArray(data.results) ? data.results : []);
+                    const results = Array.isArray(data.results) ? data.results : [];
+                    setSearchResults(results);
+                    setStableSearchResults(results);
                 }
             } catch (error) {
                 if (!ignore) {
@@ -1423,7 +1478,6 @@ function Calendar({
                                 onSelectDay={openDayModal}
                                 onSelectTask={openEditModal}
                                 selectedDate={selectedDate}
-                                ref={i === renderedMonths - 1 ? lastMonthRef : null}
                             />
                         </div>
                     ))}

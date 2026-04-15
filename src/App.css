@@ -5,27 +5,26 @@
   --btn-background: #60a5fa;
 }
 
-/* --- GLOBAL RESETS --- */
-* {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-*::-webkit-scrollbar {
-  display: none;
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
 }
 
-/* --- SIDEBAR LAYOUT --- */
 .main-layout {
   display: flex;
-  height: 100%;
+  height: 100vh;
   width: 100%;
-  background-color: #1e1e2f;          /* fallback */
-  background-image: var(--bg-img);    /* dynamic background from style prop */
+  overflow: hidden;
+  background-color: #1e1e2f;
+  background-image: var(--bg-img);
   background-repeat: no-repeat;
   background-position: center center;
   background-size: cover;
-  background-attachment: scroll;      /* better cross-browser behavior */
+  background-attachment: scroll;
 }
+
 .sidebar {
   background-color: rgba(30, 30, 47, 0.55); /* Semi-transparent dark color */
   backdrop-filter: blur(12px);              /* Glass blur effect */
@@ -41,6 +40,30 @@
 .sidebar.open { width: 292px; }
 .sidebar.right-sidebar.open { width: 360px; }
 .sidebar.closed { width: 60px; }
+.sidebar-content {
+  padding: 0 15px 20px 15px;
+  color: #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+}
+
+.left-sidebar .sidebar-content {
+  padding-top: 56px;
+  height: 100%;
+  min-height: 0;
+}
+
+/* --- GLOBAL RESETS --- */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
 
 /* --- TOGGLE BUTTONS --- */
 .toggle-btn {
@@ -66,19 +89,6 @@
 }
 
 /* --- SIDEBAR NAV MENU --- */
-.sidebar-content {
-  padding: 0 15px 20px 15px;
-  color: #e0e0e0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  height: calc(100vh - 80px); 
-}
-
-.left-sidebar .sidebar-content {
-  padding-top: 56px;
-  height: 100vh;
-}
 
 .nav-item {
   display: flex;
@@ -108,17 +118,25 @@
 
 /* --- CENTER CONTENT --- */
 .center-content {
-  flex-grow: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  height: 100vh;      /* Force exact height to stop overflow */
-  overflow: hidden; 
+  overflow: hidden;
 }
 
 .calendar-wrapper {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;   /* If the calendar is too tall, it scrolls neatly inside its box */
+  overflow: hidden;
+}
+
+.ai-panel {
+  gap: 4px;
+  padding: 8px 10px 10px 10px;
+  height: 100%;
+  min-height: 0;
 }
 
 .calendar-search-shell {
@@ -238,12 +256,6 @@
 }
 
 .ai-input::placeholder { color: #9ca3af; }
-
-.ai-panel {
-  gap: 4px;
-  padding: 8px 10px 10px 10px;
-  height: 100vh;
-}
 
 .ai-panel-header h2 {
   margin: 0;
@@ -750,23 +762,26 @@
     align-items: center;
     gap: 12px;
     padding: 10px 12px;
-    background:
-      linear-gradient(180deg, rgba(127, 29, 29, 0.14), rgba(127, 29, 29, 0.06)),
-      rgba(239, 68, 68, 0.08);
-    border: 1px solid rgba(248, 113, 113, 0.45);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 8px;
-    color: #fee2e2;
+    color: #f8fafc;
     font-size: 16px; 
     font-weight: bold; 
     cursor: pointer;
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.12),
-      0 10px 24px rgba(127, 29, 29, 0.16);
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      0 8px 18px rgba(15, 23, 42, 0.14);
     transition: filter 0.2s ease, transform 0.2s ease;
 }
 
 .logout-btn:hover {
-    filter: brightness(1.08);
+    background:
+      linear-gradient(180deg, rgba(127, 29, 29, 0.14), rgba(127, 29, 29, 0.06)),
+      rgba(239, 68, 68, 0.08);
+    border-color: rgba(248, 113, 113, 0.45);
+    color: #fee2e2;
+    filter: brightness(1.02);
     transform: translateY(-1px);
 }
 
