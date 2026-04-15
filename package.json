@@ -6,9 +6,14 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
+    "test:frontend": "react-scripts test --watchAll=false --runInBand",
+    "test:backend": "npm --prefix backend test",
+    "test:mobile": "node scripts/run-test-suites.js mobile",
+    "test:all": "node scripts/run-test-suites.js",
     "eject": "react-scripts eject"
   },
   "dependencies": {
+    "codex": "^0.2.3",
     "jszip": "^3.10.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",

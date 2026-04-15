@@ -67,14 +67,26 @@
 
 .calendar-item-modal.plan {
   border-color: rgba(168, 85, 247, 0.22);
+  background:
+    radial-gradient(circle at top left, rgba(196, 181, 253, 0.16), transparent 28%),
+    linear-gradient(180deg, rgba(46, 24, 78, 0.78), rgba(24, 19, 46, 0.7)),
+    rgba(21, 20, 38, 0.72);
 }
 
 .calendar-item-modal.event {
   border-color: rgba(96, 165, 250, 0.2);
+  background:
+    radial-gradient(circle at top right, rgba(147, 197, 253, 0.16), transparent 28%),
+    linear-gradient(180deg, rgba(24, 45, 82, 0.8), rgba(17, 29, 54, 0.7)),
+    rgba(15, 23, 42, 0.72);
 }
 
 .calendar-item-modal.task {
   border-color: rgba(34, 197, 94, 0.2);
+  background:
+    radial-gradient(circle at top left, rgba(134, 239, 172, 0.14), transparent 28%),
+    linear-gradient(180deg, rgba(24, 64, 46, 0.8), rgba(18, 39, 32, 0.7)),
+    rgba(15, 23, 42, 0.72);
 }
 
 .calendar-task-modal-header,
@@ -109,6 +121,21 @@
   text-transform: capitalize;
 }
 
+.calendar-item-modal.plan .calendar-item-type-chip {
+  background: rgba(168, 85, 247, 0.16);
+  color: #e9d5ff;
+}
+
+.calendar-item-modal.event .calendar-item-type-chip {
+  background: rgba(96, 165, 250, 0.16);
+  color: #dbeafe;
+}
+
+.calendar-item-modal.task .calendar-item-type-chip {
+  background: rgba(34, 197, 94, 0.16);
+  color: #dcfce7;
+}
+
 .calendar-task-modal-body {
   display: flex;
   flex-direction: column;
@@ -138,12 +165,28 @@
 .calendar-task-reminder-row select {
   width: 100%;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(9, 13, 24, 0.48);
+  border: 1px solid rgba(191, 219, 254, 0.18);
+  background: rgba(8, 15, 30, 0.58);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   color: #f8fafc;
   padding: 10px 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.calendar-task-field input::placeholder,
+.calendar-task-field textarea::placeholder {
+  color: #cbd5e1;
+}
+
+.calendar-task-field input:focus,
+.calendar-task-field textarea:focus,
+.calendar-task-reminder-row select:focus {
+  outline: none;
+  border-color: rgba(var(--btn-color-rgb), 0.44);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 0 0 3px rgba(var(--btn-color-rgb), 0.12);
 }
 
 .calendar-task-field textarea {
@@ -225,8 +268,26 @@
 
 .calendar-task-save-btn {
   margin-left: auto;
-  background: #60a5fa;
-  color: #0f172a;
+  background: var(--btn-color, #60a5fa);
+  color: var(--btn-text-color, #0f172a);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 10px 24px rgba(var(--btn-color-rgb), 0.18);
+}
+
+.calendar-item-modal.plan .calendar-task-save-btn {
+  background: linear-gradient(180deg, rgba(192, 132, 252, 0.96), rgba(147, 51, 234, 0.82));
+  color: #fff;
+}
+
+.calendar-item-modal.event .calendar-task-save-btn {
+  background: linear-gradient(180deg, rgba(125, 211, 252, 0.96), rgba(37, 99, 235, 0.82));
+  color: #eff6ff;
+}
+
+.calendar-item-modal.task .calendar-task-save-btn {
+  background: linear-gradient(180deg, rgba(74, 222, 128, 0.96), rgba(22, 163, 74, 0.82));
+  color: #f0fdf4;
 }
 
 .calendar-import-upload-row {
@@ -617,6 +678,29 @@
   }
 }
 
+@media (max-width: 680px) {
+  .calendar-item-modal.plan {
+    box-shadow:
+      0 24px 60px rgba(88, 28, 135, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14),
+      inset 0 0 80px rgba(168, 85, 247, 0.1);
+  }
+
+  .calendar-item-modal.event {
+    box-shadow:
+      0 24px 60px rgba(30, 64, 175, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14),
+      inset 0 0 80px rgba(96, 165, 250, 0.1);
+  }
+
+  .calendar-item-modal.task {
+    box-shadow:
+      0 24px 60px rgba(21, 128, 61, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14),
+      inset 0 0 80px rgba(34, 197, 94, 0.1);
+  }
+}
+
 .calendar-import-subscription-list {
   display: flex;
   flex-direction: column;
@@ -688,7 +772,7 @@
   white-space: nowrap;
 }
 .calendar-day-hide-completed-toggle input[type="checkbox"] {
-  accent-color: #60a5fa;
+  accent-color: var(--btn-color, #60a5fa);
   width: 14px;
   height: 14px;
   cursor: pointer;
@@ -736,10 +820,10 @@
 }
 .calendar-day-complete-btn.checked {
   background: var(--btn-color, #60a5fa);
-  color: #0f172a;
+  color: var(--btn-text-color, #0f172a);
 }
 .calendar-day-complete-btn:hover:not(.checked) {
-  background: rgba(96, 165, 250, 0.12);
+  background: rgba(var(--btn-color-rgb), 0.12);
 }
 
 /* Completed card fade */
@@ -765,7 +849,7 @@
   padding: 0;
   border: none;
   background: none;
-  color: #60a5fa;
+  color: var(--btn-color, #60a5fa);
   font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
@@ -773,7 +857,7 @@
   text-underline-offset: 2px;
 }
 .calendar-day-card-expand-btn:hover {
-  color: #93c5fd;
+  opacity: 0.8;
 }
 
 /* End-time in time display */

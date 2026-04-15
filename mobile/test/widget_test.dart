@@ -1,23 +1,22 @@
+import 'package:calendar/screens/app_bootstrap_screen.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:calendar/main.dart';
-
 void main() {
-  testWidgets('app starts on the auth screen', (WidgetTester tester) async {
-    SharedPreferences.setMockInitialValues({});
+  testWidgets('app bootstrap opens the in-app reset password flow', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AppBootstrapScreen(initialResetToken: 'reset-token'),
+      ),
+    );
+    await tester.pumpAndSettle();
 
-    await tester.pumpWidget(const MyApp());
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
-    await tester.pump(const Duration(seconds: 3));
-
-    expect(find.text('Calendar++'), findsNWidgets(2));
-    expect(find.text('Welcome Back'), findsOneWidget);
-    expect(find.text('LOGIN'), findsOneWidget);
-    expect(find.text('REGISTER'), findsOneWidget);
-    expect(find.text('Email'), findsOneWidget);
-    expect(find.text('Password'), findsOneWidget);
-    expect(find.text('Login'), findsOneWidget);
+    expect(find.text('Reset Password'), findsOneWidget);
+    expect(find.text('Choose a New Password'), findsOneWidget);
+    expect(find.text('New password'), findsOneWidget);
+    expect(find.text('Confirm password'), findsOneWidget);
   });
 }

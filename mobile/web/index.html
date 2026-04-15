@@ -19,6 +19,65 @@
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="A new Flutter project.">
+  <style>
+    .desktop-site-banner {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(15, 23, 42, 0.92);
+      color: #f8fafc;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      box-shadow: 0 18px 44px rgba(15, 23, 42, 0.28);
+      font-family: Arial, Helvetica, sans-serif;
+      backdrop-filter: blur(12px);
+    }
+
+    .desktop-site-banner.show {
+      display: flex;
+    }
+
+    .desktop-site-banner-copy {
+      flex: 1;
+      min-width: 0;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .desktop-site-banner-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .desktop-site-banner-btn,
+    .desktop-site-banner-dismiss {
+      border: none;
+      border-radius: 999px;
+      padding: 9px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .desktop-site-banner-btn {
+      background: #38bdf8;
+      color: #082f49;
+    }
+
+    .desktop-site-banner-dismiss {
+      background: transparent;
+      color: #cbd5e1;
+      padding: 9px 10px;
+    }
+  </style>
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -33,6 +92,55 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <div id="desktop-site-banner" class="desktop-site-banner" role="status" aria-live="polite">
+    <div class="desktop-site-banner-copy">Prefer the full desktop site instead?</div>
+    <div class="desktop-site-banner-actions">
+      <button id="desktop-site-button" class="desktop-site-banner-btn" type="button">Use desktop site</button>
+      <button id="desktop-site-dismiss" class="desktop-site-banner-dismiss" type="button" aria-label="Dismiss">Not now</button>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      if (params.get('source') !== 'desktop-redirect') {
+        return;
+      }
+
+      window.addEventListener('DOMContentLoaded', function () {
+        var banner = document.getElementById('desktop-site-banner');
+        var desktopButton = document.getElementById('desktop-site-button');
+        var dismissButton = document.getElementById('desktop-site-dismiss');
+        if (!banner || !desktopButton || !dismissButton) {
+          return;
+        }
+
+        var clearBanner = function () {
+          banner.classList.remove('show');
+          params.delete('source');
+          var nextQuery = params.toString();
+          var nextUrl = window.location.pathname + (nextQuery ? '?' + nextQuery : '') + window.location.hash;
+          window.history.replaceState({}, '', nextUrl);
+        };
+
+        banner.classList.add('show');
+
+        var autoHide = window.setTimeout(clearBanner, 7000);
+        dismissButton.addEventListener('click', function () {
+          window.clearTimeout(autoHide);
+          clearBanner();
+        });
+
+        desktopButton.addEventListener('click', function () {
+          try {
+            window.localStorage.setItem('calpp_desktop_site_until', String(Date.now() + (6 * 60 * 60 * 1000)));
+          } catch (error) {
+            // Ignore storage failures and continue with the redirect.
+          }
+          window.location.replace('/');
+        });
+      });
+    })();
+  </script>
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader

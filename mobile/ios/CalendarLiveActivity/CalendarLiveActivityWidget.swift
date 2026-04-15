@@ -259,7 +259,7 @@ private struct LockScreenView: View {
 
     var body: some View {
         let accent = taskAccentColor(for: attributes.taskType)
-        let statusText = liveActivityStatusText(
+        let phase = liveActivityPhase(
             startTime: state.startTime,
             endTime: state.endTime,
             isCompleted: state.isCompleted
@@ -270,56 +270,82 @@ private struct LockScreenView: View {
             isCompleted: state.isCompleted
         )
 
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .center, spacing: 0) {
+            // Accent bar
             RoundedRectangle(cornerRadius: 2)
                 .fill(accent)
                 .frame(width: 3)
-                .frame(maxHeight: 72)
+                .frame(maxHeight: 68)
+                .padding(.trailing, 12)
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text(liveActivityPrimaryTimeText(
-                    startTime: state.startTime,
-                    endTime: state.endTime,
-                    isCompleted: state.isCompleted
-                ))
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.secondary)
+            // Main content
+            VStack(alignment: .leading, spacing: 4) {
+                // Time row
+                HStack(spacing: 6) {
+                    Image(systemName: phase == .ongoing ? "dot.radiowaves.left.and.right" : "clock")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(statusColor)
+                    Text(liveActivityPrimaryTimeText(
+                        startTime: state.startTime,
+                        endTime: state.endTime,
+                        isCompleted: state.isCompleted
+                    ))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
 
+                    Text("•")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+
+                    Text(liveActivityStatusText(
+                        startTime: state.startTime,
+                        endTime: state.endTime,
+                        isCompleted: state.isCompleted
+                    ).uppercased())
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(statusColor)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(statusColor.opacity(0.15), in: Capsule())
+                }
+
+                // Title
                 Text(state.title)
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
 
+                // Description or location
                 if let preview = descriptionPreview(state.description) {
                     Text(preview)
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                }
-
-                HStack(spacing: 8) {
-                    Text(statusText.uppercased())
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .foregroundColor(statusColor)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(statusColor.opacity(0.14), in: Capsule())
-
-                    if let location = state.location, !location.isEmpty {
-                        Label(location, systemImage: "mappin")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else if let location = state.location, !location.isEmpty {
+                    Label(location, systemImage: "mappin")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
             }
 
             Spacer(minLength: 8)
 
-            Image(systemName: "calendar")
-                .font(.system(size: 18))
-                .foregroundColor(accent)
-                .padding(.top, 2)
+            // Right: countdown
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(
+                    phase == .ongoing
+                        ? (state.endTime.map(relativeTimerText) ?? "Now")
+                        : relativeTimerText(to: state.startTime)
+                )
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(accent)
+
+                Text(phase == .ongoing ? "left" : "away")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -434,39 +460,61 @@ private struct ExpandedView: View {
             isCompleted: state.isCompleted
         )
 
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
+        VStack(alignment: .leading, spacing: 0) {
+            // Source label row
+            HStack(spacing: 5) {
                 Image(systemName: "calendar")
-                    .foregroundColor(accent)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(accent)
                 Text("Calendar++")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                Text(liveActivityStatusText(
-                    startTime: state.startTime,
-                    endTime: state.endTime,
-                    isCompleted: state.isCompleted
-                ))
-                    .font(.caption2.bold())
-                    .foregroundColor(statusColor)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
                 Spacer()
-                Text(headerTimeText(phase: phase))
-                    .font(.caption2.bold())
-                    .foregroundColor(accent)
+                // Live status pill
+                HStack(spacing: 4) {
+                    if phase == .ongoing {
+                        Circle()
+                            .fill(statusColor)
+                            .frame(width: 5, height: 5)
+                    }
+                    Text(liveActivityStatusText(
+                        startTime: state.startTime,
+                        endTime: state.endTime,
+                        isCompleted: state.isCompleted
+                    ).uppercased())
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(statusColor)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(statusColor.opacity(0.15), in: Capsule())
             }
+            .padding(.bottom, 8)
 
+            // Title
             Text(state.title)
-                .font(.headline)
-                .foregroundColor(.primary)
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(.primary)
                 .lineLimit(2)
+                .padding(.bottom, 4)
 
+            // Description
             if let preview = descriptionPreview(state.description) {
                 Text(preview)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
                     .lineLimit(2)
+                    .padding(.bottom, 6)
             }
 
-            HStack(spacing: 16) {
+            // Divider
+            Rectangle()
+                .fill(Color.white.opacity(0.08))
+                .frame(height: 1)
+                .padding(.bottom, 8)
+
+            // Time + location row
+            HStack(spacing: 14) {
                 Label(
                     liveActivityPrimaryTimeText(
                         startTime: state.startTime,
@@ -475,30 +523,19 @@ private struct ExpandedView: View {
                     ),
                     systemImage: phase == .ongoing ? "hourglass.bottomhalf.filled" : "clock"
                 )
-                    .font(.caption.bold())
-                    .foregroundColor(accent)
-            }
-
-            HStack(spacing: 12) {
-                Text(
-                    liveActivityStatusText(
-                        startTime: state.startTime,
-                        endTime: state.endTime,
-                        isCompleted: state.isCompleted
-                    )
-                )
-                    .font(.caption)
-                    .foregroundColor(statusColor)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(accent)
 
                 if let location = state.location, !location.isEmpty {
                     Label(location, systemImage: "mappin")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
         }
-        .padding(12)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
     }
 
     private func headerTimeText(phase: LiveActivityPhase) -> String {
@@ -545,26 +582,25 @@ private struct ExpandedTrailingView: View {
             isCompleted: state.isCompleted
         )
 
-        VStack(alignment: .trailing, spacing: 8) {
+        VStack(alignment: .trailing, spacing: 4) {
             Text(
                 phase == .ongoing
                     ? (state.endTime.map(relativeTimerText) ?? "Now")
                     : relativeTimerText(to: state.startTime)
             )
-            .font(.system(size: 16, weight: .bold, design: .rounded))
+            .font(.system(size: 20, weight: .bold, design: .rounded))
             .monospacedDigit()
-            .foregroundColor(accent)
+            .foregroundStyle(accent)
 
             Text(
-                phase == .ongoing
-                    ? "until \(state.endTime.map(timeString) ?? "now")"
-                    : "starts \(timeString(state.startTime))"
+                phase == .ongoing ? "remaining" : "until start"
             )
-            .font(.caption2)
-            .foregroundColor(.secondary)
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.tertiary)
             .multilineTextAlignment(.trailing)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.trailing, 4)
     }
 }
 

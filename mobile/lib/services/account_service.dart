@@ -44,6 +44,7 @@ class AccountService {
     required bool reminderEnabled,
     required int reminderMinutesBefore,
     required String reminderDelivery,
+    String? avatarUrl,
   }) async {
     final json = await _post(
       'saveaccountsettings',
@@ -54,6 +55,7 @@ class AccountService {
         'reminderEnabled': reminderEnabled,
         'reminderMinutesBefore': reminderMinutesBefore,
         'reminderDelivery': reminderDelivery,
+        ...?avatarUrl == null ? null : {'avatarUrl': avatarUrl},
       },
     );
     final nextSession = _updatedSession(session, json).copyWith(
@@ -68,6 +70,36 @@ class AccountService {
     );
   }
 
+  Future<({
+    UserSession session,
+    String imageUrl,
+    String storagePath,
+    String bucket,
+    String mimeType,
+  })> uploadImage({
+    required UserSession session,
+    required String imageDataUrl,
+    required String purpose,
+    required String fileName,
+  }) async {
+    final json = await _post(
+      'uploadimage',
+      session,
+      {
+        'imageDataUrl': imageDataUrl,
+        'purpose': purpose,
+        'fileName': fileName,
+      },
+    );
+    return (
+      session: _updatedSession(session, json),
+      imageUrl: (json['imageUrl'] ?? '').toString(),
+      storagePath: (json['storagePath'] ?? '').toString(),
+      bucket: (json['bucket'] ?? '').toString(),
+      mimeType: (json['mimeType'] ?? '').toString(),
+    );
+  }
+
   Future<AccountSettingsResult> regenerateFeed({
     required UserSession session,
   }) async {
@@ -77,6 +109,30 @@ class AccountService {
         (json['settings'] as Map?)?.cast<String, dynamic>() ?? const {},
       ),
       session: _updatedSession(session, json),
+    );
+  }
+
+  Future<({UserSession session, String message})> requestEmailChange({
+    required UserSession session,
+    required String nextEmail,
+  }) async {
+    final json = await _post('requestemailchange', session, {
+      'nextEmail': nextEmail.trim(),
+    });
+    return (
+      session: _updatedSession(session, json),
+      message: (json['message'] ?? 'Verification sent to the new email address.').toString(),
+    );
+  }
+
+  Future<({UserSession session, String icsContent, String filename})> exportCalendar({
+    required UserSession session,
+  }) async {
+    final json = await _post('exportcalendar', session, {});
+    return (
+      session: _updatedSession(session, json),
+      icsContent: (json['ics'] ?? '').toString(),
+      filename: (json['filename'] ?? 'calendar-plus-plus.ics').toString(),
     );
   }
 
@@ -95,17 +151,23 @@ class AccountService {
       }),
     );
 
-    final json = _decodeBody(response.body);
     if (response.statusCode >= 200 && response.statusCode < 300) {
+      final json = _decodeBody(response.body);
       return json;
     }
 
+    final json = _decodeBody(response.body);
     throw Exception(json['error']?.toString() ?? 'Request failed.');
   }
 
   Map<String, dynamic> _decodeBody(String body) {
     if (body.isEmpty) {
       return {};
+    }
+
+    final trimmed = body.trimLeft();
+    if (trimmed.startsWith('<!DOCTYPE html') || trimmed.startsWith('<html')) {
+      return const {'error': 'Upload failed. The server returned HTML instead of JSON.'};
     }
 
     final decoded = jsonDecode(body);
