@@ -2057,59 +2057,26 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
                 // ── Swipeable month grid ──────────────────────────────────
                 SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: 336,
-                    child: PageView.builder(
-                      controller: _monthPageController,
-                      onPageChanged: (page) {
-                        final base = DateTime(today.year, today.month);
-                        unawaited(
-                          _setDisplayedMonth(
-                            DateTime(base.year, base.month + (page - 1200)),
-                          ),
-                        );
-                      },
-                      itemBuilder: (context, page) {
-                        final base = DateTime(today.year, today.month);
-                        final pageMonth = DateTime(
-                          base.year,
-                          base.month + (page - 1200),
-                        );
-                        final firstDay =
-                            DateTime(
-                              pageMonth.year,
-                              pageMonth.month,
-                              1,
-                            ).weekday %
-                            7;
-                        final daysInMonth = DateTime(
-                          pageMonth.year,
-                          pageMonth.month + 1,
-                          0,
-                        ).day;
-                        final totalCells = firstDay + daysInMonth;
-                        final rows = (totalCells / 7).ceil();
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final viewportHeight = (MediaQuery.sizeOf(context).height *
+                              0.38)
+                          .clamp(300.0, 430.0)
+                          .toDouble();
 
-                        return GridView.builder(
-                          physics: const NeverScrollableScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 7,
-                                childAspectRatio: 0.9,
-                                mainAxisSpacing: 2,
-                                crossAxisSpacing: 2,
+                      return SizedBox(
+                        height: viewportHeight,
+                        child: PageView.builder(
+                          controller: _monthPageController,
+                          onPageChanged: (page) {
+                            final base = DateTime(today.year, today.month);
+                            unawaited(
+                              _setDisplayedMonth(
+                                DateTime(
+                                  base.year,
+                                  base.month + (page - 1200),
+                                ),
                               ),
-                          itemCount: rows * 7,
-                          itemBuilder: (context, index) {
-                            final dayNum = index - firstDay + 1;
-                            if (dayNum < 1 || dayNum > daysInMonth) {
-                              return const SizedBox.shrink();
-                            }
-                            final date = DateTime(
-                              pageMonth.year,
-                              pageMonth.month,
-                              dayNum,
                             );
                             return DayGrid(
                               day: dayNum,
@@ -2137,9 +2104,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                               },
                             );
                           },
-                        );
-                      },
-                    ),
+                        ),
+                      );
+                    },
                   ),
                 ),
 

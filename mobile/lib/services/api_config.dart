@@ -8,7 +8,7 @@ class ApiConfig {
     }
 
     if (kDebugMode && kIsWeb) {
-      return 'http://localhost:5000/api';
+      return 'http://localhost:5001/api';
     }
 
     return 'https://calendarplusplus.xyz/api';
