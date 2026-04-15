@@ -42,6 +42,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final BiometricAuthService _biometricAuthService = BiometricAuthService();
   final ThemeService _themeService = ThemeService();
   static const int _maxAvatarBytes = 12 * 1024 * 1024;
+  static const int _maxThemeImageBytes = 12 * 1024 * 1024;
   static const List<String> _reminderDeliveryOptions = [
     'email',
     'push',
@@ -736,7 +737,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _pickThemeBackground(ImageSource source) async {
-    final path = await _themeService.pickBackgroundImage(source);
+    final path = await _pickAndUploadThemeImage(
+      source,
+      fileNamePrefix: 'theme-background',
+    );
     if (path == null || !mounted) return;
     setState(() {
       _draftBgPath = path;
@@ -747,12 +751,66 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ThemeSceneSlot slot,
     ImageSource source,
   ) async {
-    final path = await _themeService.pickBackgroundImage(source);
+    final path = await _pickAndUploadThemeImage(
+      source,
+      fileNamePrefix: slot.key,
+    );
     if (path == null || !mounted) return;
     setState(() {
       _draftSceneImages = Map<String, String>.from(_draftSceneImages)
         ..[slot.key] = path;
     });
+  }
+
+  Future<String?> _pickAndUploadThemeImage(
+    ImageSource source, {
+    required String fileNamePrefix,
+  }) async {
+    try {
+      final picker = ImagePicker();
+      final XFile? picked = await picker.pickImage(
+        source: source,
+        imageQuality: 84,
+      );
+      if (picked == null) {
+        return null;
+      }
+
+      final bytes = await picked.readAsBytes();
+      if (bytes.length > _maxThemeImageBytes) {
+        if (mounted) {
+          _showSnackBar('Theme image must be 12 MB or smaller.');
+        }
+        return null;
+      }
+
+      final rawExtension = _fileExtension(picked.name);
+      final extension = rawExtension.isEmpty ? 'jpg' : rawExtension;
+      final mimeType = _mimeTypeForExtension(extension);
+      if (!mimeType.startsWith('image/')) {
+        if (mounted) {
+          _showSnackBar(
+            'Theme image must be PNG, JPEG, GIF, WEBP, AVIF, HEIC, or HEIF.',
+          );
+        }
+        return null;
+      }
+
+      final upload = await _accountService.uploadImage(
+        session: _session,
+        imageDataUrl: 'data:$mimeType;base64,${base64Encode(bytes)}',
+        purpose: 'theme-backgrounds',
+        fileName: '$fileNamePrefix.$extension',
+      );
+      _session = upload.session;
+      widget.onSessionUpdated(_session);
+      return upload.imageUrl;
+    } catch (error) {
+      if (mounted) {
+        _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
+      }
+      return null;
+    }
   }
 
   List<Color> _dynamicAccentChoices(BuildContext context, Color seedColor) {
@@ -2124,7 +2182,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             if (savedThemes.isNotEmpty) ...[
               const SizedBox(height: 16),
               ...savedThemes.map((theme) {
-                final isCurrent = _themeService.themePackMatches(
+                final isCurrent = ThemeService.themePackMatches(
                   _themeService.current,
                   theme,
                 );
