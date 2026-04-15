@@ -306,9 +306,34 @@ function parseFirebaseStorageUrl(value)
     return null;
 }
 
-function isAllowedStorageAssetUrl(value)
+function unwrapStorageAssetProxyUrl(value)
 {
     const trimmed = String(value || '').trim();
+    if(!trimmed)
+    {
+        return '';
+    }
+
+    try
+    {
+        const parsed = new URL(trimmed);
+        if(!/\/api\/storageasset$/i.test(parsed.pathname))
+        {
+            return trimmed;
+        }
+
+        const nestedUrl = String(parsed.searchParams.get('url') || '').trim();
+        return nestedUrl || trimmed;
+    }
+    catch
+    {
+        return trimmed;
+    }
+}
+
+function isAllowedStorageAssetUrl(value)
+{
+    const trimmed = unwrapStorageAssetProxyUrl(value);
     if(!trimmed)
     {
         return false;
@@ -331,10 +356,11 @@ function isAllowedStorageAssetUrl(value)
 
 async function normalizeStorageAssetUrl(value)
 {
-    const parsed = parseFirebaseStorageUrl(value);
+    const normalizedInput = unwrapStorageAssetProxyUrl(value);
+    const parsed = parseFirebaseStorageUrl(normalizedInput);
     if(!parsed)
     {
-        return String(value || '');
+        return normalizedInput;
     }
 
     try
@@ -344,7 +370,7 @@ async function normalizeStorageAssetUrl(value)
     }
     catch
     {
-        return String(value || '');
+        return normalizedInput;
     }
 }
 
