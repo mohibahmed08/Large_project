@@ -75,7 +75,7 @@ const ITEM_TYPE_META = {
     },
 };
 
-function normalizeItemType(taskLike) {
+export function normalizeItemType(taskLike) {
     const source = String(taskLike?.source || '').toLowerCase();
     if (source === 'plan' || source === 'event' || source === 'task') {
         return source;
@@ -83,11 +83,11 @@ function normalizeItemType(taskLike) {
     return 'event';
 }
 
-function formatTimeValue(dateValue) {
+export function formatTimeValue(dateValue) {
     return `${dateValue.getHours().toString().padStart(2, '0')}:${dateValue.getMinutes().toString().padStart(2, '0')}`;
 }
 
-function formatTaskTime(dateValue) {
+export function formatTaskTime(dateValue) {
     const date = new Date(dateValue);
     if (Number.isNaN(date.getTime())) {
         return 'No time';
@@ -96,7 +96,7 @@ function formatTaskTime(dateValue) {
     return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-function taskGroupLabel(task) {
+export function taskGroupLabel(task) {
     const explicitGroup = String(task?.group || '').trim();
     if (explicitGroup) {
         return explicitGroup;
@@ -110,7 +110,7 @@ function taskGroupLabel(task) {
     return source ? source.charAt(0).toUpperCase() + source.slice(1) : 'Other';
 }
 
-function parseTaskColor(colorValue) {
+export function parseTaskColor(colorValue) {
     const normalized = String(colorValue || '').trim().replace('#', '');
     if (!normalized || (normalized.length !== 6 && normalized.length !== 8)) {
         return '';
@@ -285,6 +285,10 @@ function renderCalendarMarkdown(text) {
     return blocks.length ? blocks : text;
 }
 
+export function getWeatherImg(currentWeather) {
+    return getWeatherBackgroundImage(currentWeather);
+}
+
 function normalizeDateKey(dateValue) {
     const date = new Date(dateValue);
     date.setHours(0, 0, 0, 0);
@@ -301,7 +305,7 @@ function weatherCodeToEmoji(code) {
     return '•';
 }
 
-function weatherCodeToLabel(code) {
+export function weatherCodeToLabel(code) {
     if ([0].includes(code)) return 'Clear';
     if ([1].includes(code)) return 'Mostly clear';
     if ([2].includes(code)) return 'Partly cloudy';
@@ -313,7 +317,7 @@ function weatherCodeToLabel(code) {
     return 'Weather';
 }
 
-function weatherGlyph(code) {
+export function weatherGlyph(code) {
     if ([0, 1].includes(code)) return '\u2600\uFE0F';
     if ([2, 3].includes(code)) return '\u26C5';
     if ([45, 48].includes(code)) return '\uD83C\uDF2B\uFE0F';
@@ -323,7 +327,7 @@ function weatherGlyph(code) {
     return '\u2022';
 }
 
-function dayWeatherRange() {
+export function dayWeatherRange() {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     start.setDate(start.getDate() - 7);
@@ -381,6 +385,7 @@ function Calendar({
     reminderDefaults,
     onSelectedDateChange,
     searchQuery,
+    setSearchQuery,
     onSearchMetaChange,
 }) {
     const [date] = useState(() => new Date());
@@ -597,7 +602,6 @@ function Calendar({
                 }
 
                 if (!ignore) {
-                    onSessionRefresh?.(data.jwtToken);
                     setSearchResults(Array.isArray(data.results) ? data.results : []);
                 }
             } catch (error) {
@@ -619,10 +623,8 @@ function Calendar({
     }, [
         apiRoot,
         session?.userId,
-        session?.jwtToken,
         trimmedSearchQuery,
         isSearchActive,
-        onSessionRefresh,
         refreshKey,
         calendarReloadTick,
     ]);
@@ -1366,12 +1368,25 @@ function Calendar({
     return (
         <div className="calendar-calendar-background">
             <div className="calendar-month-interactable-header">
-                <div className="calendar-month-header-side">
-                    {singleMonth && <img onClick={() => setCurrentMonthIndex(currentMonthIndex - 1)} className="calendar-month-arrow" src={UpArrow} alt="Previous month" />}
-                </div>
-                <h1 className="calendar-month-month-name">{monthName} {year}</h1>
-                <div className="calendar-month-header-side">
-                    {singleMonth && <img onClick={() => setCurrentMonthIndex(currentMonthIndex + 1)} className="calendar-month-arrow" src={DownArrow} alt="Next month" />}
+                <div className="calendar-month-header-row">
+                    <div className="calendar-month-header-side calendar-month-header-left">
+                        {singleMonth && <img onClick={() => setCurrentMonthIndex(currentMonthIndex - 1)} className="calendar-month-arrow" src={UpArrow} alt="Previous month" />}
+                    </div>
+                    <h1 className="calendar-month-month-name">{monthName} {year}</h1>
+                    <div className="calendar-month-header-side calendar-month-header-right">
+                        {singleMonth && <img onClick={() => setCurrentMonthIndex(currentMonthIndex + 1)} className="calendar-month-arrow" src={DownArrow} alt="Next month" />}
+                    </div>
+                    <div className="calendar-month-header-search">
+                        <div className="calendar-month-header-search-inner">
+                            <input
+                                className="calendar-search-input"
+                                type="search"
+                                value={searchQuery}
+                                onChange={(event) => setSearchQuery?.(event.target.value)}
+                                placeholder="Search"
+                            />
+                        </div>
+                    </div>
                 </div>
             </div>
 

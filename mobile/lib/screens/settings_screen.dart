@@ -1,13 +1,16 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/account_settings.dart';
@@ -68,7 +71,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _pendingAvatarDataUrl;
   bool _avatarMarkedForRemoval = false;
   static const List<int> _reminderOptions = [0, 5, 10, 15, 30, 60, 120, 1440];
-  // Theme editor state
   Color _draftAccent = AppTheme.accent;
   String _draftPresetId = 'default';
   String _draftBackgroundPackageId = 'default';
@@ -76,6 +78,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   WeatherThemeKind _previewWeatherKind = WeatherThemeKind.clear;
   String _draftBgPath = '';
   BoxFit _draftBgFit = BoxFit.cover;
+  final TextEditingController _themeImportController = TextEditingController();
 
   Future<bool> _confirmBiometricSetup({
     required String reason,
@@ -162,6 +165,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _firstNameController.dispose();
     _lastNameController.dispose();
     _newEmailController.dispose();
+    _themeImportController.dispose();
     super.dispose();
   }
 
@@ -184,6 +188,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _reminderDelivery = result.settings.reminderDefaults.reminderDelivery;
       _pendingAvatarDataUrl = null;
       _avatarMarkedForRemoval = false;
+      await _themeService.mergeAccountThemePacks(result.settings.customThemes);
       setState(() {});
     } catch (error) {
       if (!mounted) return;
@@ -267,8 +272,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _isSaving = true;
     });
     try {
-      final avatarDataUrl =
-          _pendingAvatarDataUrl ?? (_avatarMarkedForRemoval ? '' : null);
+      String? avatarUrl;
+      if (_pendingAvatarDataUrl != null) {
+        final upload = await _accountService.uploadImage(
+          session: _session,
+          imageDataUrl: _pendingAvatarDataUrl!,
+          purpose: 'avatars',
+          fileName: 'avatar.png',
+        );
+        _session = upload.session;
+        avatarUrl = upload.imageUrl;
+      } else if (_avatarMarkedForRemoval) {
+        avatarUrl = '';
+      }
       final result = await _accountService.saveSettings(
         session: _session,
         firstName: _firstNameController.text.trim(),
@@ -276,7 +292,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         reminderEnabled: _reminderEnabled,
         reminderMinutesBefore: _reminderMinutesBefore,
         reminderDelivery: _reminderDelivery,
-        avatarDataUrl: avatarDataUrl,
+        avatarUrl: avatarUrl,
       );
       if (!mounted) return;
       _session = result.session;
@@ -1177,6 +1193,282 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _importSharedThemeFromSettings() async {
+    final value = _themeImportController.text.trim();
+    if (value.isEmpty) {
+      _showSnackBar('Paste a share link or theme code first.');
+      return;
+    }
+    try {
+      final result = await _themeService.importSharedTheme(_session, value);
+      _session = result.session;
+      widget.onSessionUpdated(_session);
+      _themeImportController.clear();
+      await _loadTheme();
+      _showSnackBar('Imported "${result.theme.name}" and applied it.');
+    } catch (error) {
+      _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _shareThemePack(
+    BuildContext context,
+    MobileTheme theme,
+  ) async {
+    final box = context.findRenderObject() as RenderBox?;
+    MobileTheme shareTheme = theme;
+    if ((shareTheme.shareUrl ?? '').trim().isEmpty &&
+        (shareTheme.shareCode ?? '').trim().isEmpty) {
+      final result = await _themeService.saveSharedTheme(_session, shareTheme);
+      _session = result.session;
+      widget.onSessionUpdated(_session);
+      shareTheme = result.theme;
+      await _loadTheme();
+    }
+    if (!mounted) return;
+    await Share.share(
+      'Check out this Calendar++ theme: ${shareTheme.name}'
+      '${(shareTheme.shareCode ?? '').trim().isNotEmpty ? ' (${shareTheme.shareCode})' : ''}'
+      '${(shareTheme.shareUrl ?? '').trim().isNotEmpty ? ' ${shareTheme.shareUrl}' : ''}',
+      subject: 'Calendar++ theme: ${shareTheme.name}',
+      sharePositionOrigin:
+          box == null ? null : box.localToGlobal(Offset.zero) & box.size,
+    );
+  }
+
+  Future<void> _openThemeShareSheet(MobileTheme theme) async {
+    String mode = 'qr';
+    MobileTheme shareTheme = theme;
+    if ((shareTheme.shareUrl ?? '').trim().isEmpty &&
+        (shareTheme.shareCode ?? '').trim().isEmpty) {
+      final result = await _themeService.saveSharedTheme(_session, shareTheme);
+      _session = result.session;
+      widget.onSessionUpdated(_session);
+      shareTheme = result.theme;
+      await _loadTheme();
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) => Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(28),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+                child: Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF101828).withValues(alpha: 0.84),
+                    borderRadius: BorderRadius.circular(28),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+                  ),
+                  child: SafeArea(
+                    top: false,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 40,
+                            height: 5,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.22),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text('Share Theme', style: Theme.of(context).textTheme.titleLarge),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Native iOS share sheet for sending out. Deep links import themes back in.',
+                          style: TextStyle(color: AppTheme.textMuted, height: 1.4),
+                        ),
+                        const SizedBox(height: 16),
+                        CupertinoSlidingSegmentedControl<String>(
+                          groupValue: mode,
+                          children: const {
+                            'qr': Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              child: Text('QR'),
+                            ),
+                            'link': Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              child: Text('Link'),
+                            ),
+                            'code': Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              child: Text('Code'),
+                            ),
+                          },
+                          onValueChanged: (value) {
+                            if (value == null) return;
+                            setSheetState(() {
+                              mode = value;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20),
+                            color: Colors.white.withValues(alpha: 0.08),
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                          ),
+                          child: mode == 'qr'
+                              ? Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if ((shareTheme.shareUrl ?? '').isNotEmpty)
+                                      QrImageView(
+                                        data: shareTheme.shareUrl!,
+                                        size: 210,
+                                        backgroundColor: Colors.white,
+                                      )
+                                    else
+                                      const Text('Create a share link first.'),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      shareTheme.shareUrl ?? 'Create a share link first.',
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                )
+                              : Text(
+                                  mode == 'link'
+                                      ? (shareTheme.shareUrl ?? 'Create a share link first.')
+                                      : (shareTheme.shareCode ?? 'Create a share code first.'),
+                                ),
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: FilledButton(
+                                onPressed: () async {
+                                  final result = await _themeService.saveSharedTheme(
+                                    _session,
+                                    shareTheme,
+                                  );
+                                  _session = result.session;
+                                  widget.onSessionUpdated(_session);
+                                  shareTheme = result.theme;
+                                  await _loadTheme();
+                                  setSheetState(() {});
+                                },
+                                child: Text(
+                                  (shareTheme.shareCode ?? '').isEmpty
+                                      ? 'Create Share'
+                                      : 'Refresh Share',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => _shareThemePack(context, shareTheme),
+                                child: const Text('Native Share'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteThemeFromLibrary(MobileTheme theme) async {
+    try {
+      _session = await _themeService.deleteSharedTheme(_session, theme);
+      widget.onSessionUpdated(_session);
+      if (mounted) {
+        setState(() {});
+      }
+      _showSnackBar('Theme removed.');
+    } catch (error) {
+      _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Widget _buildThemeSharingCard(BuildContext context) {
+    final savedThemes = _themeService.savedThemePacks;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Theme Sharing', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 4),
+            const Text(
+              'Send themes with the native iOS share sheet, or import a shared link/code and auto-apply it.',
+              style: TextStyle(color: AppTheme.textMuted, height: 1.4),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _themeImportController,
+              decoration: const InputDecoration(
+                labelText: 'Import shared theme',
+                hintText: 'Paste a share link or 6-digit code',
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton(
+                    onPressed: _importSharedThemeFromSettings,
+                    child: const Text('Import & Apply'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                OutlinedButton(
+                  onPressed: () => _openThemeShareSheet(_themeService.current),
+                  child: const Text('Share Current'),
+                ),
+              ],
+            ),
+            if (savedThemes.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              ...savedThemes.map((theme) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(theme.name),
+                    subtitle: Text(theme.authorLabel ?? theme.description),
+                    trailing: Wrap(
+                      spacing: 6,
+                      children: [
+                        IconButton(
+                          onPressed: () => _openThemeShareSheet(theme),
+                          icon: const Icon(Icons.ios_share_outlined),
+                        ),
+                        IconButton(
+                          onPressed: () => _deleteThemeFromLibrary(theme),
+                          icon: const Icon(Icons.delete_outline),
+                        ),
+                      ],
+                    ),
+                  )),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   // ---------------------------------------------------------------------------
 
   @override
@@ -1239,6 +1531,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             if (avatarDataUrl.isNotEmpty)
                               OutlinedButton(
                                 onPressed: _isSaving ? null : _removeAvatarImage,
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  side: BorderSide(
+                                    color: Colors.white.withValues(alpha: 0.22),
+                                  ),
+                                ),
                                 child: const Text('Remove picture'),
                               ),
                           ],
@@ -1501,6 +1799,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 16),
+                _buildThemeSharingCard(context),
                 const SizedBox(height: 16),
                 _buildAppearanceCard(context),
               ],

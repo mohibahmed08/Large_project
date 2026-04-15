@@ -16,7 +16,6 @@ function DayGrid({
     onSelectTask,
     selectedDate,
 }){
-
     // Normalize the current day once so date comparisons stay stable.
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -37,7 +36,7 @@ function DayGrid({
     const dailyWeatherCode = weather ? getDailyGeneralWeather(weather.hourly, targetDate) : null;
     const generalWeather = dailyWeatherCode === null ? '' : weatherCodeToText(dailyWeatherCode);
     const isWithinWeather = Boolean(generalWeather);
-    
+
     useEffect(() => {
         if (!isToday) {
             return;
@@ -121,14 +120,13 @@ function DayGrid({
             </div>
         </>
     );
-
 }
 
 // Map Open-Meteo weather codes to display labels.
-function weatherCodeToText(code) {
+export function weatherCodeToText(code) {
     switch (code) {
-        case 0: return "Clear sky";               
-        case 1: return "Mostly clear";                 
+        case 0: return "Clear sky";
+        case 1: return "Mostly clear";
         case 2: return "Partly cloudy";
         case 3: return "Overcast";
         case 45: case 48: return "Foggy";
@@ -150,12 +148,19 @@ function buildLocalDateKey(dateValue) {
     return `${dateValue.getFullYear()}-${String(dateValue.getMonth() + 1).padStart(2, '0')}-${String(dateValue.getDate()).padStart(2, '0')}`;
 }
 
-// Use the most frequent hourly weather code for the requested local date.
-function getDailyGeneralWeather(hourlyData, targetDate) {
-    const targetDateKey = buildLocalDateKey(targetDate);
-    const hourlyTimes = Array.isArray(hourlyData?.time) ? hourlyData.time : [];
-    const hourlyWeather = Array.isArray(hourlyData?.weathercode) ? hourlyData.weathercode : [];
-    const dayHours = hourlyWeather.filter((code, index) => String(hourlyTimes[index] || '').startsWith(targetDateKey));
+// Support both the current hourly payload shape and the older array/dayIndex test helper shape.
+export function getDailyGeneralWeather(hourlyInput, target) {
+    let dayHours = [];
+
+    if (Array.isArray(hourlyInput) && Number.isInteger(target)) {
+        const start = target * 24;
+        dayHours = hourlyInput.slice(start, start + 24);
+    } else {
+        const hourlyTimes = Array.isArray(hourlyInput?.time) ? hourlyInput.time : [];
+        const hourlyWeather = Array.isArray(hourlyInput?.weathercode) ? hourlyInput.weathercode : [];
+        const targetDateKey = target instanceof Date ? buildLocalDateKey(target) : '';
+        dayHours = hourlyWeather.filter((code, index) => String(hourlyTimes[index] || '').startsWith(targetDateKey));
+    }
 
     if (dayHours.length === 0) {
         return null;
@@ -176,5 +181,5 @@ function getDailyGeneralWeather(hourlyData, targetDate) {
     return generalCode;
 }
 
-//EXPORT TO OTHER JSX CLASSES FOR USABILITY
+// EXPORT TO OTHER JSX CLASSES FOR USABILITY
 export default DayGrid;

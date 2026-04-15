@@ -44,23 +44,57 @@ export function getContrastTextColor(color, light = '#f8fafc', dark = '#0f172a')
 }
 
 export function normalizeGradient(gradient, fallback = {
+    type: 'linear',
     angle: 135,
-    colors: ['#0f172a', '#2563eb', '#7dd3fc'],
+    colors: ['#2563eb'],
 }) {
     const rawColors = Array.isArray(gradient?.colors) ? gradient.colors : fallback.colors;
     const colors = rawColors
         .map((color) => normalizeHexColor(color, ''))
         .filter(Boolean);
+    const rawStops = Array.isArray(gradient?.stops) ? gradient.stops : [];
+    const fallbackStops = colors.length >= 1
+        ? colors.slice(0, 5).map((color, index, palette) => ({
+            color,
+            position: palette.length === 1 ? 0 : Math.round((index / (palette.length - 1)) * 100),
+        }))
+        : [
+            { color: fallback.colors[0] || '#2563eb', position: 0 },
+        ];
+    const stops = rawStops
+        .map((stop, index) => ({
+            color: normalizeHexColor(stop?.color || colors[index] || fallback.colors[index] || fallback.colors[0]),
+            position: Math.max(0, Math.min(100, Math.round(Number(stop?.position ?? (index * 50))))),
+        }))
+        .filter((stop) => stop.color)
+        .sort((first, second) => first.position - second.position);
+    const normalizedStops = stops.length >= 1 ? stops.slice(0, 8) : fallbackStops;
 
     return {
+        type: String(gradient?.type || fallback.type || 'linear').trim().toLowerCase() === 'radial' ? 'radial' : 'linear',
         angle: Number.isFinite(Number(gradient?.angle)) ? Number(gradient.angle) : fallback.angle,
-        colors: colors.length >= 2 ? colors.slice(0, 3) : [...fallback.colors],
+        colors: normalizedStops.map((stop) => stop.color),
+        stops: normalizedStops,
     };
 }
 
 export function buildGradientCss(gradient, fallback = undefined) {
     const normalized = normalizeGradient(gradient, fallback);
-    return `linear-gradient(${normalized.angle}deg, ${normalized.colors.join(', ')})`;
+    const renderStops = normalized.stops.length === 1
+        ? [
+            normalized.stops[0],
+            { ...normalized.stops[0], position: 100 },
+        ]
+        : normalized.stops;
+    const stopList = renderStops
+        .map((stop) => `${stop.color} ${stop.position}%`)
+        .join(', ');
+
+    if (normalized.type === 'radial') {
+        return `radial-gradient(circle at center, ${stopList})`;
+    }
+
+    return `linear-gradient(${normalized.angle}deg, ${stopList})`;
 }
 
 export function toCssBackgroundImage(value) {

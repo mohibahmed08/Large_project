@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/user_model.dart';
 import '../services/biometric_auth_service.dart';
 import '../services/session_storage.dart';
+import '../services/theme_service.dart';
 import '../theme/app_theme.dart';
 import 'calendar_screen.dart';
 import 'login_screen.dart';
@@ -14,9 +15,11 @@ class AppBootstrapScreen extends StatefulWidget {
   const AppBootstrapScreen({
     super.key,
     this.initialResetToken,
+    this.initialThemeShareValue,
   });
 
   final String? initialResetToken;
+  final String? initialThemeShareValue;
 
   @override
   State<AppBootstrapScreen> createState() => _AppBootstrapScreenState();
@@ -24,6 +27,7 @@ class AppBootstrapScreen extends StatefulWidget {
 
 class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
   final BiometricAuthService _biometricAuthService = BiometricAuthService();
+  final ThemeService _themeService = ThemeService();
 
   UserSession? _session;
   UserSession? _lockedSession;
@@ -38,6 +42,7 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
   void initState() {
     super.initState();
     _resetToken = _normalizeToken(widget.initialResetToken);
+    unawaited(_themeService.setPendingSharedThemeValue(widget.initialThemeShareValue));
     unawaited(_bootstrap());
   }
 
@@ -253,8 +258,11 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
   }
 
   Widget _buildLoadingState() {
-    return const Scaffold(
-      body: Center(child: CircularProgressIndicator()),
+    return Scaffold(
+      body: Container(
+        decoration: AppTheme.backgroundDecoration(authSurface: true),
+        child: const Center(child: CircularProgressIndicator()),
+      ),
     );
   }
 
@@ -269,7 +277,7 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
       appBar: AppBar(title: const Text('Unlock Calendar++')),
       body: SafeArea(
         child: Container(
-          decoration: AppTheme.backgroundDecoration(),
+          decoration: AppTheme.backgroundDecoration(authSurface: true),
           child: Center(
             child: Padding(
               padding: const EdgeInsets.all(20),

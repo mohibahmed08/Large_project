@@ -84,7 +84,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       ),
       body: SafeArea(
         child: Container(
-          decoration: AppTheme.backgroundDecoration(),
+          decoration: AppTheme.backgroundDecoration(authSurface: true),
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),

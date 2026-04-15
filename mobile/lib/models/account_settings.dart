@@ -1,3 +1,5 @@
+import '../services/theme_service.dart';
+
 class ReminderDefaults {
   const ReminderDefaults({
     required this.reminderEnabled,
@@ -49,6 +51,7 @@ class AccountSettings {
     required this.avatarUrl,
     required this.calendarFeedUrl,
     required this.calendarFeedWebcalUrl,
+    required this.customThemes,
     required this.reminderDefaults,
   });
 
@@ -59,6 +62,7 @@ class AccountSettings {
   final String avatarUrl;
   final String calendarFeedUrl;
   final String calendarFeedWebcalUrl;
+  final List<MobileTheme> customThemes;
   final ReminderDefaults reminderDefaults;
 
   factory AccountSettings.fromJson(Map<String, dynamic> json) {
@@ -70,6 +74,10 @@ class AccountSettings {
       avatarUrl: (json['avatarUrl'] ?? '').toString(),
       calendarFeedUrl: (json['calendarFeedUrl'] ?? '').toString(),
       calendarFeedWebcalUrl: (json['calendarFeedWebcalUrl'] ?? '').toString(),
+      customThemes: ((json['customThemes'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((item) => MobileTheme.fromJson(item.cast<String, dynamic>()))
+          .toList(),
       reminderDefaults: ReminderDefaults.fromJson(
         (json['reminderDefaults'] as Map?)?.cast<String, dynamic>() ??
             const {},
@@ -85,6 +93,7 @@ class AccountSettings {
     String? avatarUrl,
     String? calendarFeedUrl,
     String? calendarFeedWebcalUrl,
+    List<MobileTheme>? customThemes,
     ReminderDefaults? reminderDefaults,
   }) {
     return AccountSettings(
@@ -96,6 +105,7 @@ class AccountSettings {
       calendarFeedUrl: calendarFeedUrl ?? this.calendarFeedUrl,
       calendarFeedWebcalUrl:
           calendarFeedWebcalUrl ?? this.calendarFeedWebcalUrl,
+      customThemes: customThemes ?? this.customThemes,
       reminderDefaults: reminderDefaults ?? this.reminderDefaults,
     );
   }

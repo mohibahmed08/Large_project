@@ -46,6 +46,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   shared_preferences: ^2.5.5
   share_plus: ^10.0.0
+  qr_flutter: ^4.1.0
   path_provider: ^2.1.4
   # Push notifications (APNs via Firebase)
   firebase_core: ^3.6.0
@@ -72,6 +73,9 @@ flutter:
   assets:
     - assets/
     - assets/theme_packages/
+    - assets/theme_featured/
+    - assets/theme_fallbacks/
+    - assets/images/
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

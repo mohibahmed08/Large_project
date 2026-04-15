@@ -75,7 +75,7 @@ const tests = [
           __testables.normalizeAvatarDataUrl(
             'data:image/svg+xml;base64,aGVsbG8=',
           ),
-        /Profile picture must be PNG, JPEG, GIF, WEBP, AVIF, HEIC, or HEIF\./,
+        /Profile picture must be PNG, JPEG, GIF, WEBP, AVIF, HEIC, HEIF, BMP, or TIFF\./,
       );
     },
   },
