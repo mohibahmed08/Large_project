@@ -1,4 +1,13 @@
 import { normalizeGradient, normalizeHexColor } from './themeUtils';
+import clearDayPhoto from './weather_backgrounds/ClearSky.jpg';
+import cloudyDayPhoto from './weather_backgrounds/Cloudy.jpg';
+import clearNightPhoto from './weather_backgrounds/NightClear.jpg';
+import cloudyNightPhoto from './weather_backgrounds/NightCloudy.jpg';
+import partlyCloudyNightPhoto from './weather_backgrounds/NightPartlyCloudy.jpg';
+import partlyCloudyDayPhoto from './weather_backgrounds/PartlyCloudy.jpg';
+import sunriseClearPhoto from './weather_backgrounds/SunsetSunriseClearSky.png';
+import sunriseCloudyPhoto from './weather_backgrounds/SunsetSunriseCloudy.jpg';
+import sunrisePartlyCloudyPhoto from './weather_backgrounds/SunsetSunrisePartlyCloudy.jpg';
 
 const PUBLIC_ASSET_BASE = process.env.PUBLIC_URL || '';
 
@@ -13,6 +22,20 @@ function buildThemeSceneImages(themeId) {
         partlyCloudyDay: `${PUBLIC_ASSET_BASE}/theme_packages/${themeId}/partlyCloudyDay.png`,
         partlyCloudySunrise: `${PUBLIC_ASSET_BASE}/theme_packages/${themeId}/partlyCloudySunrise.png`,
         partlyCloudyNight: `${PUBLIC_ASSET_BASE}/theme_packages/${themeId}/partlyCloudyNight.png`,
+    };
+}
+
+function buildWeatherPhotoSceneImages() {
+    return {
+        clearDay: clearDayPhoto,
+        clearSunrise: sunriseClearPhoto,
+        clearNight: clearNightPhoto,
+        cloudyDay: cloudyDayPhoto,
+        cloudySunrise: sunriseCloudyPhoto,
+        cloudyNight: cloudyNightPhoto,
+        partlyCloudyDay: partlyCloudyDayPhoto,
+        partlyCloudySunrise: sunrisePartlyCloudyPhoto,
+        partlyCloudyNight: partlyCloudyNightPhoto,
     };
 }
 
@@ -77,11 +100,24 @@ function buildFeaturedTheme({
 export const PRESET_THEMES = [
     {
         id: 'default',
-        name: 'Mountain',
-        description: 'The original weather-reactive default theme',
-        preview: 'linear-gradient(135deg,#1e3a5f 0%,#3b82f6 100%)',
+        name: 'Weather Photo Pack',
+        description: 'The original weather-reactive photo pack',
+        preview: `url(${clearDayPhoto})`,
+        previewImage: clearDayPhoto,
         btnColor: '#60a5fa',
-        images: buildThemeSceneImages('default'),
+        images: buildWeatherPhotoSceneImages(),
+        galleryImages: [
+            clearDayPhoto,
+            cloudyDayPhoto,
+            partlyCloudyDayPhoto,
+            sunriseClearPhoto,
+            sunriseCloudyPhoto,
+            sunrisePartlyCloudyPhoto,
+            clearNightPhoto,
+            cloudyNightPhoto,
+            partlyCloudyNightPhoto,
+        ],
+        imageFit: 'cover',
         backgroundMode: 'perScene',
         source: 'preset',
     },
@@ -137,7 +173,7 @@ export const PRESET_THEMES = [
     },
     {
         id: 'custom',
-        name: 'Custom',
+        name: 'Custom Weather Pack',
         description: 'Your own colors & images',
         preview: 'linear-gradient(135deg,#374151 0%,#6b7280 100%)',
         btnColor: '#60a5fa',
@@ -192,15 +228,21 @@ export const EMPTY_CUSTOM_THEME = {
     id: 'custom',
     name: 'New Pack',
     description: 'Build a gradient or image-based theme pack and save it.',
-    preview: 'linear-gradient(135deg,#0f172a 0%,#2563eb 55%,#7dd3fc 100%)',
+    preview: 'linear-gradient(135deg,#2563eb 0%,#2563eb 100%)',
     btnColor: '#60a5fa',
+    btnTextColor: '',
+    btnGradient: null,
     images: {},
     galleryImages: [],
     imageFit: 'cover',
     backgroundMode: 'gradient',
     gradient: {
+        type: 'linear',
         angle: 135,
-        colors: ['#0f172a', '#2563eb', '#7dd3fc'],
+        colors: ['#2563eb'],
+        stops: [
+            { color: '#2563eb', position: 0 },
+        ],
     },
     source: 'draft',
 };
@@ -264,6 +306,13 @@ export function sanitizeThemePack(input, fallback = EMPTY_CUSTOM_THEME) {
         name: String(draft.name || base.name || 'Untitled Pack').trim() || 'Untitled Pack',
         description: String(draft.description || base.description || '').trim(),
         btnColor: normalizeHexColor(draft.btnColor || base.btnColor || '#60a5fa'),
+        btnTextColor: String(draft.btnTextColor || base.btnTextColor || '').trim(),
+        btnGradient: draft.btnGradient && Array.isArray(draft.btnGradient.colors)
+            ? {
+                angle: Number.isFinite(Number(draft.btnGradient.angle)) ? Number(draft.btnGradient.angle) : 135,
+                colors: draft.btnGradient.colors.slice(0, 3),
+            }
+            : (base.btnGradient || null),
         images,
         galleryImages,
         imageFit: draft.imageFit === 'contain' || draft.imageFit === 'center' ? draft.imageFit : 'cover',

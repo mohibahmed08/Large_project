@@ -1817,20 +1817,34 @@ async function syncCalendarSubscription(db, userId, subscription, options = {})
         if(!entry.summary || !entry.start) continue;
 
         const task = buildTaskFromIcsEntry(userId, subscription._id, entry, options);
+        if(!task.title || !(task.dueDate instanceof Date) || Number.isNaN(task.dueDate.getTime()))
+        {
+            continue;
+        }
         activeExternalIds.push(task.externalEventId);
 
-        const updateResult = await db.collection('tasks').updateOne(
-            {
-                user_id: new ObjectId(userId),
-                subscriptionId: new ObjectId(subscription._id),
-                externalEventId: task.externalEventId,
-            },
-            { $set: task },
-            { upsert: true }
-        );
+        try
+        {
+            const updateResult = await db.collection('tasks').updateOne(
+                {
+                    user_id: new ObjectId(userId),
+                    subscriptionId: new ObjectId(subscription._id),
+                    externalEventId: task.externalEventId,
+                },
+                { $set: task },
+                { upsert: true }
+            );
 
-        if(updateResult.upsertedCount > 0) insertedCount += 1;
-        else if(updateResult.modifiedCount > 0) updatedCount += 1;
+            if(updateResult.upsertedCount > 0) insertedCount += 1;
+            else if(updateResult.modifiedCount > 0) updatedCount += 1;
+        }
+        catch(error)
+        {
+            if(!/validation/i.test(String(error?.message || error)))
+            {
+                throw error;
+            }
+        }
     }
 
     const deleteFilter = {
@@ -4783,6 +4797,7 @@ exports.setApp = function(app, client)
             }
 
             const parsed   = ical.sync.parseICS(calendarContent);
+            const importErrors = [];
 
             if(parsedUrl)
             {
@@ -4809,6 +4824,11 @@ exports.setApp = function(app, client)
                     if(!entry.summary || !entry.start) continue;
 
                     const signature = buildIcsTaskSignature(entry, { timeZone, utcOffsetMinutes });
+                    if(!signature.title || !(signature.dueDate instanceof Date) || Number.isNaN(signature.dueDate.getTime()))
+                    {
+                        importErrors.push(`Skipped malformed event: ${String(entry.summary || 'Untitled')}`);
+                        continue;
+                    }
                     duplicateFilters.push({
                         user_id: new ObjectId(userId),
                         source: 'ical',
@@ -4836,7 +4856,7 @@ exports.setApp = function(app, client)
 
                 res.status(200).json({
                     count,
-                    error: '',
+                    error: importErrors.length ? importErrors.join(' ') : '',
                     jwtToken: refreshJwtToken(token, jwtToken),
                 });
                 return;
@@ -4851,6 +4871,11 @@ exports.setApp = function(app, client)
                 if(!entry.summary || !entry.start) continue;
 
                 const signature = buildIcsTaskSignature(entry, { timeZone, utcOffsetMinutes });
+                if(!signature.title || !(signature.dueDate instanceof Date) || Number.isNaN(signature.dueDate.getTime()))
+                {
+                    importErrors.push(`Skipped malformed event: ${String(entry.summary || 'Untitled')}`);
+                    continue;
+                }
                 toInsert.push(
                 {
                     user_id:     new ObjectId(userId),
@@ -4869,13 +4894,13 @@ exports.setApp = function(app, client)
                 const result = await db.collection('tasks').insertMany(toInsert);
                 res.status(200).json({
                     count: result.insertedCount,
-                    error: '',
+                    error: importErrors.length ? importErrors.join(' ') : '',
                     jwtToken: refreshJwtToken(token, jwtToken),
                 });
                 return;
             }
 
-            res.status(200).json({ count: 0, error: '', jwtToken: refreshJwtToken(token, jwtToken) });
+            res.status(200).json({ count: 0, error: importErrors.join(' '), jwtToken: refreshJwtToken(token, jwtToken) });
         }
         catch(error)
         {

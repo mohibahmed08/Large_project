@@ -1,6 +1,7 @@
 // @ts-nocheck
 import './App.css';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import Calendar from './Calendar';
 import Login, { ResetPasswordPage } from './login';
@@ -42,6 +43,67 @@ import shareIcon from './icons/share-theme.svg';
 
 const RAW_API_BASE = process.env.REACT_APP_API_URL ?? 'http://localhost:5000';
 const API_ROOT = RAW_API_BASE.endsWith('/api') ? RAW_API_BASE : `${RAW_API_BASE}/api`;
+
+function ShareArrowIcon() {
+    return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M14 5h5v5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M10 14 19 5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M19 13v4a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
+function CopyIcon() {
+    return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="9" y="9" width="10" height="10" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+            <path d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+    );
+}
+
+function CodeHashIcon() {
+    return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 4 7 20M17 4l-2 16M4 9h16M3 15h16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+    );
+}
+
+function MessagesIcon() {
+    return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 7h12M6 11h9M7 18l-3 2V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H7Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
+function MailIcon() {
+    return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+            <path d="m5 7 7 6 7-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
+function FacebookIcon() {
+    return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M14 8h3V4h-3c-2.2 0-4 1.8-4 4v3H7v4h3v5h4v-5h3l1-4h-4V8Z" fill="currentColor" />
+        </svg>
+    );
+}
+
+function WhatsAppIcon() {
+    return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 4a8 8 0 0 0-6.9 12l-1.1 4 4.1-1A8 8 0 1 0 12 4Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M9.7 9.5c.2-.4.4-.4.6-.4h.5c.1 0 .3.1.3.3l.8 1.9c.1.2 0 .4-.1.5l-.4.5c.7 1.3 1.8 2.3 3.1 3l.5-.4c.2-.1.4-.1.5-.1l1.9.8c.2.1.3.2.3.3v.5c0 .3-.1.5-.4.6-.4.2-1 .3-1.6.2-2-.4-5.1-3.3-5.6-5.4-.1-.6 0-1.2.2-1.7Z" fill="currentColor" />
+        </svg>
+    );
+}
 
 // ── Theme system ──────────────────────────────────────────────────────────────
 const LEGACY_THEME_STORAGE_KEY = 'calpp_theme';
@@ -97,12 +159,82 @@ function applyBtnColorOverride(color) {
     document.documentElement.style.setProperty('--btn-text-color', getContrastTextColor(resolvedColor));
 }
 
+function resolveThemeButtonStyle(theme) {
+    const baseColor = normalizeHexColor(theme?.btnColor || '#60a5fa');
+    const btnTextColor = String(theme?.btnTextColor || '').trim()
+        ? normalizeHexColor(theme.btnTextColor, getContrastTextColor(baseColor))
+        : getContrastTextColor(baseColor);
+    const gradientColors = Array.isArray(theme?.btnGradient?.colors)
+        ? theme.btnGradient.colors.map((color) => normalizeHexColor(color, '')).filter(Boolean)
+        : [];
+    const hasGradient = gradientColors.length >= 2;
+    const background = hasGradient
+        ? `linear-gradient(${Number.isFinite(Number(theme?.btnGradient?.angle)) ? Number(theme.btnGradient.angle) : 135}deg, ${gradientColors.slice(0, 3).join(', ')})`
+        : baseColor;
+
+    return {
+        '--btn-color': baseColor,
+        '--btn-color-rgb': hexToRgbString(baseColor),
+        '--btn-text-color': btnTextColor,
+        background,
+        color: btnTextColor,
+    };
+}
+
 function inferThemePreview(theme) {
     return toCssBackgroundImage(resolveEffectiveBackground(theme, null)) || theme?.preview || buildGradientCss(theme?.gradient);
 }
 
 function inferImageFit(theme) {
     return theme?.imageFit === 'contain' ? 'contain' : theme?.imageFit === 'center' ? 'auto' : 'cover';
+}
+
+function getEditableGradientStops(gradient) {
+    const stops = Array.isArray(gradient?.stops) ? gradient.stops : [];
+    if (stops.length >= 1) {
+        return stops
+            .map((stop, index) => ({
+                color: normalizeHexColor(stop?.color || '#60a5fa'),
+                position: Math.max(0, Math.min(100, Math.round(Number(stop?.position ?? (index === 0 ? 0 : 100))))),
+            }))
+            .sort((first, second) => first.position - second.position);
+    }
+
+    const colors = Array.isArray(gradient?.colors) ? gradient.colors : ['#2563eb'];
+    return colors.slice(0, 5).map((color, index, palette) => ({
+        color: normalizeHexColor(color),
+        position: palette.length === 1 ? 0 : Math.round((index / (palette.length - 1)) * 100),
+    }));
+}
+
+function syncGradientStops(nextStops, currentGradient = {}) {
+    const orderedStops = nextStops
+        .map((stop) => ({
+            color: normalizeHexColor(stop?.color || '#60a5fa'),
+            position: Math.max(0, Math.min(100, Math.round(Number(stop?.position ?? 0)))),
+        }))
+        .sort((first, second) => first.position - second.position);
+
+    return {
+        ...currentGradient,
+        type: String(currentGradient?.type || 'linear').trim().toLowerCase() === 'radial' ? 'radial' : 'linear',
+        angle: Number.isFinite(Number(currentGradient?.angle)) ? Number(currentGradient.angle) : 135,
+        colors: orderedStops.map((stop) => stop.color),
+        stops: orderedStops,
+    };
+}
+
+const DEFAULT_GRADIENT_POSITIONS = [0, 50, 100, 25, 75, 12, 37, 62, 87, 6, 18, 31, 43, 56, 68, 81, 93];
+
+function nextGradientPosition(stops = []) {
+    const taken = new Set(stops.map((stop) => Math.round(stop.position)));
+    for (const candidate of DEFAULT_GRADIENT_POSITIONS) {
+        if (!taken.has(candidate)) {
+            return candidate;
+        }
+    }
+
+    return Math.min(100, Math.max(0, (stops[stops.length - 1]?.position ?? 0) + 8));
 }
 
 function isEditableThemePack(theme) {
@@ -256,6 +388,51 @@ function readFileAsDataUrl(file) {
         reader.onerror = () => reject(new Error('Could not read the selected image.'));
         reader.readAsDataURL(file);
     });
+}
+
+async function readResponseJson(response, fallbackError) {
+    const text = await response.text();
+    if (!text) {
+        return {};
+    }
+
+    const trimmed = text.trimStart();
+    if (trimmed.startsWith('<!DOCTYPE html') || trimmed.startsWith('<html')) {
+        throw new Error(fallbackError);
+    }
+
+    try {
+        return JSON.parse(text);
+    } catch {
+        throw new Error(fallbackError);
+    }
+}
+
+async function uploadImageDataUrl(session, imageDataUrl, purpose, fileName) {
+    const response = await fetch(`${API_ROOT}/uploadimage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            userId: session.userId,
+            jwtToken: session.jwtToken,
+            imageDataUrl,
+            purpose,
+            fileName,
+        }),
+    });
+
+    const data = await readResponseJson(response, 'Image upload failed.');
+    if (!response.ok) {
+        throw new Error(data.error || 'Image upload failed.');
+    }
+
+    return data;
+}
+
+async function uploadThemeImageFile(file, session, purpose, fileName) {
+    const dataUrl = await readFileAsDataUrl(file);
+    const result = await uploadImageDataUrl(session, dataUrl, purpose, fileName);
+    return result.imageUrl;
 }
 
 function normalizeAssistantMarkdown(text) {
@@ -449,13 +626,15 @@ function App() {
     // Scratch state for the theme editor (before Apply is clicked)
     const [themeDraft, setThemeDraft] = useState(null);
     const [customBgMode, setCustomBgMode] = useState('gradient'); // 'gradient' | 'universal' | 'perScene'
+    const [selectedGradientStopIndex, setSelectedGradientStopIndex] = useState(0);
+    const [gradientEditorOpen, setGradientEditorOpen] = useState(false);
     const [themeImportValue, setThemeImportValue] = useState('');
     const [themeShareState, setThemeShareState] = useState({
         open: false,
         loading: false,
         theme: null,
         customLinkId: '',
-        linkEditorOpen: false,
+        activeTab: 'share',
     });
     const [accountSettings, setAccountSettings] = useState(null);
     const [accountDraft, setAccountDraft] = useState({
@@ -493,6 +672,28 @@ function App() {
     const themeSharePreview = themeShareState.theme
         ? (inferThemePreview(themeShareState.theme) || themeShareState.theme.preview || 'none')
         : 'none';
+    const customThemeCard = sanitizeThemePack({
+        ...EMPTY_CUSTOM_THEME,
+        ...(isEditableThemePack(themeDraft) ? themeDraft : {}),
+        id: 'custom',
+        name: 'Custom Photo Pack',
+        description: 'Create and tune your own photo or gradient-based weather pack.',
+        source: 'draft',
+    }, EMPTY_CUSTOM_THEME);
+    const featuredWeatherThemes = [DEFAULT_THEME, ...FEATURED_THEMES, customThemeCard];
+    const draftPreviewBackground = themeDraft ? (inferThemePreview(themeDraft) || themeDraft.preview || 'none') : 'none';
+    const draftGradientStops = getEditableGradientStops(themeDraft?.gradient);
+    const activeGradientStopIndex = Math.min(selectedGradientStopIndex, Math.max(0, draftGradientStops.length - 1));
+    const activeGradientStop = draftGradientStops[activeGradientStopIndex] || draftGradientStops[0] || { color: '#60a5fa', position: 50 };
+    const shareModalActions = [
+        { key: 'native', label: 'Share', icon: ShareArrowIcon, onClick: async () => shareThemeThroughSystem(themeShareState.theme), disabled: !themeShareState.theme?.shareUrl || typeof navigator.share !== 'function' },
+        { key: 'copy-link', label: 'Copy Link', icon: CopyIcon, onClick: () => copyThemeShareValue(themeShareState.theme?.shareUrl, 'Share link'), disabled: !themeShareState.theme?.shareUrl },
+        { key: 'copy-code', label: 'Copy Code', icon: CodeHashIcon, onClick: () => copyThemeShareValue(themeShareState.theme?.shareCode, 'Theme code'), disabled: !themeShareState.theme?.shareCode },
+        { key: 'sms', label: 'Messages', icon: MessagesIcon, onClick: () => openThemeShareTarget(themeShareTargets?.sms), disabled: !themeShareState.theme?.shareUrl },
+        { key: 'email', label: 'Email', icon: MailIcon, onClick: () => openThemeShareTarget(themeShareTargets?.email), disabled: !themeShareState.theme?.shareUrl },
+        { key: 'facebook', label: 'Facebook', icon: FacebookIcon, onClick: () => openThemeShareTarget(themeShareTargets?.facebook), disabled: !themeShareState.theme?.shareUrl },
+        { key: 'whatsapp', label: 'WhatsApp', icon: WhatsAppIcon, onClick: () => openThemeShareTarget(themeShareTargets?.whatsapp), disabled: !themeShareState.theme?.shareUrl },
+    ].filter((item) => item.key !== 'native' || typeof navigator.share === 'function');
 
     const logout = () => {
         localStorage.removeItem('jwtToken');
@@ -650,6 +851,281 @@ function App() {
         });
     }, [searchOpen]);
 
+    const gradientEditorModal = gradientEditorOpen && themeDraft && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="theme-overlay-backdrop" onClick={() => setGradientEditorOpen(false)}>
+                <div className="theme-gradient-modal" onClick={(event) => event.stopPropagation()}>
+                    <div className="theme-gradient-modal-header">
+                        <div>
+                            <div className="account-modal-kicker">Gradient Background</div>
+                            <h3>Custom Gradient</h3>
+                        </div>
+                        <button type="button" className="account-close-btn" onClick={() => setGradientEditorOpen(false)}>
+                            Close
+                        </button>
+                    </div>
+                    <div className="theme-gradient-editor theme-gradient-editor-modal">
+                        <div className="theme-gradient-editor-top">
+                            <label className="account-field">
+                                <span>Type</span>
+                                <select
+                                    value={themeDraft.gradient?.type || 'linear'}
+                                    onChange={(event) => setThemeDraft((prev) => ({
+                                        ...prev,
+                                        backgroundMode: 'gradient',
+                                        gradient: {
+                                            ...(prev.gradient || EMPTY_CUSTOM_THEME.gradient),
+                                            type: event.target.value,
+                                        },
+                                    }))}
+                                >
+                                    <option value="linear">Linear</option>
+                                    <option value="radial">Radial</option>
+                                </select>
+                            </label>
+                            <label className="account-field">
+                                <span>Angle</span>
+                                <select
+                                    value={Number(themeDraft.gradient?.angle ?? EMPTY_CUSTOM_THEME.gradient.angle)}
+                                    onChange={(event) => setThemeDraft((prev) => ({
+                                        ...prev,
+                                        backgroundMode: 'gradient',
+                                        gradient: {
+                                            ...(prev.gradient || EMPTY_CUSTOM_THEME.gradient),
+                                            angle: Number(event.target.value),
+                                        },
+                                    }))}
+                                    disabled={themeDraft.gradient?.type === 'radial'}
+                                >
+                                    {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
+                                        <option key={angle} value={angle}>{`${angle} deg`}</option>
+                                    ))}
+                                </select>
+                            </label>
+                            <div className="theme-gradient-preview-card">
+                                <span className="theme-gradient-preview-label">Preview</span>
+                                <div className="theme-gradient-preview-swatch" style={{ backgroundImage: buildGradientCss(themeDraft.gradient) }} />
+                            </div>
+                        </div>
+                        <div className="theme-gradient-editor-controls">
+                            <div className="theme-gradient-editor-header">
+                                <span className="theme-gradient-editor-title">Gradient Stops</span>
+                            </div>
+                            <div className="theme-gradient-stop-toolbar">
+                                <div className="theme-gradient-stop-actions">
+                                    <button type="button" className="account-secondary-btn" onClick={addGradientStop}>
+                                        Add
+                                    </button>
+                                    <button type="button" className="account-secondary-btn" onClick={removeGradientStop} disabled={draftGradientStops.length <= 1}>
+                                        Remove
+                                    </button>
+                                </div>
+                                <div className="theme-gradient-stop-swatch">
+                                    <input
+                                        type="color"
+                                        className="theme-color-input theme-gradient-color-input"
+                                        value={activeGradientStop.color}
+                                        onChange={(event) => updateGradientStopColor(event.target.value)}
+                                    />
+                                </div>
+                            </div>
+                            <div className="theme-gradient-stop-editor">
+                                <label className="account-check-row theme-gradient-rotate-row">
+                                    <input type="checkbox" checked readOnly />
+                                    <span>Rotate with shape</span>
+                                </label>
+                                <label className="account-field">
+                                    <span>Selected color</span>
+                                    <input
+                                        type="text"
+                                        className="theme-color-text"
+                                        value={activeGradientStop.color}
+                                        maxLength={7}
+                                        onChange={(event) => {
+                                            const value = event.target.value;
+                                            if (/^#[0-9a-fA-F]{0,6}$/.test(value)) {
+                                                updateGradientStopColor(value);
+                                            }
+                                        }}
+                                    />
+                                </label>
+                            </div>
+                            <div className="theme-gradient-rail-shell">
+                                <div className="theme-gradient-rail" style={{ backgroundImage: buildGradientCss(themeDraft.gradient) }}>
+                                    {draftGradientStops.map((stop, index) => (
+                                        <button
+                                            key={`${stop.color}-${stop.position}-${index}`}
+                                            type="button"
+                                            className={`theme-gradient-stop-handle${index === activeGradientStopIndex ? ' active' : ''}`}
+                                            style={{ left: `${stop.position}%`, background: stop.color }}
+                                            onClick={() => setSelectedGradientStopIndex(index)}
+                                            aria-label={`Select gradient stop ${index + 1}`}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                            <input
+                                className="theme-gradient-position-range"
+                                type="range"
+                                min="0"
+                                max="100"
+                                value={activeGradientStop.position}
+                                onChange={(event) => updateGradientStopPosition(Number(event.target.value))}
+                            />
+                        </div>
+                        <div className="theme-gradient-modal-actions">
+                            <button type="button" className="account-secondary-btn" onClick={() => setGradientEditorOpen(false)}>
+                                Cancel
+                            </button>
+                            <button type="button" className="account-primary-btn" onClick={() => setGradientEditorOpen(false)}>
+                                OK
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>,
+            document.body,
+        )
+        : null;
+
+    const themeShareModal = themeShareState.open && themeShareState.theme && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="theme-overlay-backdrop" onClick={closeThemeShareDialog}>
+                <div className="theme-share-floating-modal" onClick={(event) => event.stopPropagation()}>
+                    <div className="theme-share-modal-header theme-share-floating-header">
+                        <div>
+                            <div className="account-modal-kicker">Share Theme</div>
+                            <h3>{themeShareState.theme.name}</h3>
+                            <p>{themeShareState.theme.creatorLabel || `Theme created by ${themeShareState.theme.authorName || 'you'}`}</p>
+                        </div>
+                        <button type="button" className="account-close-btn" onClick={closeThemeShareDialog}>
+                            Done
+                        </button>
+                    </div>
+
+                    <div className="theme-share-tabs" role="tablist" aria-label="Theme share tabs">
+                        <button
+                            type="button"
+                            className={`theme-share-tab${themeShareState.activeTab === 'share' ? ' active' : ''}`}
+                            onClick={closeThemeLinkEditor}
+                        >
+                            Share
+                        </button>
+                        <button
+                            type="button"
+                            className={`theme-share-tab${themeShareState.activeTab === 'edit' ? ' active' : ''}`}
+                            onClick={openThemeLinkEditor}
+                            disabled={themeShareState.theme.sharedThemeId && themeShareState.theme.isOwnedTheme !== true}
+                        >
+                            Edit Link
+                        </button>
+                    </div>
+
+                    <div className="theme-share-modal-body theme-share-compact-body">
+                        {themeShareState.activeTab === 'share' ? (
+                            <>
+                                <div className="theme-share-preview-panel theme-share-preview-panel-compact" style={{ backgroundImage: themeSharePreview }}>
+                                    <div className="theme-share-preview-overlay">
+                                        <span className="theme-share-preview-chip">{themeShareState.theme.authorLabel || 'By you'}</span>
+                                        <button
+                                            type="button"
+                                            className="theme-preview-btn"
+                                            style={resolveThemeButtonStyle(themeShareState.theme)}
+                                        >
+                                            Preview Theme
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {themeShareState.theme.sharedThemeId && themeShareState.theme.isOwnedTheme !== true && (
+                                    <p className="theme-share-note">This imported theme keeps the original creator name. You can share the existing link or code, but only the owner can edit the custom link.</p>
+                                )}
+
+                                <div className="theme-share-action-grid compact">
+                                    <button
+                                        type="button"
+                                        className="theme-share-action primary"
+                                        onClick={saveSharedThemeDetails}
+                                        disabled={themeShareState.loading}
+                                    >
+                                        <span className="theme-share-action-icon">+</span>
+                                        <span>{themeShareState.loading ? 'Saving...' : themeShareState.theme.shareCode ? 'Refresh Share' : 'Create Share'}</span>
+                                    </button>
+                                    {shareModalActions.map((action) => {
+                                        const Icon = action.icon;
+                                        return (
+                                            <button
+                                                key={action.key}
+                                                type="button"
+                                                className="theme-share-action"
+                                                onClick={action.onClick}
+                                                disabled={action.disabled}
+                                            >
+                                                <span className="theme-share-action-icon">
+                                                    <Icon />
+                                                </span>
+                                                <span>{action.label}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                <div className="theme-share-value-stack compact">
+                                    <label className="theme-share-value-card">
+                                        <span>Share link</span>
+                                        <input value={themeShareState.theme.shareUrl || ''} readOnly />
+                                    </label>
+                                    <label className="theme-share-value-card">
+                                        <span>Theme code</span>
+                                        <input value={themeShareState.theme.shareCode || ''} readOnly />
+                                    </label>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="theme-share-edit-stack">
+                                <div className="theme-share-edit-card">
+                                    <div>
+                                        <strong>Custom link ID</strong>
+                                        <p>Use a short, memorable link ID or a six-digit code.</p>
+                                    </div>
+                                    <label className="account-field">
+                                        <span>Custom link ID</span>
+                                        <input
+                                            value={themeShareState.customLinkId}
+                                            onChange={(event) => setThemeShareState((prev) => ({ ...prev, customLinkId: event.target.value }))}
+                                            placeholder="mountain-theme"
+                                            disabled={themeShareState.loading || (themeShareState.theme.sharedThemeId && themeShareState.theme.isOwnedTheme !== true)}
+                                        />
+                                    </label>
+                                </div>
+                                <div className="theme-share-footer theme-share-footer-compact">
+                                    <div>
+                                        <strong>Share export</strong>
+                                        <p>Export the current pack or save a custom share link from here.</p>
+                                    </div>
+                                    <div className="theme-share-footer-actions">
+                                        <button
+                                            type="button"
+                                            className="account-secondary-btn"
+                                            onClick={() => exportThemePackDraft(themeShareState.theme)}
+                                            disabled={!themeShareState.theme}
+                                        >
+                                            Export file
+                                        </button>
+                                        <button type="button" className="account-primary-btn" onClick={saveSharedThemeDetails} disabled={themeShareState.loading}>
+                                            {themeShareState.loading ? 'Saving...' : 'Save link ID'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>,
+            document.body,
+        )
+        : null;
+
     const refreshCalendar = () => {
         setCalendarRefreshKey((prev) => prev + 1);
     };
@@ -690,6 +1166,7 @@ function App() {
         const nextDraft = sanitizeThemePack(nextTheme, EMPTY_CUSTOM_THEME);
         setThemeDraft(nextDraft);
         setCustomBgMode(inferThemeBackgroundMode(nextDraft));
+        setSelectedGradientStopIndex(0);
         return nextDraft;
     };
 
@@ -742,6 +1219,55 @@ function App() {
                 : prev
         ));
         return normalized;
+    };
+
+    const uploadThemeAssets = async (nextTheme, session) => {
+        const uploaded = { ...nextTheme, images: { ...(nextTheme.images || {}) } };
+
+        const uploadDataUrl = async (purpose, fileName, dataUrl) => {
+            const result = await uploadImageDataUrl(session, dataUrl, purpose, fileName);
+            return result.imageUrl;
+        };
+
+        const universal = String(uploaded.images?.universal || '').trim();
+        if (universal.startsWith('data:')) {
+            uploaded.images.universal = await uploadDataUrl(
+                'theme-images',
+                `${uploaded.id || 'theme'}-universal.png`,
+                universal,
+            );
+        }
+
+        if (Array.isArray(uploaded.galleryImages)) {
+            const nextGallery = [];
+            for (let index = 0; index < uploaded.galleryImages.length; index += 1) {
+                const value = String(uploaded.galleryImages[index] || '').trim();
+                if (!value) {
+                    continue;
+                }
+                if (value.startsWith('data:')) {
+                    nextGallery.push(await uploadDataUrl(
+                        'theme-gallery',
+                        `${uploaded.id || 'theme'}-gallery-${index + 1}.png`,
+                        value,
+                    ));
+                } else {
+                    nextGallery.push(value);
+                }
+            }
+            uploaded.galleryImages = nextGallery;
+        }
+
+        const previewImage = String(uploaded.previewImage || '').trim();
+        if (previewImage.startsWith('data:')) {
+            uploaded.previewImage = await uploadDataUrl(
+                'theme-previews',
+                `${uploaded.id || 'theme'}-preview.png`,
+                previewImage,
+            );
+        }
+
+        return uploaded;
     };
 
     const syncThemePackToServer = async (nextTheme, options = {}) => {
@@ -835,7 +1361,7 @@ function App() {
             loading: false,
             theme,
             customLinkId: theme.shareSlug || '',
-            linkEditorOpen: false,
+            activeTab: 'share',
         });
     };
 
@@ -845,7 +1371,7 @@ function App() {
             loading: false,
             theme: null,
             customLinkId: '',
-            linkEditorOpen: false,
+            activeTab: 'share',
         });
     };
 
@@ -856,7 +1382,12 @@ function App() {
 
         setThemeShareState((prev) => ({ ...prev, loading: true }));
         try {
-            const syncedTheme = await syncThemePackToServer(themeShareState.theme, {
+            const session = getSession();
+            if (!session) {
+                throw new Error('Please log in again to sync this theme.');
+            }
+            const nextTheme = await uploadThemeAssets(themeShareState.theme, session);
+            const syncedTheme = await syncThemePackToServer(nextTheme, {
                 shareSlug: themeShareState.customLinkId,
             });
 
@@ -873,7 +1404,7 @@ function App() {
                 loading: false,
                 theme: syncedTheme,
                 customLinkId: syncedTheme.shareSlug || '',
-                linkEditorOpen: false,
+                activeTab: 'share',
             });
             setAccountFeedback(`Share ready for "${syncedTheme.name}".`);
         } catch (error) {
@@ -883,11 +1414,11 @@ function App() {
     };
 
     const openThemeLinkEditor = () => {
-        setThemeShareState((prev) => ({ ...prev, linkEditorOpen: true }));
+        setThemeShareState((prev) => ({ ...prev, activeTab: 'edit' }));
     };
 
     const closeThemeLinkEditor = () => {
-        setThemeShareState((prev) => ({ ...prev, linkEditorOpen: false }));
+        setThemeShareState((prev) => ({ ...prev, activeTab: 'share' }));
     };
 
     const saveThemePackDraft = async () => {
@@ -907,7 +1438,12 @@ function App() {
         setAccountFeedback(`Saved "${savedPack.name}" to your theme packs.`);
 
         try {
-            const syncedTheme = await syncThemePackToServer(savedPack);
+            const session = getSession();
+            if (!session) {
+                throw new Error('Please log in again to sync this theme.');
+            }
+            const syncedPack = await uploadThemeAssets(savedPack, session);
+            const syncedTheme = await syncThemePackToServer(syncedPack);
             syncThemeDraft(syncedTheme);
             if (themePackMatches(activeTheme, savedPack)) {
                 setActiveTheme(syncedTheme);
@@ -919,13 +1455,57 @@ function App() {
         }
     };
 
-    const exportThemePackDraft = () => {
-        if (!themeDraft) {
+    const updateThemeGradient = (mutator) => {
+        setThemeDraft((prev) => {
+            const nextStops = mutator(getEditableGradientStops(prev?.gradient));
+            return {
+                ...prev,
+                backgroundMode: 'gradient',
+                gradient: syncGradientStops(nextStops, prev?.gradient),
+            };
+        });
+    };
+
+    const addGradientStop = () => {
+        updateThemeGradient((stops) => {
+            const baseStops = stops.length >= 1 ? stops : getEditableGradientStops(EMPTY_CUSTOM_THEME.gradient);
+            const selected = baseStops[Math.min(selectedGradientStopIndex, baseStops.length - 1)] || baseStops[0];
+            const position = nextGradientPosition(baseStops);
+            const nextStops = [...baseStops, { color: selected.color, position }];
+            return nextStops;
+        });
+        setSelectedGradientStopIndex((prev) => Math.min(prev + 1, 8));
+    };
+
+    const removeGradientStop = () => {
+        updateThemeGradient((stops) => {
+            if (stops.length <= 1) {
+                return stops;
+            }
+            return stops.filter((_, index) => index !== activeGradientStopIndex);
+        });
+        setSelectedGradientStopIndex((prev) => Math.max(0, prev - 1));
+    };
+
+    const updateGradientStopColor = (color) => {
+        updateThemeGradient((stops) => stops.map((stop, index) => (
+            index === activeGradientStopIndex ? { ...stop, color } : stop
+        )));
+    };
+
+    const updateGradientStopPosition = (position) => {
+        updateThemeGradient((stops) => stops.map((stop, index) => (
+            index === activeGradientStopIndex ? { ...stop, position } : stop
+        )));
+    };
+
+    const exportThemePackDraft = (theme = themeDraft) => {
+        if (!theme) {
             return;
         }
 
         const pack = sanitizeThemePack({
-            ...themeDraft,
+            ...theme,
             source: 'shared',
         }, EMPTY_CUSTOM_THEME);
         const blob = new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' });
@@ -1073,6 +1653,20 @@ function App() {
         setAccountSaving(true);
         setAccountFeedback('');
         try {
+            let avatarUrlValue = null;
+            if (pendingAvatarUrl !== null) {
+                if (pendingAvatarUrl === 'REMOVED') {
+                    avatarUrlValue = '';
+                } else {
+                    const avatarUpload = await uploadImageDataUrl(
+                        session,
+                        pendingAvatarUrl,
+                        'avatars',
+                        'avatar.png',
+                    );
+                    avatarUrlValue = avatarUpload.imageUrl;
+                }
+            }
             const requestBody = {
                 userId: session.userId,
                 jwtToken: session.jwtToken,
@@ -1080,9 +1674,7 @@ function App() {
                 lastName: accountDraft.lastName,
                 reminderEnabled: accountDraft.reminderDefaults?.reminderEnabled === true,
                 reminderMinutesBefore: Number(accountDraft.reminderDefaults?.reminderMinutesBefore || 30),
-                ...(pendingAvatarUrl !== null
-                    ? { avatarDataUrl: pendingAvatarUrl === 'REMOVED' ? '' : pendingAvatarUrl }
-                    : {}),
+                ...(pendingAvatarUrl !== null ? { avatarUrl: avatarUrlValue } : {}),
             };
             const response = await fetch(`${API_ROOT}/saveaccountsettings`, {
                 method: 'POST',
@@ -1536,7 +2128,6 @@ function App() {
                                     <button className="nav-item" onClick={() => openCalendarModal('plan')}><span className="nav-icon">Plan</span></button>
                                     <button className="nav-item" onClick={() => openCalendarModal('event')}><span className="nav-icon">Event</span></button>
                                     <button className="nav-item" onClick={() => openCalendarModal('task')}><span className="nav-icon">Task</span></button>
-                                    <button className={`nav-item${searchOpen || trimmedSearchQuery ? ' active' : ''}`} onClick={openSearch}><span className="nav-icon">Search</span></button>
                                     <hr style={{ border: '0', borderTop: '1px solid #2c2c3e', margin: '10px 0' }} />
                                     <button className="nav-item" onClick={() => openCalendarModal('import')}><span className="nav-icon">Import</span></button>
                                     <button className="nav-item" onClick={() => openAccountModal('settings')}><span className="nav-icon">Settings</span></button>
@@ -1569,43 +2160,6 @@ function App() {
                     </div>
 
                     <div className="center-content">
-                        {(searchOpen || trimmedSearchQuery) && (
-                            <div className="calendar-search-shell">
-                                <div className="calendar-search-card">
-                                    <div className="calendar-search-copy">
-                                        <span className="calendar-search-kicker">Search</span>
-                                        <span className="calendar-search-status">
-                                            {searchMeta.error
-                                                ? searchMeta.error
-                                                : searchMeta.loading
-                                                    ? 'Searching...'
-                                                    : trimmedSearchQuery
-                                                        ? `${searchMeta.count} match${searchMeta.count === 1 ? '' : 'es'}`
-                                                        : 'Search your calendar.'}
-                                        </span>
-                                    </div>
-                                    <div className="calendar-search-input-shell">
-                                        <input
-                                            ref={searchInputRef}
-                                            type="search"
-                                            className="calendar-search-input"
-                                            value={searchQuery}
-                                            onChange={(event) => setSearchQuery(event.target.value)}
-                                            placeholder="Search"
-                                        />
-                                        {(trimmedSearchQuery || searchMeta.active) && (
-                                            <button
-                                                type="button"
-                                                className="calendar-search-clear-btn"
-                                                onClick={clearSearch}
-                                            >
-                                                Clear
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
                         <div className="calendar-wrapper">
                             <Calendar
                                 singleMonth={false}
@@ -1618,6 +2172,7 @@ function App() {
                                 reminderDefaults={accountSettings?.reminderDefaults}
                                 onSelectedDateChange={setSelectedDate}
                                 searchQuery={searchQuery}
+                                setSearchQuery={setSearchQuery}
                                 onSearchMetaChange={setSearchMeta}
                             />
                         </div>
@@ -1918,47 +2473,14 @@ function App() {
                                             /* ── THEMES TAB ─────────────────────────────────────────── */
                                             <div className="account-section-stack">
                                                 <div className="account-section-card">
-                                                    <h3>Theme Packs</h3>
-                                                    <p className="account-section-copy">Select a preset or build your own. Changes apply instantly — click Apply to keep them.</p>
-                                                    <div className="theme-preset-grid">
-                                                        {PRESET_THEMES.map((preset) => {
-                                                            const isSelected = themeDraft?.id === preset.id;
-                                                            return (
-                                                                <button
-                                                                    key={preset.id}
-                                                                    type="button"
-                                                                    className={`theme-preset-card${isSelected ? ' selected' : ''}`}
-                                                                    onClick={() => {
-                                                                        const base = preset.id === 'custom'
-                                                                            ? sanitizeThemePack({
-                                                                                ...EMPTY_CUSTOM_THEME,
-                                                                                ...(isEditableThemePack(themeDraft) ? themeDraft : {}),
-                                                                                id: 'custom',
-                                                                                name: 'Custom',
-                                                                                source: 'draft',
-                                                                            }, EMPTY_CUSTOM_THEME)
-                                                                            : { ...preset };
-                                                                        syncThemeDraft(base);
-                                                                    }}
-                                                                >
-                                                                    <div className="theme-swatch" style={{ background: preset.preview }} />
-                                                                    <span className="theme-preset-name">{preset.name}</span>
-                                                                    <span className="theme-preset-desc">{preset.description}</span>
-                                                                </button>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-
-                                                <div className="account-section-card">
                                                     <div className="theme-library-header">
                                                         <div>
                                                             <h3>Featured Weather Photo Themes</h3>
-                                                            <p className="account-section-copy">Pulled directly from <code>public/theme_featured</code> and mapped to the weather scenes instead of using one flat wallpaper.</p>
+                                                            <p className="account-section-copy">Photo-based theme packs for weather-aware backgrounds.</p>
                                                         </div>
                                                     </div>
                                                     <div className="featured-theme-grid">
-                                                        {FEATURED_THEMES.map((theme) => {
+                                                        {featuredWeatherThemes.map((theme) => {
                                                             const isSelected = themeDraft?.id === theme.id;
                                                             const previewBackground = inferThemePreview(theme) || theme.preview;
                                                             return (
@@ -1972,7 +2494,9 @@ function App() {
                                                                         className="featured-theme-media"
                                                                         style={{ backgroundImage: previewBackground }}
                                                                     >
-                                                                        <span className="featured-theme-chip">Featured</span>
+                                                                        <span className="featured-theme-chip">
+                                                                            {theme.id === 'default' ? 'Default' : theme.id === 'custom' ? 'Custom' : 'Featured'}
+                                                                        </span>
                                                                     </div>
                                                                     <div className="featured-theme-copy">
                                                                         <span className="featured-theme-name">{theme.name}</span>
@@ -1984,21 +2508,19 @@ function App() {
                                                     </div>
                                                 </div>
 
-                                                {/* Custom theme editor — shown only when Custom is selected */}
                                                 <div className="account-section-card">
                                                     <div className="theme-library-header">
                                                         <div>
                                                             <h3>Your Saved & Shared Themes</h3>
-                                                            <p className="account-section-copy">Save custom packs, import shared links or codes, and keep imported themes on your dashboard until you remove them.</p>
+                                                            <p className="account-section-copy">Save your own packs, import shared themes, and manage them from this library.</p>
                                                         </div>
                                                         <div className="theme-library-actions">
                                                             <button
                                                                 type="button"
                                                                 className="account-secondary-btn"
-                                                                onClick={saveThemePackDraft}
-                                                                disabled={!themeDraft}
+                                                                onClick={() => themeImportInputRef.current?.click()}
                                                             >
-                                                                Save pack
+                                                                Import from File
                                                             </button>
                                                             <button
                                                                 type="button"
@@ -2009,21 +2531,6 @@ function App() {
                                                                 aria-label="Share theme"
                                                             >
                                                                 <img src={shareIcon} alt="" />
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                className="account-secondary-btn"
-                                                                onClick={exportThemePackDraft}
-                                                                disabled={!themeDraft}
-                                                            >
-                                                                Export file
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                className="account-secondary-btn"
-                                                                onClick={() => themeImportInputRef.current?.click()}
-                                                            >
-                                                                Import file
                                                             </button>
                                                             <input
                                                                 ref={themeImportInputRef}
@@ -2048,20 +2555,22 @@ function App() {
                                                                 placeholder="Paste a share link or 6-digit code"
                                                             />
                                                         </label>
-                                                        <button
-                                                            type="button"
-                                                            className="account-primary-btn"
-                                                            onClick={async () => {
-                                                                try {
-                                                                    await importSharedTheme(themeImportValue);
-                                                                } catch (error) {
-                                                                    setAccountFeedback(error.message);
-                                                                }
-                                                            }}
-                                                            disabled={!themeImportValue.trim()}
-                                                        >
-                                                            Import & apply
-                                                        </button>
+                                                        <div className="account-inline-actions">
+                                                            <button
+                                                                type="button"
+                                                                className="account-primary-btn"
+                                                                onClick={async () => {
+                                                                    try {
+                                                                        await importSharedTheme(themeImportValue);
+                                                                    } catch (error) {
+                                                                        setAccountFeedback(error.message);
+                                                                    }
+                                                                }}
+                                                                disabled={!themeImportValue.trim()}
+                                                            >
+                                                                Import & Apply
+                                                            </button>
+                                                        </div>
                                                     </div>
 
                                                     {savedThemePacks.length > 0 ? (
@@ -2129,16 +2638,50 @@ function App() {
                                                     <div className="account-section-card">
                                                         <h3>Customize</h3>
 
+                                                        <div className="theme-preview-card">
+                                                            <div className="theme-library-header">
+                                                                <div>
+                                                                    <h3>Preview</h3>
+                                                                    <p className="account-section-copy">Live preview of the current pack while you edit it.</p>
+                                                                </div>
+                                                                <div className="theme-library-actions">
+                                                                    <button
+                                                                        type="button"
+                                                                        className="account-primary-btn"
+                                                                        onClick={saveThemePackDraft}
+                                                                        disabled={!themeDraft}
+                                                                    >
+                                                                        Save Pack
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                            <div
+                                                                className="theme-preview-strip"
+                                                                style={{ backgroundImage: draftPreviewBackground }}
+                                                            >
+                                                                <div className="theme-preview-overlay">
+                                                                    <button
+                                                                        type="button"
+                                                                        className="theme-preview-btn"
+                                                                        style={resolveThemeButtonStyle(themeDraft)}
+                                                                    >
+                                                                        Button Preview
+                                                                    </button>
+                                                                    <span className="theme-preview-label">{themeDraft?.name || 'Custom Photo Pack'}</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
                                                         {/* Button color picker */}
                                                         <div className="theme-custom-row">
                                                             <label className="theme-color-label">
-                                                                <span>Accent / button color</span>
+                                                                <span>Button color</span>
                                                                 <div className="theme-color-row">
                                                                     <input
                                                                         type="color"
                                                                         className="theme-color-input"
                                                                         value={themeDraft.btnColor || '#60a5fa'}
-                                                                        onChange={(e) => setThemeDraft((prev) => ({ ...prev, btnColor: e.target.value }))}
+                                                                        onChange={(e) => setThemeDraft((prev) => ({ ...prev, btnColor: e.target.value, btnGradient: undefined }))}
                                                                     />
                                                                     <input
                                                                         type="text"
@@ -2148,11 +2691,80 @@ function App() {
                                                                         onChange={(e) => {
                                                                             const v = e.target.value;
                                                                             if (/^#[0-9a-fA-F]{0,6}$/.test(v)) {
-                                                                                setThemeDraft((prev) => ({ ...prev, btnColor: v }));
+                                                                                setThemeDraft((prev) => ({ ...prev, btnColor: v, btnGradient: undefined }));
                                                                             }
                                                                         }}
                                                                     />
                                                                 </div>
+                                                            </label>
+                                                        </div>
+
+                                                        <div className="theme-custom-row">
+                                                            <label className="theme-color-label">
+                                                                <span>Button text color</span>
+                                                                <div className="theme-color-row">
+                                                                    <input
+                                                                        type="color"
+                                                                        className="theme-color-input"
+                                                                        value={themeDraft.btnTextColor || getContrastTextColor(themeDraft.btnColor || '#60a5fa')}
+                                                                        onChange={(e) => setThemeDraft((prev) => ({ ...prev, btnTextColor: e.target.value }))}
+                                                                    />
+                                                                    <input
+                                                                        type="text"
+                                                                        className="theme-color-text"
+                                                                        value={themeDraft.btnTextColor || getContrastTextColor(themeDraft.btnColor || '#60a5fa')}
+                                                                        maxLength={7}
+                                                                        onChange={(e) => {
+                                                                            const v = e.target.value;
+                                                                            if (/^#[0-9a-fA-F]{0,6}$/.test(v)) {
+                                                                                setThemeDraft((prev) => ({ ...prev, btnTextColor: v }));
+                                                                            }
+                                                                        }}
+                                                                    />
+                                                                </div>
+                                                            </label>
+                                                        </div>
+
+                                                        <div className="theme-custom-row">
+                                                            <label className="theme-color-label">
+                                                                <span>Button gradient</span>
+                                                                <div className="theme-color-row">
+                                                                    {[0, 1, 2].map((index) => (
+                                                                        <input
+                                                                            key={index}
+                                                                            type="color"
+                                                                            className="theme-color-input"
+                                                                            value={themeDraft.btnGradient?.colors?.[index] || themeDraft.btnColor || ACCENT_SWATCHES[index] || '#60a5fa'}
+                                                                            onChange={(event) => setThemeDraft((prev) => {
+                                                                                const nextColors = [...(prev.btnGradient?.colors || [prev.btnColor || '#60a5fa', '#2563eb', '#7dd3fc'])];
+                                                                                nextColors[index] = event.target.value;
+                                                                                return {
+                                                                                    ...prev,
+                                                                                    btnGradient: {
+                                                                                        angle: Number.isFinite(Number(prev.btnGradient?.angle)) ? Number(prev.btnGradient.angle) : 135,
+                                                                                        colors: nextColors.slice(0, 3),
+                                                                                    },
+                                                                                };
+                                                                            })}
+                                                                        />
+                                                                    ))}
+                                                                </div>
+                                                            </label>
+                                                            <label className="account-field" style={{ marginTop: 8 }}>
+                                                                <span>Gradient angle</span>
+                                                                <input
+                                                                    type="range"
+                                                                    min="0"
+                                                                    max="360"
+                                                                    value={Number(themeDraft.btnGradient?.angle ?? 135)}
+                                                                    onChange={(event) => setThemeDraft((prev) => ({
+                                                                        ...prev,
+                                                                        btnGradient: {
+                                                                            angle: Number(event.target.value),
+                                                                            colors: [...(prev.btnGradient?.colors || [prev.btnColor || '#60a5fa', '#2563eb', '#7dd3fc'])].slice(0, 3),
+                                                                        },
+                                                                    }))}
+                                                                />
                                                             </label>
                                                         </div>
 
@@ -2170,7 +2782,7 @@ function App() {
                                                                     }));
                                                                 }}
                                                             >
-                                                                Gradient
+                                                                Gradient Background
                                                             </button>
                                                             <button
                                                                 type="button"
@@ -2203,71 +2815,22 @@ function App() {
                                                         </div>
 
                                                         {customBgMode === 'gradient' ? (
-                                                            <div className="theme-gradient-grid">
-                                                                {[0, 1, 2].map((index) => (
-                                                                    <label key={index} className="theme-color-label">
-                                                                        <span>{`Gradient color ${index + 1}`}</span>
-                                                                        <div className="theme-color-row">
-                                                                            <input
-                                                                                type="color"
-                                                                                className="theme-color-input"
-                                                                                value={themeDraft.gradient?.colors?.[index] || ACCENT_SWATCHES[index] || '#60a5fa'}
-                                                                                onChange={(event) => setThemeDraft((prev) => {
-                                                                                    const nextColors = [...(prev.gradient?.colors || EMPTY_CUSTOM_THEME.gradient.colors)];
-                                                                                    nextColors[index] = event.target.value;
-                                                                                    return {
-                                                                                        ...prev,
-                                                                                        backgroundMode: 'gradient',
-                                                                                        gradient: {
-                                                                                            ...(prev.gradient || EMPTY_CUSTOM_THEME.gradient),
-                                                                                            colors: nextColors,
-                                                                                        },
-                                                                                    };
-                                                                                })}
-                                                                            />
-                                                                            <input
-                                                                                type="text"
-                                                                                className="theme-color-text"
-                                                                                value={themeDraft.gradient?.colors?.[index] || ''}
-                                                                                maxLength={7}
-                                                                                onChange={(event) => {
-                                                                                    const value = event.target.value;
-                                                                                    if (/^#[0-9a-fA-F]{0,6}$/.test(value)) {
-                                                                                        setThemeDraft((prev) => {
-                                                                                            const nextColors = [...(prev.gradient?.colors || EMPTY_CUSTOM_THEME.gradient.colors)];
-                                                                                            nextColors[index] = value;
-                                                                                            return {
-                                                                                                ...prev,
-                                                                                                backgroundMode: 'gradient',
-                                                                                                gradient: {
-                                                                                                    ...(prev.gradient || EMPTY_CUSTOM_THEME.gradient),
-                                                                                                    colors: nextColors,
-                                                                                                },
-                                                                                            };
-                                                                                        });
-                                                                                    }
-                                                                                }}
-                                                                            />
-                                                                        </div>
-                                                                    </label>
-                                                                ))}
-                                                                <label className="account-field">
-                                                                    <span>Gradient angle</span>
-                                                                    <input
-                                                                        type="range"
-                                                                        min="0"
-                                                                        max="360"
-                                                                        value={Number(themeDraft.gradient?.angle ?? EMPTY_CUSTOM_THEME.gradient.angle)}
-                                                                        onChange={(event) => setThemeDraft((prev) => ({
-                                                                            ...prev,
-                                                                            backgroundMode: 'gradient',
-                                                                            gradient: {
-                                                                                ...(prev.gradient || EMPTY_CUSTOM_THEME.gradient),
-                                                                                angle: Number(event.target.value),
-                                                                            },
-                                                                        }))}
-                                                                    />
-                                                                </label>
+                                                            <div className="theme-gradient-summary-card">
+                                                                <div
+                                                                    className="theme-gradient-summary-preview"
+                                                                    style={{ backgroundImage: buildGradientCss(themeDraft.gradient) }}
+                                                                />
+                                                                <div className="theme-gradient-summary-copy">
+                                                                    <strong>Custom Gradient</strong>
+                                                                    <span>{`${themeDraft.gradient?.type || 'linear'} / ${draftGradientStops.length} stop${draftGradientStops.length === 1 ? '' : 's'}`}</span>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    className="account-primary-btn"
+                                                                    onClick={() => setGradientEditorOpen(true)}
+                                                                >
+                                                                    Edit Gradient
+                                                                </button>
                                                             </div>
                                                         ) : customBgMode === 'universal' ? (
                                                             <div className="theme-bg-upload-row">
@@ -2286,13 +2849,21 @@ function App() {
                                                                         type="file"
                                                                         accept="image/png,image/jpeg,image/webp"
                                                                         style={{ display: 'none' }}
-                                                                        onChange={async (e) => {
+                                                                    onChange={async (e) => {
                                                                             const file = e.target.files?.[0];
                                                                             e.target.value = '';
                                                                             if (!file) return;
                                                                             if (file.size > 4 * 1024 * 1024) { setAccountFeedback('Background image must be under 4 MB.'); return; }
-                                                                            const url = await readFileAsDataUrl(file);
-                                                                            setThemeDraft((prev) => ({ ...prev, images: { universal: url } }));
+                                                                            try {
+                                                                                const session = getSession();
+                                                                                if (!session) {
+                                                                                    throw new Error('Please log in again to upload this image.');
+                                                                                }
+                                                                                const url = await uploadThemeImageFile(file, session, 'theme-images', `${themeDraft?.id || 'theme'}-universal.${file.name.split('.').pop() || 'png'}`);
+                                                                                setThemeDraft((prev) => ({ ...prev, images: { ...prev.images, universal: url } }));
+                                                                            } catch (error) {
+                                                                                setAccountFeedback(error.message);
+                                                                            }
                                                                         }}
                                                                     />
                                                                     <button
@@ -2348,8 +2919,17 @@ function App() {
                                                                                     e.target.value = '';
                                                                                     if (!file) return;
                                                                                     if (file.size > 4 * 1024 * 1024) { setAccountFeedback('Image must be under 4 MB.'); return; }
-                                                                                    const url = await readFileAsDataUrl(file);
-                                                                                    setThemeDraft((prev) => ({ ...prev, images: { ...prev.images, [key]: url } }));
+                                                                                    try {
+                                                                                        const session = getSession();
+                                                                                        if (!session) {
+                                                                                            throw new Error('Please log in again to upload this image.');
+                                                                                        }
+                                                                                        const ext = file.name.split('.').pop() || 'png';
+                                                                                        const url = await uploadThemeImageFile(file, session, 'theme-gallery', `${themeDraft?.id || 'theme'}-${key}.${ext}`);
+                                                                                        setThemeDraft((prev) => ({ ...prev, images: { ...prev.images, [key]: url } }));
+                                                                                    } catch (error) {
+                                                                                        setAccountFeedback(error.message);
+                                                                                    }
                                                                                 }}
                                                                             />
                                                                         </label>
@@ -2357,34 +2937,6 @@ function App() {
                                                                 })}
                                                             </div>
                                                         )}
-                                                    </div>
-                                                )}
-
-                                                {/* Live preview strip */}
-                                                {themeDraft && (
-                                                    <div className="account-section-card theme-preview-card">
-                                                        <h3>Preview</h3>
-                                                        <div className="theme-preview-strip" style={{
-                                                            backgroundImage: inferThemePreview({
-                                                                ...themeDraft,
-                                                                backgroundMode: customBgMode,
-                                                            }) || 'none',
-                                                            backgroundSize: inferImageFit(themeDraft),
-                                                        }}>
-                                                            <div className="theme-preview-overlay">
-                                                                <button
-                                                                    className="theme-preview-btn"
-                                                                    style={{
-                                                                        '--btn-color': normalizeHexColor(themeDraft.btnColor),
-                                                                        '--btn-text-color': getContrastTextColor(themeDraft.btnColor),
-                                                                    }}
-                                                                    type="button"
-                                                                >
-                                                                    Sample button
-                                                                </button>
-                                                                <span className="theme-preview-label">Accent: {themeDraft.btnColor || '#60a5fa'}</span>
-                                                            </div>
-                                                        </div>
                                                     </div>
                                                 )}
 
@@ -2499,193 +3051,11 @@ function App() {
                                     </button>
                                 )}
                             </div>
-
-                            {themeShareState.open && themeShareState.theme && (
-                                <div className="theme-share-modal-backdrop" onClick={closeThemeShareDialog}>
-                                    <div className="theme-share-modal-shell" onClick={(event) => event.stopPropagation()}>
-                                        <div className="theme-share-modal">
-                                            <div className="theme-share-modal-header">
-                                                <div>
-                                                    <div className="account-modal-kicker">Share Theme</div>
-                                                    <h3>{themeShareState.theme.name}</h3>
-                                                    <p>{themeShareState.theme.creatorLabel || `Theme created by ${themeShareState.theme.authorName || 'you'}`}</p>
-                                                </div>
-                                                <button type="button" className="account-close-btn" onClick={closeThemeShareDialog}>
-                                                    Done
-                                                </button>
-                                            </div>
-
-                                            <div className="theme-share-modal-body">
-                                                <div className="theme-share-preview-panel" style={{ backgroundImage: themeSharePreview }}>
-                                                    <div className="theme-share-preview-overlay">
-                                                        <span className="theme-share-preview-chip">{themeShareState.theme.authorLabel || 'By you'}</span>
-                                                        <button
-                                                            type="button"
-                                                            className="theme-preview-btn"
-                                                            style={{
-                                                                '--btn-color': normalizeHexColor(themeShareState.theme.btnColor),
-                                                                '--btn-text-color': getContrastTextColor(themeShareState.theme.btnColor),
-                                                            }}
-                                                        >
-                                                            Preview Theme
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                {themeShareState.theme.sharedThemeId && themeShareState.theme.isOwnedTheme !== true && (
-                                                    <p className="theme-share-note">This imported theme keeps the original creator name. You can share the existing link or code, but only the owner can edit the custom link.</p>
-                                                )}
-
-                                                <div className="theme-share-action-grid">
-                                                    <button
-                                                        type="button"
-                                                        className="theme-share-action primary"
-                                                        onClick={saveSharedThemeDetails}
-                                                        disabled={themeShareState.loading}
-                                                    >
-                                                        <span className="theme-share-action-icon">+</span>
-                                                        <span>{themeShareState.loading ? 'Saving...' : themeShareState.theme.shareCode ? 'Refresh Share' : 'Create Share'}</span>
-                                                    </button>
-                                                    {typeof navigator.share === 'function' && (
-                                                        <button
-                                                            type="button"
-                                                            className="theme-share-action"
-                                                            onClick={async () => {
-                                                                try {
-                                                                    await shareThemeThroughSystem(themeShareState.theme);
-                                                                } catch {
-                                                                    setAccountFeedback('Native share was canceled.');
-                                                                }
-                                                            }}
-                                                            disabled={!themeShareState.theme.shareUrl}
-                                                        >
-                                                            <span className="theme-share-action-icon">↗</span>
-                                                            <span>Share</span>
-                                                        </button>
-                                                    )}
-                                                    <button
-                                                        type="button"
-                                                        className="theme-share-action"
-                                                        onClick={() => copyThemeShareValue(themeShareState.theme.shareUrl, 'Share link')}
-                                                        disabled={!themeShareState.theme.shareUrl}
-                                                    >
-                                                        <span className="theme-share-action-icon">⧉</span>
-                                                        <span>Copy Link</span>
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        className="theme-share-action"
-                                                        onClick={() => copyThemeShareValue(themeShareState.theme.shareCode, 'Theme code')}
-                                                        disabled={!themeShareState.theme.shareCode}
-                                                    >
-                                                        <span className="theme-share-action-icon">#</span>
-                                                        <span>Copy Code</span>
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        className="theme-share-action"
-                                                        onClick={() => openThemeShareTarget(themeShareTargets?.sms)}
-                                                        disabled={!themeShareState.theme.shareUrl}
-                                                    >
-                                                        <span className="theme-share-action-icon">M</span>
-                                                        <span>Messages</span>
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        className="theme-share-action"
-                                                        onClick={() => openThemeShareTarget(themeShareTargets?.email)}
-                                                        disabled={!themeShareState.theme.shareUrl}
-                                                    >
-                                                        <span className="theme-share-action-icon">@</span>
-                                                        <span>Email</span>
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        className="theme-share-action"
-                                                        onClick={() => openThemeShareTarget(themeShareTargets?.facebook)}
-                                                        disabled={!themeShareState.theme.shareUrl}
-                                                    >
-                                                        <span className="theme-share-action-icon">f</span>
-                                                        <span>Facebook</span>
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        className="theme-share-action"
-                                                        onClick={() => openThemeShareTarget(themeShareTargets?.whatsapp)}
-                                                        disabled={!themeShareState.theme.shareUrl}
-                                                    >
-                                                        <span className="theme-share-action-icon">w</span>
-                                                        <span>WhatsApp</span>
-                                                    </button>
-                                                </div>
-
-                                                <div className="theme-share-value-stack">
-                                                    <label className="theme-share-value-card">
-                                                        <span>Share link</span>
-                                                        <input value={themeShareState.theme.shareUrl || ''} readOnly />
-                                                    </label>
-                                                    <label className="theme-share-value-card">
-                                                        <span>Theme code</span>
-                                                        <input value={themeShareState.theme.shareCode || ''} readOnly />
-                                                    </label>
-                                                </div>
-
-                                                <div className="theme-share-footer">
-                                                    <div>
-                                                        <strong>Custom link ID</strong>
-                                                        <p>Keep the share sheet clean and move custom link editing into a second modal.</p>
-                                                    </div>
-                                                    <button
-                                                        type="button"
-                                                        className="account-secondary-btn"
-                                                        onClick={openThemeLinkEditor}
-                                                        disabled={themeShareState.theme.sharedThemeId && themeShareState.theme.isOwnedTheme !== true}
-                                                    >
-                                                        Customize link
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {themeShareState.linkEditorOpen && (
-                                            <div className="theme-share-link-backdrop" onClick={closeThemeLinkEditor}>
-                                                <div className="theme-share-link-modal" onClick={(event) => event.stopPropagation()}>
-                                                    <div className="theme-share-link-header">
-                                                        <div>
-                                                            <div className="account-modal-kicker">Custom Link</div>
-                                                            <h4>Choose your share ID</h4>
-                                                            <p>Use a short slug like <code>mountain_theme</code>. Six-digit hex codes still work automatically.</p>
-                                                        </div>
-                                                        <button type="button" className="account-close-btn" onClick={closeThemeLinkEditor}>
-                                                            Close
-                                                        </button>
-                                                    </div>
-                                                    <label className="account-field">
-                                                        <span>Custom link ID</span>
-                                                        <input
-                                                            value={themeShareState.customLinkId}
-                                                            onChange={(event) => setThemeShareState((prev) => ({ ...prev, customLinkId: event.target.value }))}
-                                                            placeholder="mountain_theme"
-                                                            disabled={themeShareState.loading || (themeShareState.theme.sharedThemeId && themeShareState.theme.isOwnedTheme !== true)}
-                                                        />
-                                                    </label>
-                                                    <div className="theme-share-link-actions">
-                                                        <button type="button" className="account-secondary-btn" onClick={closeThemeLinkEditor}>
-                                                            Cancel
-                                                        </button>
-                                                        <button type="button" className="account-primary-btn" onClick={saveSharedThemeDetails} disabled={themeShareState.loading}>
-                                                            {themeShareState.loading ? 'Saving...' : 'Save link ID'}
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
+                            </div>
                         </div>
-                    </div>
                     )}
+                    {gradientEditorModal}
+                    {themeShareModal}
                 </>
             ) : (
                 <Login setIsAuthenticated={setIsAuthenticated} />
@@ -2695,3 +3065,7 @@ function App() {
 }
 
 export default App;
+
+
+
+
