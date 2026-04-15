@@ -1,6 +1,7 @@
 import 'package:calendar/screens/app_bootstrap_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   testWidgets('app bootstrap opens the in-app reset password flow', (

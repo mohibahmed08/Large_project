@@ -48,6 +48,27 @@ class DefaultFirebaseOptions {
     }
   }
 
+  static bool get isConfiguredForCurrentPlatform {
+    if (kIsWeb) {
+      return _webApiKey.isNotEmpty;
+    }
+
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return _androidApiKey.isNotEmpty;
+      case TargetPlatform.iOS:
+        return _iosApiKey.isNotEmpty;
+      case TargetPlatform.macOS:
+        return _macosApiKey.isNotEmpty;
+      case TargetPlatform.windows:
+        return _windowsApiKey.isNotEmpty;
+      case TargetPlatform.linux:
+        return false;
+      default:
+        return false;
+    }
+  }
+
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: _webApiKey,
     appId: '1:228632083486:web:56f73ba000519b500ec20f',
