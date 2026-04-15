@@ -5,6 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <title>Calendar</title>
+    <script>
+      (function () {
+        var desktopPrefKey = 'calpp_desktop_site_until';
+        var mobileTarget = '/mobile/';
+        var path = window.location.pathname || '/';
+        if (path !== '/' || window.location.search) {
+          return;
+        }
+
+        try {
+          var desktopUntil = Number(window.localStorage.getItem(desktopPrefKey) || 0);
+          if (desktopUntil > Date.now()) {
+            return;
+          }
+          window.localStorage.removeItem(desktopPrefKey);
+        } catch (error) {
+          // Ignore storage failures and continue with best-effort detection.
+        }
+
+        var ua = navigator.userAgent || '';
+        var isMobile = /Android|iPhone|iPad|iPod|IEMobile|Opera Mini|Mobile/i.test(ua);
+        if (isMobile) {
+          window.location.replace(mobileTarget + '?source=desktop-redirect');
+        }
+      })();
+    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

@@ -1,7 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+
+import 'platform_runtime.dart';
 
 /// Flutter bridge for iOS 16.2+ Live Activities (Lock Screen + Dynamic Island).
 ///
@@ -25,7 +25,7 @@ class LiveActivityService {
 
   // ── Check if Live Activities are supported on this device ─────────────────
   static Future<bool> isSupported() async {
-    if (!Platform.isIOS) return false;
+    if (!isNativeIOS) return false;
     try {
       final supported = await _channel.invokeMethod<bool>('isSupported');
       return supported ?? false;
@@ -49,7 +49,7 @@ class LiveActivityService {
     String? description,
     String? location,
   }) async {
-    if (!Platform.isIOS) return null;
+    if (!isNativeIOS) return null;
     try {
       final id = await _channel.invokeMethod<String>('startActivity', {
         'taskId':    taskId,
@@ -81,7 +81,7 @@ class LiveActivityService {
     String? location,
     bool isCompleted = false,
   }) async {
-    if (!Platform.isIOS) return;
+    if (!isNativeIOS) return;
     try {
       await _channel.invokeMethod<void>('updateActivity', {
         'activityId':  activityId,
@@ -101,7 +101,7 @@ class LiveActivityService {
 
   // ── End / dismiss a Live Activity ─────────────────────────────────────────
   static Future<void> endActivity(String activityId) async {
-    if (!Platform.isIOS) return;
+    if (!isNativeIOS) return;
     try {
       await _channel.invokeMethod<void>('endActivity', {
         'activityId': activityId,
@@ -115,7 +115,7 @@ class LiveActivityService {
   }
 
   static Future<void> endAllActivities() async {
-    if (!Platform.isIOS) return;
+    if (!isNativeIOS) return;
     try {
       await _channel.invokeMethod<void>('endAllActivities');
       if (kDebugMode) debugPrint('[LiveActivity] ended all activities');

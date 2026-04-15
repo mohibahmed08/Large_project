@@ -16,6 +16,7 @@ import '../services/calendar_service.dart';
 import '../services/live_activity_service.dart';
 import '../services/push_notification_service.dart';
 import '../services/session_storage.dart';
+import '../services/theme_service.dart';
 import '../services/widget_sync_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/day_grid.dart';
@@ -43,13 +44,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   final AiService _aiService = AiService();
   final CalendarService _calendarService = CalendarService();
+  final ThemeService _themeService = ThemeService();
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _quickTaskController = TextEditingController();
   final TextEditingController _quickAddController = TextEditingController();
   final PageController _monthPageController = PageController(initialPage: 1200);
+  final ScrollController _calendarScrollController = ScrollController();
 
   late UserSession _session;
   Timer? _liveActivityTimer;
+  Timer? _searchDebounceTimer;
   StreamSubscription<String>? _appLinkTaskSubscription;
   StreamSubscription<Map<String, dynamic>>? _notificationOpenSubscription;
   String? _liveActivityId;
@@ -64,16 +68,27 @@ class _CalendarScreenState extends State<CalendarScreen> {
   List<CalendarTask> _tasks = [];
   List<CalendarTask> _visibleTasks = [];
   bool _isLoading = true;
+  bool _searchLoading = false;
   bool _iosSideEffectsStarted = false;
   int _selectedIndex = 0; // 0=Calendar, 1=Day, 2=AI
   _WeatherWidgetMode _weatherWidgetMode = _WeatherWidgetMode.future;
   final Set<String> _expandedDayTaskIds = <String>{};
+  int _searchRequestVersion = 0;
+  String _searchError = '';
 
   void _debugLog(String message) {
     if (kDebugMode) {
       debugPrint('[CalendarStartup] $message');
     }
   }
+
+  void _syncThemeWeather() {
+    _themeService.setActiveWeatherCode(_selectedDayWeather?['code'] as int?);
+  }
+
+  String get _trimmedSearchQuery => _searchController.text.trim();
+
+  bool get _isSearchActive => _trimmedSearchQuery.isNotEmpty;
 
   List<String> get _existingGroups {
     final counts = <String, int>{};
@@ -103,6 +118,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _appLinkTaskSubscription = AppLinkService.taskOpens.listen((taskId) {
       unawaited(_openTaskById(taskId));
     });
+    _searchController.addListener(_handleSearchQueryChanged);
     _loadMonth(showLoader: true);
     _fetchWeather();
     unawaited(_restoreWeatherWidgetMode());
@@ -117,12 +133,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
   @override
   void dispose() {
     _liveActivityTimer?.cancel();
+    _searchDebounceTimer?.cancel();
     _appLinkTaskSubscription?.cancel();
     _notificationOpenSubscription?.cancel();
+    _searchController.removeListener(_handleSearchQueryChanged);
     _searchController.dispose();
     _quickTaskController.dispose();
     _quickAddController.dispose();
     _monthPageController.dispose();
+    _calendarScrollController.dispose();
     super.dispose();
   }
 
@@ -157,6 +176,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         _currentDate = DateTime(selectedDay.year, selectedDay.month, 1);
         _selectedIndex = 1;
       });
+      _syncThemeWeather();
 
       final now = DateTime.now();
       final monthOffset =
@@ -705,8 +725,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
       setState(() {
         _cacheSession(result.session);
         _tasks = result.tasks;
-        _visibleTasks = result.tasks;
+        if (!_isSearchActive) {
+          _visibleTasks = result.tasks;
+        }
       });
+      if (_isSearchActive) {
+        unawaited(_runCalendarSearch(_trimmedSearchQuery));
+      }
       _debugLog('loadMonth success tasks=${result.tasks.length}');
       unawaited(_startIosSideEffectsIfNeeded());
       if (_iosSideEffectsStarted) {
@@ -724,6 +749,78 @@ class _CalendarScreenState extends State<CalendarScreen> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  void _handleSearchQueryChanged() {
+    final query = _trimmedSearchQuery;
+    _searchDebounceTimer?.cancel();
+
+    if (query.isEmpty) {
+      _searchRequestVersion += 1;
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _searchLoading = false;
+        _searchError = '';
+        _visibleTasks = _tasks;
+      });
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _searchLoading = true;
+      _searchError = '';
+    });
+
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 180), () {
+      unawaited(_runCalendarSearch(query));
+    });
+  }
+
+  Future<void> _runCalendarSearch(String query) async {
+    final normalizedQuery = query.trim();
+    if (normalizedQuery.isEmpty) {
+      return;
+    }
+
+    final requestVersion = ++_searchRequestVersion;
+
+    try {
+      final result = await _calendarService.searchCalendar(
+        session: _session,
+        search: normalizedQuery,
+      );
+
+      if (!mounted ||
+          requestVersion != _searchRequestVersion ||
+          normalizedQuery != _trimmedSearchQuery) {
+        return;
+      }
+
+      setState(() {
+        _cacheSession(result.session);
+        _searchLoading = false;
+        _searchError = '';
+        _visibleTasks = result.tasks;
+      });
+    } catch (error) {
+      if (!mounted ||
+          requestVersion != _searchRequestVersion ||
+          normalizedQuery != _trimmedSearchQuery) {
+        return;
+      }
+
+      setState(() {
+        _searchLoading = false;
+        _visibleTasks = const [];
+        _searchError = error.toString().replaceFirst('Exception: ', '');
+      });
     }
   }
 
@@ -763,6 +860,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _selectedDate = nextSelectedDate;
       _expandedDayTaskIds.clear();
     });
+    _syncThemeWeather();
 
     if (animatePage && _monthPageController.hasClients) {
       await _monthPageController.animateToPage(
@@ -810,6 +908,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           _weatherData = fallbackForecast;
           _weatherLocationName = 'Orlando, Florida';
         });
+        _syncThemeWeather();
         _debugLog('weather fallback loaded');
       }
     } catch (_) {
@@ -850,6 +949,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         _weatherData = localForecast;
         _weatherLocationName = 'Current location';
       });
+      _syncThemeWeather();
       _debugLog('weather current location loaded');
     } catch (_) {
       // Keep the fallback weather if location lookup fails.
@@ -1769,6 +1869,50 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return _buildCalendarTabRevamp();
   }
 
+  Widget _buildSearchCard() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: _searchController,
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            hintText: 'Search',
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: _searchLoading
+                ? const Padding(
+                    padding: EdgeInsets.all(14),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : _isSearchActive
+                    ? IconButton(
+                        onPressed: () {
+                          _searchController.clear();
+                        },
+                        icon: const Icon(Icons.close),
+                        tooltip: 'Clear search',
+                      )
+                    : null,
+          ),
+        ),
+        if (_searchError.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            _searchError,
+            style: TextStyle(
+              color: AppTheme.danger,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildDayTab() {
     return _buildDayTabPolished();
   }
@@ -1778,13 +1922,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final today = DateUtils.dateOnly(DateTime.now());
     final selectedDayWeather = _selectedDayWeather;
     final dayTasks = _tasksForSelectedDay;
+    final showWideScreenScrollbar = MediaQuery.of(context).size.width >= 960;
 
     return _isLoading
         ? const Center(child: CircularProgressIndicator())
         : RefreshIndicator(
             onRefresh: () => _loadMonth(showLoader: false),
-            child: CustomScrollView(
-              slivers: [
+            child: Scrollbar(
+              controller: _calendarScrollController,
+              thumbVisibility: showWideScreenScrollbar,
+              trackVisibility: showWideScreenScrollbar,
+              interactive: showWideScreenScrollbar,
+              child: CustomScrollView(
+                controller: _calendarScrollController,
+                slivers: [
                 // ── Month header row ──────────────────────────────────────
                 SliverToBoxAdapter(
                   child: Padding(
@@ -1842,6 +1993,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 ),
 
                 // ── Weekday labels ────────────────────────────────────────
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: _buildSearchCard(),
+                  ),
+                ),
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1944,6 +2101,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                     selectedDay,
                                   );
                                 });
+                                _syncThemeWeather();
                               },
                             );
                           },
@@ -2062,7 +2220,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ),
                     ),
                   ),
-              ],
+                ],
+              ),
             ),
           );
   }
@@ -2309,6 +2468,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _displayMonth = DateTime(nextDate.year, nextDate.month);
       _expandedDayTaskIds.clear();
     });
+    _syncThemeWeather();
 
     if (_monthPageController.hasClients) {
       _monthPageController.animateToPage(
@@ -3144,6 +3304,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
         onRefresh: () => _loadMonth(showLoader: false),
         child: CustomScrollView(
           slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+                child: _buildSearchCard(),
+              ),
+            ),
             SliverToBoxAdapter(
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,

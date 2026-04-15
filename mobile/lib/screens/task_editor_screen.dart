@@ -3,6 +3,8 @@ import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
+
 enum TaskEditorAction { save, delete }
 
 class TaskEditorResult {
@@ -547,7 +549,7 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
                     scale: 0.94,
                     child: CupertinoSwitch(
                       value: _reminderEnabled,
-                      activeTrackColor: const Color(0xFF60A5FA),
+                      activeTrackColor: AppTheme.accent,
                       onChanged: (value) {
                         setState(() {
                           _reminderEnabled = value;
@@ -743,9 +745,9 @@ class _GlassTimePickerSheet extends StatelessWidget {
                   const SizedBox(height: 6),
                   Expanded(
                     child: CupertinoTheme(
-                      data: const CupertinoThemeData(
+                      data: CupertinoThemeData(
                         brightness: Brightness.dark,
-                        primaryColor: Color(0xFF60A5FA),
+                        primaryColor: AppTheme.accent,
                         textTheme: CupertinoTextThemeData(
                           dateTimePickerTextStyle: TextStyle(
                             color: Colors.white,
@@ -845,9 +847,9 @@ class _GlassDatePickerSheet extends StatelessWidget {
                   const SizedBox(height: 6),
                   Expanded(
                     child: CupertinoTheme(
-                      data: const CupertinoThemeData(
+                      data: CupertinoThemeData(
                         brightness: Brightness.dark,
-                        primaryColor: Color(0xFF60A5FA),
+                        primaryColor: AppTheme.accent,
                         textTheme: CupertinoTextThemeData(
                           dateTimePickerTextStyle: TextStyle(
                             color: Colors.white,

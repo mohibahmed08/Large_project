@@ -100,6 +100,61 @@ function extractResponseText(responseBody)
     return textParts.join('\n').trim();
 }
 
+const SUPPORTED_AVATAR_MIME_TYPES = new Set([
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'image/webp',
+    'image/avif',
+    'image/heic',
+    'image/heif',
+]);
+const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
+const MAX_SHARED_THEME_BYTES = 6 * 1024 * 1024;
+const THEME_SHARE_CODE_LENGTH = 6;
+const THEME_SHARE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9_-]{1,38}[a-z0-9])?$/;
+
+function base64ByteLength(value)
+{
+    const normalized = String(value || '').replace(/\s+/g, '');
+    if(!normalized)
+    {
+        return 0;
+    }
+
+    const padding = normalized.endsWith('==') ? 2 : normalized.endsWith('=') ? 1 : 0;
+    return Math.floor((normalized.length * 3) / 4) - padding;
+}
+
+function normalizeAvatarDataUrl(value)
+{
+    const trimmedValue = String(value || '').trim();
+    if(!trimmedValue)
+    {
+        return '';
+    }
+
+    const match = /^data:(image\/[A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$/i.exec(trimmedValue);
+    if(!match)
+    {
+        throw new Error('Profile picture must be a base64 image upload.');
+    }
+
+    const mimeType = match[1].toLowerCase();
+    const base64Payload = match[2].replace(/\s+/g, '');
+    if(!SUPPORTED_AVATAR_MIME_TYPES.has(mimeType))
+    {
+        throw new Error('Profile picture must be PNG, JPEG, GIF, WEBP, AVIF, HEIC, or HEIF.');
+    }
+
+    if(base64ByteLength(base64Payload) > MAX_AVATAR_BYTES)
+    {
+        throw new Error('Profile picture must be 2 MB or smaller.');
+    }
+
+    return `data:${mimeType};base64,${base64Payload}`;
+}
+
 function sleep(ms)
 {
     return new Promise((resolve) =>
@@ -921,12 +976,8 @@ function renderVerificationExpiredPage({ loginUrl, warningIconUrl, mascotUrl })
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Verification link expired</title>
     <style>
-      :root {
-        color-scheme: light;
-      }
-      * {
-        box-sizing: border-box;
-      }
+      :root { color-scheme: light; }
+      * { box-sizing: border-box; }
       body {
         margin: 0;
         min-height: 100vh;
@@ -940,99 +991,101 @@ function renderVerificationExpiredPage({ loginUrl, warningIconUrl, mascotUrl })
         font-family: Arial, Helvetica, sans-serif;
       }
       .panel {
-        width: min(920px, 100%);
-        background: rgba(255, 255, 255, 0.94);
+        width: min(680px, 100%);
+        background: rgba(255, 255, 255, 0.96);
         border: 1px solid rgba(148, 163, 184, 0.28);
-        border-radius: 30px;
-        box-shadow: 0 25px 60px rgba(15, 23, 42, 0.16);
+        border-radius: 28px;
+        box-shadow: 0 20px 50px rgba(15, 23, 42, 0.14);
         overflow: hidden;
+        padding: 36px 40px 32px;
       }
-      .content {
-        display: grid;
-        grid-template-columns: minmax(220px, 280px) 1fr;
-        gap: 28px;
+      /* Top row: warning icon + headline side by side */
+      .heading-row {
+        display: flex;
         align-items: center;
-        padding: 38px;
+        gap: 14px;
+        margin-bottom: 10px;
       }
-      .icon-wrap {
-        display: grid;
-        place-items: center;
+      .heading-row img.warn-icon {
+        width: 36px;
+        height: 36px;
+        flex-shrink: 0;
       }
-      .icon-wrap img {
-        width: min(240px, 100%);
-        height: auto;
-        display: block;
-      }
-      .copy h1 {
-        margin: 0 0 12px;
-        font-size: clamp(32px, 4vw, 48px);
-        line-height: 1.05;
-      }
-      .copy p {
+      .heading-row h1 {
         margin: 0;
-        font-size: clamp(18px, 2.2vw, 22px);
-        line-height: 1.5;
+        font-size: clamp(20px, 3vw, 26px);
+        line-height: 1.2;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+      .subtitle {
+        margin: 0 0 24px;
+        font-size: 15px;
+        line-height: 1.6;
         color: #475569;
         font-style: italic;
+        padding-left: 50px; /* aligns under the h1, past the icon */
       }
-      .mascot {
-        display: block;
-        width: min(360px, 100%);
+      /* Mascot centred below the text block, looking up at the warning */
+      .mascot-wrap {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 24px;
+      }
+      .mascot-wrap img {
+        width: min(200px, 55%);
         height: auto;
-        margin: 28px auto 0;
+        display: block;
       }
       .actions {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
         gap: 14px;
-        margin-top: 26px;
       }
       .button {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        padding: 14px 22px;
-        border-radius: 16px;
+        padding: 12px 22px;
+        border-radius: 14px;
         background: linear-gradient(135deg, #2563eb, #1d4ed8);
         color: #ffffff;
-        font-size: 16px;
+        font-size: 15px;
         font-weight: 700;
         text-decoration: none;
-        box-shadow: 0 12px 24px rgba(37, 99, 235, 0.24);
+        box-shadow: 0 8px 20px rgba(37, 99, 235, 0.22);
       }
       .countdown {
-        font-size: 14px;
+        font-size: 13px;
         color: #64748b;
       }
-      @media (max-width: 760px) {
-        .content {
-          grid-template-columns: 1fr;
-          text-align: center;
-          padding: 28px 22px;
-        }
-        .actions {
-          justify-content: center;
-        }
+      @media (max-width: 520px) {
+        .panel { padding: 28px 22px 24px; }
+        .heading-row h1 { white-space: normal; font-size: 18px; }
+        .subtitle { padding-left: 0; }
+        .actions { justify-content: center; }
       }
     </style>
   </head>
   <body>
     <main class="panel">
-      <section class="content">
-        <div class="icon-wrap">
-          <img src="${warningIconUrl}" alt="Warning icon">
-        </div>
-        <div class="copy">
-          <h1>This verification link is no longer valid!</h1>
-          <p>Your account may already be verified, or the link may have expired. Redirecting to login in <span id="countdown">5</span> seconds.</p>
-          <img class="mascot" src="${mascotUrl}" alt="Calendar++ verification expired mascot">
-          <div class="actions">
-            <a class="button" href="${loginUrl}">Back to Login Now</a>
-            <span class="countdown">You can also wait for the automatic redirect.</span>
-          </div>
-        </div>
-      </section>
+      <!-- Warning icon + headline on the same line -->
+      <div class="heading-row">
+        <img class="warn-icon" src="${warningIconUrl}" alt="Warning">
+        <h1>This verification link is no longer valid!</h1>
+      </div>
+      <p class="subtitle">Your account may already be verified, or the link may have expired. Redirecting to login in <span id="countdown">5</span> seconds.</p>
+
+      <!-- Mascot centred below, facing upward toward the warning icon -->
+      <div class="mascot-wrap">
+        <img src="${mascotUrl}" alt="Calendar++ mascot looking worried">
+      </div>
+
+      <div class="actions">
+        <a class="button" href="${loginUrl}">Back to Login Now</a>
+        <span class="countdown">You can also wait for the automatic redirect.</span>
+      </div>
     </main>
     <script>
       const loginUrl = ${JSON.stringify(loginUrl)};
@@ -1083,7 +1136,283 @@ async function resendVerificationEmail(db, user)
     );
 }
 
-function buildSettingsPayload(user)
+function normalizeHexColorValue(value, fallback = '#60a5fa')
+{
+    const normalized = String(value || '').trim().toLowerCase();
+    return /^#[0-9a-f]{6}$/.test(normalized) ? normalized : fallback;
+}
+
+function normalizeThemeGradient(gradient, fallback = {
+    angle: 135,
+    colors: ['#0f172a', '#2563eb', '#7dd3fc'],
+})
+{
+    const rawColors = Array.isArray(gradient?.colors) ? gradient.colors : fallback.colors;
+    const colors = rawColors
+        .map((color) => normalizeHexColorValue(color, ''))
+        .filter(Boolean);
+
+    return {
+        angle: Number.isFinite(Number(gradient?.angle)) ? Number(gradient.angle) : fallback.angle,
+        colors: colors.length >= 2 ? colors.slice(0, 3) : [...fallback.colors],
+    };
+}
+
+function normalizeThemeImageMap(images)
+{
+    if(!images || typeof images !== 'object')
+    {
+        return {};
+    }
+
+    return Object.fromEntries(
+        Object.entries(images)
+            .map(([key, value]) => [String(key || '').trim(), String(value || '').trim()])
+            .filter(([key, value]) => key && value)
+    );
+}
+
+function normalizeThemeGalleryImages(images)
+{
+    return Array.isArray(images)
+        ? images.map((value) => String(value || '').trim()).filter(Boolean)
+        : [];
+}
+
+function inferThemeBackgroundMode(theme)
+{
+    const mode = String(theme?.backgroundMode || '').trim();
+    if(['gradient', 'universal', 'perScene'].includes(mode))
+    {
+        return mode;
+    }
+
+    if(theme?.gradient?.colors?.length >= 2)
+    {
+        return 'gradient';
+    }
+
+    if(theme?.images?.universal || theme?.galleryImages?.length)
+    {
+        return 'universal';
+    }
+
+    return 'perScene';
+}
+
+function normalizeCustomThemePack(input)
+{
+    const images = normalizeThemeImageMap(input?.images);
+    const galleryImages = normalizeThemeGalleryImages(input?.galleryImages);
+    const gradient = normalizeThemeGradient(input?.gradient);
+    const backgroundMode = inferThemeBackgroundMode({
+        ...(input || {}),
+        images,
+        galleryImages,
+        gradient,
+    });
+
+    const normalized = {
+        id: String(input?.id || '').trim() || `shared-${Date.now()}`,
+        name: String(input?.name || 'Untitled Pack').trim() || 'Untitled Pack',
+        description: String(input?.description || '').trim(),
+        btnColor: normalizeHexColorValue(input?.btnColor),
+        images,
+        galleryImages,
+        selectedGalleryImage: String(input?.selectedGalleryImage || '').trim(),
+        imageFit: input?.imageFit === 'contain' || input?.imageFit === 'center' ? input.imageFit : 'cover',
+        backgroundMode,
+        gradient,
+        preview: String(input?.preview || '').trim(),
+        previewImage: String(input?.previewImage || '').trim(),
+        source: String(input?.source || 'user').trim() || 'user',
+    };
+
+    const serialized = JSON.stringify(normalized);
+    if(Buffer.byteLength(serialized, 'utf8') > MAX_SHARED_THEME_BYTES)
+    {
+        throw new Error('Theme is too large to sync or share. Keep the total uploaded theme data under 6 MB.');
+    }
+
+    return normalized;
+}
+
+function buildThemeShareSlugCandidate(name)
+{
+    return String(name || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 40);
+}
+
+function normalizeThemeShareSlug(value, fallbackName = '')
+{
+    const slug = String(value || '').trim().toLowerCase()
+        || buildThemeShareSlugCandidate(fallbackName);
+
+    if(!slug)
+    {
+        return '';
+    }
+
+    if(!THEME_SHARE_SLUG_PATTERN.test(slug))
+    {
+        throw new Error('Custom link ID must use 3-40 letters, numbers, underscores, or hyphens.');
+    }
+
+    return slug;
+}
+
+function buildThemeOwnerDisplayName(user)
+{
+    const firstName = String(user?.firstName || '').trim();
+    const lastName = String(user?.lastName || '').trim();
+    const fullName = `${firstName} ${lastName}`.trim();
+    return fullName || 'Anonymous';
+}
+
+function buildSharedThemeUrls(themeDoc)
+{
+    const clientOrigin = trimTrailingSlash(process.env.CLIENT_ORIGIN || 'http://localhost:3000');
+    const shareKey = String(themeDoc?.shareSlug || themeDoc?.shareCode || '').trim();
+    const encodedKey = encodeURIComponent(shareKey);
+
+    return {
+        shareKey,
+        shareUrl: shareKey ? `${clientOrigin}/?theme=${encodedKey}` : '',
+    };
+}
+
+function mapCustomThemeDocument(themeDoc, viewerUserId = '')
+{
+    const ownerUserId = String(themeDoc?.ownerUserId || '');
+    const ownerDisplayName = String(themeDoc?.ownerDisplayName || 'Anonymous').trim() || 'Anonymous';
+    const shareUrls = buildSharedThemeUrls(themeDoc);
+
+    return {
+        ...(themeDoc?.theme || {}),
+        id: `shared-${themeDoc?._id}`,
+        sharedThemeId: String(themeDoc?._id || ''),
+        shareCode: String(themeDoc?.shareCode || ''),
+        shareSlug: String(themeDoc?.shareSlug || ''),
+        shareKey: shareUrls.shareKey,
+        shareUrl: shareUrls.shareUrl,
+        isOwnedTheme: ownerUserId === String(viewerUserId || ''),
+        authorName: ownerDisplayName,
+        authorLabel: `By ${ownerDisplayName}`,
+        creatorLabel: `Theme created by ${ownerDisplayName}`,
+        source: ownerUserId === String(viewerUserId || '') ? 'user' : 'shared',
+    };
+}
+
+async function generateUniqueThemeShareCode(db)
+{
+    for(let attempt = 0; attempt < 8; attempt += 1)
+    {
+        const shareCode = crypto.randomBytes(THEME_SHARE_CODE_LENGTH / 2).toString('hex').toUpperCase();
+        const existing = await db.collection('customThemes').findOne(
+            { shareCode },
+            { projection: { _id: 1 } }
+        );
+        if(!existing)
+        {
+            return shareCode;
+        }
+    }
+
+    throw new Error('Could not generate a unique theme code. Please try again.');
+}
+
+function extractThemeShareLookupKey(value)
+{
+    const trimmed = String(value || '').trim();
+    if(!trimmed)
+    {
+        return '';
+    }
+
+    try
+    {
+        const parsedUrl = new URL(trimmed);
+        const fromQuery = parsedUrl.searchParams.get('theme');
+        if(fromQuery)
+        {
+            return String(fromQuery).trim();
+        }
+    }
+    catch
+    {
+        // Fall back to raw value parsing.
+    }
+
+    return trimmed;
+}
+
+function buildThemeLookupQuery(shareValue)
+{
+    const lookupKey = extractThemeShareLookupKey(shareValue);
+    if(!lookupKey)
+    {
+        throw new Error('Theme code or link is required.');
+    }
+
+    if(/^[a-f0-9]{6}$/i.test(lookupKey))
+    {
+        return { shareCode: lookupKey.toUpperCase() };
+    }
+
+    return { shareSlug: normalizeThemeShareSlug(lookupKey) };
+}
+
+async function listUserCustomThemes(db, user)
+{
+    const customThemeIds = Array.isArray(user?.customThemeIds)
+        ? user.customThemeIds
+            .map((value) => {
+                try
+                {
+                    return typeof value === 'string' ? new ObjectId(value) : value;
+                }
+                catch
+                {
+                    return null;
+                }
+            })
+            .filter(Boolean)
+        : [];
+
+    if(customThemeIds.length === 0)
+    {
+        return [];
+    }
+
+    const themeDocs = await db.collection('customThemes')
+        .find(
+            { _id: { $in: customThemeIds } },
+            {
+                projection: {
+                    theme: 1,
+                    ownerUserId: 1,
+                    ownerDisplayName: 1,
+                    shareCode: 1,
+                    shareSlug: 1,
+                    updatedAt: 1,
+                },
+            }
+        )
+        .toArray();
+
+    const themeById = new Map(themeDocs.map((themeDoc) => [String(themeDoc._id), themeDoc]));
+
+    return customThemeIds
+        .map((themeId) => themeById.get(String(themeId)))
+        .filter(Boolean)
+        .map((themeDoc) => mapCustomThemeDocument(themeDoc, user?._id));
+}
+
+async function buildSettingsPayload(db, user)
 {
     const reminderDefaults = normalizeReminderSettings(user?.reminderDefaults || {}, {
         reminderEnabled: false,
@@ -1091,13 +1420,16 @@ function buildSettingsPayload(user)
         reminderDelivery: 'email',
     });
     const feedUrls = buildCalendarFeedUrls(user);
+    const customThemes = await listUserCustomThemes(db, user);
 
     return {
         firstName: String(user?.firstName || ''),
         lastName: String(user?.lastName || ''),
         email: String(user?.email || ''),
         pendingEmail: String(user?.pendingEmail || ''),
+        avatarUrl: String(user?.avatarUrl || ''),
         reminderDefaults,
+        customThemes,
         ...feedUrls,
     };
 }
@@ -1899,6 +2231,88 @@ function normalizeReminderSettings(input = {}, fallback = {})
     };
 }
 
+function buildCalendarTaskSearchDateText(value)
+{
+    if(!value)
+    {
+        return '';
+    }
+
+    const dateValue = new Date(value);
+    if(Number.isNaN(dateValue.getTime()))
+    {
+        return String(value);
+    }
+
+    return [
+        dateValue.toISOString(),
+        dateValue.toISOString().slice(0, 10),
+        dateValue.toDateString(),
+        dateValue.toLocaleDateString('en-US', {
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric',
+        }),
+        dateValue.toLocaleDateString('en-US', {
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric',
+        }),
+        dateValue.toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+        }),
+        dateValue.toLocaleString('en-US', {
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+        }),
+    ].join(' ');
+}
+
+function buildCalendarTaskSearchText(task)
+{
+    const normalizedTask = normalizeLegacyIcsTaskForResponse(task);
+    const searchableParts = [
+        normalizedTask?._id,
+        normalizedTask?.title,
+        normalizedTask?.description,
+        normalizedTask?.location,
+        normalizedTask?.group,
+        normalizedTask?.source,
+        normalizedTask?.color,
+        normalizedTask?.isCompleted ? 'completed done finished' : 'incomplete active pending',
+        normalizedTask?.reminderEnabled ? 'reminder enabled' : 'reminder disabled',
+        Number.isFinite(Number(normalizedTask?.reminderMinutesBefore))
+            ? String(normalizedTask.reminderMinutesBefore)
+            : '',
+        buildCalendarTaskSearchDateText(normalizedTask?.dueDate),
+        buildCalendarTaskSearchDateText(normalizedTask?.endDate),
+    ];
+
+    return searchableParts
+        .filter((value) => value !== null && value !== undefined && String(value).trim())
+        .join(' ')
+        .toLowerCase();
+}
+
+function matchesCalendarTaskSearch(task, searchText)
+{
+    const normalizedSearch = String(searchText || '').trim().toLowerCase();
+    if(!normalizedSearch)
+    {
+        return true;
+    }
+
+    const searchTokens = normalizedSearch.split(/\s+/).filter(Boolean);
+    const searchableText = buildCalendarTaskSearchText(task);
+    return searchTokens.every((token) => searchableText.includes(token));
+}
+
 function buildReminderFields(taskLike, reminderInput = {}, fallback = {})
 {
     const startDate = getTaskStartDate(taskLike);
@@ -1906,13 +2320,41 @@ function buildReminderFields(taskLike, reminderInput = {}, fallback = {})
     const reminderAt = normalized.reminderEnabled && startDate
         ? new Date(startDate.getTime() - (normalized.reminderMinutesBefore * 60 * 1000))
         : null;
+    const now = Date.now();
+    const existingReminderSentAt = fallback?.reminderSentAt ? new Date(fallback.reminderSentAt) : null;
+    const existingReminderAt = fallback?.reminderAt ? new Date(fallback.reminderAt) : null;
+    let reminderSentAt = null;
+
+    if(!normalized.reminderEnabled)
+    {
+        reminderSentAt = null;
+    }
+    else if(startDate && startDate.getTime() <= now)
+    {
+        // Do not queue reminders again for tasks that have already started.
+        reminderSentAt = existingReminderSentAt && !Number.isNaN(existingReminderSentAt.getTime())
+            ? existingReminderSentAt
+            : new Date(now);
+    }
+    else if(
+        existingReminderSentAt &&
+        !Number.isNaN(existingReminderSentAt.getTime()) &&
+        existingReminderAt &&
+        !Number.isNaN(existingReminderAt.getTime()) &&
+        reminderAt &&
+        existingReminderAt.getTime() === reminderAt.getTime()
+    )
+    {
+        // Preserve the sent marker when the reminder schedule did not change.
+        reminderSentAt = existingReminderSentAt;
+    }
 
     return {
         reminderEnabled: normalized.reminderEnabled,
         reminderMinutesBefore: normalized.reminderMinutesBefore,
         reminderDelivery: normalized.reminderDelivery,
         reminderAt,
-        reminderSentAt: null,
+        reminderSentAt,
     };
 }
 
@@ -3082,11 +3524,11 @@ exports.setApp = function(app, client)
 {
     const token = require('./createJWT.js');
     const emailAssets = Object.freeze({
-        'verification-mascot.png': path.resolve(__dirname, '..', 'VerificationMascot.png'),
-        'reminder-mascot.png': path.resolve(__dirname, '..', 'ReminderMascot.png'),
-        'reset-password-mascot.png': path.resolve(__dirname, '..', 'ResetPassword.png'),
-        'verification-expired.png': path.resolve(__dirname, '..', 'VerificationExpired.png'),
-        'warning-icon.png': path.resolve(__dirname, '..', 'WarningIcon.png'),
+        'verification-mascot.png': path.resolve(__dirname, '..', 'src', 'assets', 'images', 'VerificationMascot.png'),
+        'reminder-mascot.png': path.resolve(__dirname, '..', 'src', 'assets', 'images', 'ReminderMascot.png'),
+        'reset-password-mascot.png': path.resolve(__dirname, '..', 'src', 'assets', 'images', 'ResetPassword.png'),
+        'verification-expired.png': path.resolve(__dirname, '..', 'src', 'assets', 'images', 'VerificationExpired.png'),
+        'warning-icon.png': path.resolve(__dirname, '..', 'src', 'assets', 'images', 'WarningIcon.png'),
     });
 
     app.get('/api/email-assets/:assetName', (req, res) =>
@@ -3171,6 +3613,7 @@ exports.setApp = function(app, client)
                 email,
                 password: hashPassword(password),
                 isVerified: false,
+                customThemeIds: [],
             };
 
             const insertResult = await db.collection('users').insertOne(newUser);
@@ -3539,8 +3982,10 @@ exports.setApp = function(app, client)
                         lastName: 1,
                         email: 1,
                         pendingEmail: 1,
+                        avatarUrl: 1,
                         reminderDefaults: 1,
                         calendarFeedToken: 1,
+                        customThemeIds: 1,
                     },
                 }
             );
@@ -3552,7 +3997,7 @@ exports.setApp = function(app, client)
             }
 
             res.status(200).json({
-                settings: buildSettingsPayload(user),
+                settings: await buildSettingsPayload(db, user),
                 error: '',
                 jwtToken: refreshJwtToken(token, jwtToken),
             });
@@ -3573,6 +4018,7 @@ exports.setApp = function(app, client)
             reminderEnabled,
             reminderMinutesBefore,
             reminderDelivery,
+            avatarDataUrl,
         } = req.body;
 
         if(!validateJwtOrRespond(token, res, jwtToken))
@@ -3597,6 +4043,11 @@ exports.setApp = function(app, client)
                 }),
             };
 
+            if(Object.prototype.hasOwnProperty.call(req.body, 'avatarDataUrl'))
+            {
+                updates.avatarUrl = normalizeAvatarDataUrl(avatarDataUrl);
+            }
+
             await db.collection('users').updateOne(
                 { _id: new ObjectId(userId) },
                 { $set: updates }
@@ -3610,8 +4061,10 @@ exports.setApp = function(app, client)
                         lastName: 1,
                         email: 1,
                         pendingEmail: 1,
+                        avatarUrl: 1,
                         reminderDefaults: 1,
                         calendarFeedToken: 1,
+                        customThemeIds: 1,
                     },
                 }
             );
@@ -3623,7 +4076,7 @@ exports.setApp = function(app, client)
             );
 
             res.status(200).json({
-                settings: buildSettingsPayload(refreshedUser),
+                settings: await buildSettingsPayload(db, refreshedUser),
                 error: '',
                 jwtToken: refreshedToken.error ? '' : refreshedToken.accessToken,
             });
@@ -3631,6 +4084,188 @@ exports.setApp = function(app, client)
         catch(error)
         {
             res.status(500).json({ settings: null, error: error.toString(), jwtToken: '' });
+        }
+    });
+
+    app.post('/api/upsertcustomtheme', async (req, res) =>
+    {
+        const { userId, jwtToken, theme } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        try
+        {
+            const db = getDatabase(client);
+            const userObjectId = safeObjectId(userId, 'userId');
+            const owner = await db.collection('users').findOne(
+                { _id: userObjectId },
+                { projection: { firstName: 1, lastName: 1 } }
+            );
+
+            if(!owner)
+            {
+                res.status(404).json({ theme: null, error: 'User not found', jwtToken: '' });
+                return;
+            }
+
+            const normalizedTheme = normalizeCustomThemePack(theme);
+            const requestedSharedThemeId = String(theme?.sharedThemeId || '').trim();
+            const explicitShareSlug = Object.prototype.hasOwnProperty.call(req.body, 'shareSlug')
+                ? String(req.body.shareSlug || '').trim()
+                : '';
+            let existingTheme = null;
+
+            if(requestedSharedThemeId && ObjectId.isValid(requestedSharedThemeId))
+            {
+                existingTheme = await db.collection('customThemes').findOne({
+                    _id: new ObjectId(requestedSharedThemeId),
+                    ownerUserId: userObjectId,
+                });
+            }
+
+            const nextShareSlug = explicitShareSlug
+                ? normalizeThemeShareSlug(explicitShareSlug, normalizedTheme.name)
+                : String(existingTheme?.shareSlug || '').trim();
+
+            if(nextShareSlug)
+            {
+                const conflictingTheme = await db.collection('customThemes').findOne({
+                    shareSlug: nextShareSlug,
+                    ...(existingTheme ? { _id: { $ne: existingTheme._id } } : {}),
+                });
+
+                if(conflictingTheme)
+                {
+                    res.status(409).json({
+                        theme: null,
+                        error: 'That custom link ID is already in use. Please choose another one.',
+                        jwtToken: '',
+                    });
+                    return;
+                }
+            }
+
+            const now = new Date();
+            const themeDocument = {
+                theme: normalizedTheme,
+                name: normalizedTheme.name,
+                description: normalizedTheme.description,
+                ownerUserId: userObjectId,
+                ownerDisplayName: buildThemeOwnerDisplayName(owner),
+                shareCode: String(existingTheme?.shareCode || await generateUniqueThemeShareCode(db)),
+                shareSlug: nextShareSlug,
+                updatedAt: now,
+            };
+
+            let savedThemeId;
+            if(existingTheme)
+            {
+                await db.collection('customThemes').updateOne(
+                    { _id: existingTheme._id, ownerUserId: userObjectId },
+                    {
+                        $set: themeDocument,
+                    }
+                );
+                savedThemeId = existingTheme._id;
+            }
+            else
+            {
+                savedThemeId = new ObjectId();
+                await db.collection('customThemes').insertOne({
+                    _id: savedThemeId,
+                    ...themeDocument,
+                    createdAt: now,
+                });
+            }
+
+            await db.collection('users').updateOne(
+                { _id: userObjectId },
+                { $addToSet: { customThemeIds: savedThemeId } }
+            );
+
+            const savedTheme = await db.collection('customThemes').findOne({ _id: savedThemeId });
+
+            res.status(200).json({
+                theme: mapCustomThemeDocument(savedTheme, userObjectId),
+                error: '',
+                jwtToken: refreshJwtToken(token, jwtToken),
+            });
+        }
+        catch(error)
+        {
+            res.status(500).json({ theme: null, error: error.toString(), jwtToken: '' });
+        }
+    });
+
+    app.post('/api/importsharedtheme', async (req, res) =>
+    {
+        const { userId, jwtToken, shareValue } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        try
+        {
+            const db = getDatabase(client);
+            const userObjectId = safeObjectId(userId, 'userId');
+            const themeDoc = await db.collection('customThemes').findOne(buildThemeLookupQuery(shareValue));
+
+            if(!themeDoc)
+            {
+                res.status(404).json({ theme: null, error: 'Theme not found', jwtToken: '' });
+                return;
+            }
+
+            await db.collection('users').updateOne(
+                { _id: userObjectId },
+                { $addToSet: { customThemeIds: themeDoc._id } }
+            );
+
+            res.status(200).json({
+                theme: mapCustomThemeDocument(themeDoc, userObjectId),
+                error: '',
+                jwtToken: refreshJwtToken(token, jwtToken),
+            });
+        }
+        catch(error)
+        {
+            res.status(500).json({ theme: null, error: error.toString(), jwtToken: '' });
+        }
+    });
+
+    app.post('/api/deletecustomtheme', async (req, res) =>
+    {
+        const { userId, jwtToken, sharedThemeId } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        try
+        {
+            const db = getDatabase(client);
+            const userObjectId = safeObjectId(userId, 'userId');
+            const themeObjectId = safeObjectId(sharedThemeId, 'sharedThemeId');
+
+            await db.collection('users').updateOne(
+                { _id: userObjectId },
+                { $pull: { customThemeIds: themeObjectId } }
+            );
+
+            res.status(200).json({
+                error: '',
+                jwtToken: refreshJwtToken(token, jwtToken),
+            });
+        }
+        catch(error)
+        {
+            res.status(500).json({ error: error.toString(), jwtToken: '' });
         }
     });
 
@@ -3661,14 +4296,16 @@ exports.setApp = function(app, client)
                         lastName: 1,
                         email: 1,
                         pendingEmail: 1,
+                        avatarUrl: 1,
                         reminderDefaults: 1,
                         calendarFeedToken: 1,
+                        customThemeIds: 1,
                     },
                 }
             );
 
             res.status(200).json({
-                settings: buildSettingsPayload(user),
+                settings: await buildSettingsPayload(db, user),
                 error: '',
                 jwtToken: refreshJwtToken(token, jwtToken),
             });
@@ -3811,21 +4448,23 @@ exports.setApp = function(app, client)
         try
         {
             const db = getDatabase(client);
-            const trimmedSearch = search.trim();
-
-            const results = await db.collection('tasks').find(
+            const trimmedSearch = String(search || '').trim();
+            if(!trimmedSearch)
             {
-                user_id: new ObjectId(userId),
-                $or:
-                [
-                    { title:       { $regex: trimmedSearch + '.*', $options: 'i' } },
-                    { description: { $regex: trimmedSearch + '.*', $options: 'i' } },
-                    { location:    { $regex: trimmedSearch + '.*', $options: 'i' } },
-                    { group:       { $regex: trimmedSearch + '.*', $options: 'i' } },
-                ]
-            })
-            .sort({ dueDate: 1 })
-            .toArray();
+                res.status(200).json({
+                    results: [],
+                    error: '',
+                    jwtToken: refreshJwtToken(token, jwtToken),
+                });
+                return;
+            }
+
+            const tasks = await db.collection('tasks')
+                .find({ user_id: new ObjectId(userId) })
+                .sort({ dueDate: 1 })
+                .toArray();
+
+            const results = tasks.filter((task) => matchesCalendarTaskSearch(task, trimmedSearch));
 
             res.status(200).json({
                 results: results.map((task) => normalizeLegacyIcsTaskForResponse(task)),
@@ -4746,3 +5385,19 @@ Help the user manage their schedule, suggest events, answer questions about thei
 
 exports.verifyEmailTransporter = verifyEmailTransporter;
 exports.startReminderLoop = startReminderLoop;
+exports.__testables = {
+    extractResponseText,
+    base64ByteLength,
+    normalizeAvatarDataUrl,
+    normalizeCustomThemePack,
+    normalizeThemeShareSlug,
+    extractThemeShareLookupKey,
+    buildSharedThemeUrls,
+    readPositiveIntEnv,
+    getConfiguredOpenAIModel,
+    getConfiguredOpenAIReasoningEffort,
+    isRetryableOpenAIStatus,
+    isRetryableOpenAINetworkError,
+    buildOpenAIRequestVariants,
+    buildOpenAIRequestBody,
+};

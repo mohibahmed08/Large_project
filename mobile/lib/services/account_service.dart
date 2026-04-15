@@ -44,6 +44,7 @@ class AccountService {
     required bool reminderEnabled,
     required int reminderMinutesBefore,
     required String reminderDelivery,
+    String? avatarDataUrl,
   }) async {
     final json = await _post(
       'saveaccountsettings',
@@ -54,6 +55,7 @@ class AccountService {
         'reminderEnabled': reminderEnabled,
         'reminderMinutesBefore': reminderMinutesBefore,
         'reminderDelivery': reminderDelivery,
+        ...?avatarDataUrl == null ? null : {'avatarDataUrl': avatarDataUrl},
       },
     );
     final nextSession = _updatedSession(session, json).copyWith(
@@ -77,6 +79,30 @@ class AccountService {
         (json['settings'] as Map?)?.cast<String, dynamic>() ?? const {},
       ),
       session: _updatedSession(session, json),
+    );
+  }
+
+  Future<({UserSession session, String message})> requestEmailChange({
+    required UserSession session,
+    required String nextEmail,
+  }) async {
+    final json = await _post('requestemailchange', session, {
+      'nextEmail': nextEmail.trim(),
+    });
+    return (
+      session: _updatedSession(session, json),
+      message: (json['message'] ?? 'Verification sent to the new email address.').toString(),
+    );
+  }
+
+  Future<({UserSession session, String icsContent, String filename})> exportCalendar({
+    required UserSession session,
+  }) async {
+    final json = await _post('exportcalendar', session, {});
+    return (
+      session: _updatedSession(session, json),
+      icsContent: (json['ics'] ?? '').toString(),
+      filename: (json['filename'] ?? 'calendar-plus-plus.ics').toString(),
     );
   }
 

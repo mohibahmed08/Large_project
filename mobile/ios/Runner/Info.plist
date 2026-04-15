@@ -41,6 +41,10 @@
 	<true/>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Calendar++ uses Face ID to protect your saved session before opening the app.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Calendar++ needs access to your photo library so you can choose a profile picture.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Calendar++ can use your camera to take a new profile picture.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Calendar++ uses your location to improve nearby suggestions and local weather.</string>
 	<key>NSSupportsLiveActivities</key>
