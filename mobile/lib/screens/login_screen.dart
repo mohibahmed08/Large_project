@@ -382,7 +382,7 @@ class _LoginScreenState extends State<LoginScreen> {
       appBar: AppBar(title: const Text('Calendar++')),
       body: SafeArea(
         child: Container(
-          decoration: AppTheme.backgroundDecoration(),
+          decoration: AppTheme.backgroundDecoration(authSurface: true),
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),

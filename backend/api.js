@@ -110,6 +110,7 @@ const SUPPORTED_AVATAR_MIME_TYPES = new Set([
     'image/heif',
 ]);
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
+const MAX_IMAGE_UPLOAD_BYTES = 6 * 1024 * 1024;
 const MAX_SHARED_THEME_BYTES = 6 * 1024 * 1024;
 const THEME_SHARE_CODE_LENGTH = 6;
 const THEME_SHARE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9_-]{1,38}[a-z0-9])?$/;
@@ -128,31 +129,100 @@ function base64ByteLength(value)
 
 function normalizeAvatarDataUrl(value)
 {
+    const normalized = normalizeImageDataUrl(value, {
+        maxBytes: MAX_AVATAR_BYTES,
+        errorPrefix: 'Profile picture',
+    });
+    return `data:${normalized.mimeType};base64,${normalized.base64Payload}`;
+}
+
+function normalizeImageDataUrl(value, {
+    maxBytes = MAX_IMAGE_UPLOAD_BYTES,
+    errorPrefix = 'Image upload',
+} = {})
+{
     const trimmedValue = String(value || '').trim();
     if(!trimmedValue)
     {
-        return '';
+        throw new Error(`${errorPrefix} is required.`);
     }
 
     const match = /^data:(image\/[A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$/i.exec(trimmedValue);
     if(!match)
     {
-        throw new Error('Profile picture must be a base64 image upload.');
+        throw new Error(`${errorPrefix} must be a base64 image upload.`);
     }
 
     const mimeType = match[1].toLowerCase();
     const base64Payload = match[2].replace(/\s+/g, '');
     if(!SUPPORTED_AVATAR_MIME_TYPES.has(mimeType))
     {
-        throw new Error('Profile picture must be PNG, JPEG, GIF, WEBP, AVIF, HEIC, or HEIF.');
+        throw new Error(`${errorPrefix} must be PNG, JPEG, GIF, WEBP, AVIF, HEIC, or HEIF.`);
     }
 
-    if(base64ByteLength(base64Payload) > MAX_AVATAR_BYTES)
+    if(base64ByteLength(base64Payload) > maxBytes)
     {
-        throw new Error('Profile picture must be 2 MB or smaller.');
+        throw new Error(`${errorPrefix} must be ${Math.floor(maxBytes / (1024 * 1024))} MB or smaller.`);
     }
 
-    return `data:${mimeType};base64,${base64Payload}`;
+    return { mimeType, base64Payload };
+}
+
+function getFirebaseStorageBucket()
+{
+    let admin;
+    try
+    {
+        admin = require('firebase-admin');
+    }
+    catch
+    {
+        return null;
+    }
+
+    if(admin.apps.length === 0)
+    {
+        return null;
+    }
+
+    const bucketName = String(process.env.FIREBASE_STORAGE_BUCKET || '').trim();
+    return bucketName ? admin.storage().bucket(bucketName) : admin.storage().bucket();
+}
+
+async function uploadBase64ImageToFirebaseStorage({
+    folder,
+    fileName,
+    dataUrl,
+    maxBytes = MAX_IMAGE_UPLOAD_BYTES,
+})
+{
+    const bucket = getFirebaseStorageBucket();
+    if(!bucket)
+    {
+        throw new Error('Firebase Storage is not configured.');
+    }
+
+    const normalized = normalizeImageDataUrl(dataUrl, {
+        maxBytes,
+        errorPrefix: 'Image upload',
+    });
+    const safeFileName = String(fileName || 'upload').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const objectPath = `${String(folder || 'uploads').replace(/\/+$/g, '')}/${Date.now()}-${safeFileName}`;
+    const file = bucket.file(objectPath);
+    await file.save(Buffer.from(normalized.base64Payload, 'base64'), {
+        contentType: normalized.mimeType,
+        resumable: false,
+        metadata: {
+            cacheControl: 'public, max-age=31536000',
+        },
+    });
+
+    return {
+        bucket: bucket.name,
+        path: objectPath,
+        mimeType: normalized.mimeType,
+        url: `https://storage.googleapis.com/${bucket.name}/${encodeURI(objectPath)}`,
+    };
 }
 
 function sleep(ms)
@@ -4008,6 +4078,42 @@ exports.setApp = function(app, client)
         }
     });
 
+    app.post('/api/uploadimage', async (req, res) =>
+    {
+        const { userId, jwtToken, imageDataUrl, purpose, fileName } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        try
+        {
+            const result = await uploadBase64ImageToFirebaseStorage({
+                folder: String(purpose || 'uploads').trim() || 'uploads',
+                fileName: String(fileName || 'image').trim() || 'image',
+                dataUrl: imageDataUrl,
+            });
+            res.status(200).json({
+                error: '',
+                imageUrl: result.url,
+                storagePath: result.path,
+                bucket: result.bucket,
+                mimeType: result.mimeType,
+            });
+        }
+        catch(error)
+        {
+            res.status(400).json({
+                error: error.message || error.toString(),
+                imageUrl: '',
+                storagePath: '',
+                bucket: '',
+                mimeType: '',
+            });
+        }
+    });
+
     app.post('/api/saveaccountsettings', async (req, res) =>
     {
         const {
@@ -4018,7 +4124,7 @@ exports.setApp = function(app, client)
             reminderEnabled,
             reminderMinutesBefore,
             reminderDelivery,
-            avatarDataUrl,
+            avatarUrl,
         } = req.body;
 
         if(!validateJwtOrRespond(token, res, jwtToken))
@@ -4045,7 +4151,16 @@ exports.setApp = function(app, client)
 
             if(Object.prototype.hasOwnProperty.call(req.body, 'avatarDataUrl'))
             {
-                updates.avatarUrl = normalizeAvatarDataUrl(avatarDataUrl);
+                throw new Error('avatarDataUrl is no longer supported. Upload the image first and save the returned avatarUrl.');
+            }
+
+            if(Object.prototype.hasOwnProperty.call(req.body, 'avatarUrl'))
+            {
+                updates.avatarUrl = String(avatarUrl || '').trim();
+                if(updates.avatarUrl && !/^https?:\/\//i.test(updates.avatarUrl))
+                {
+                    throw new Error('Profile picture URL must be a Firebase Storage URL.');
+                }
             }
 
             await db.collection('users').updateOne(

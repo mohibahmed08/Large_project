@@ -55,6 +55,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Timer? _liveActivityTimer;
   Timer? _searchDebounceTimer;
   StreamSubscription<String>? _appLinkTaskSubscription;
+  StreamSubscription<String>? _appLinkThemeSubscription;
   StreamSubscription<Map<String, dynamic>>? _notificationOpenSubscription;
   String? _liveActivityId;
   String? _liveActivityTaskId;
@@ -83,7 +84,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   void _syncThemeWeather() {
-    _themeService.setActiveWeatherCode(_selectedDayWeather?['code'] as int?);
+    _themeService.setActiveWeatherCode(
+      _selectedDayWeather?['code'] as int?,
+      at: _selectedDate,
+    );
   }
 
   String get _trimmedSearchQuery => _searchController.text.trim();
@@ -118,6 +122,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _appLinkTaskSubscription = AppLinkService.taskOpens.listen((taskId) {
       unawaited(_openTaskById(taskId));
     });
+    _appLinkThemeSubscription = AppLinkService.themeOpens.listen((shareValue) {
+      unawaited(_importSharedThemeFromLink(shareValue));
+    });
     _searchController.addListener(_handleSearchQueryChanged);
     _loadMonth(showLoader: true);
     _fetchWeather();
@@ -127,6 +134,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
       if (pendingTaskId != null) {
         unawaited(_openTaskById(pendingTaskId));
       }
+      final pendingThemeShareValue = AppLinkService.takePendingThemeShareValue();
+      if (pendingThemeShareValue != null) {
+        unawaited(_importSharedThemeFromLink(pendingThemeShareValue));
+      } else {
+        unawaited(_themeService.importPendingSharedThemeIfNeeded(_session));
+      }
     });
   }
 
@@ -135,6 +148,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _liveActivityTimer?.cancel();
     _searchDebounceTimer?.cancel();
     _appLinkTaskSubscription?.cancel();
+    _appLinkThemeSubscription?.cancel();
     _notificationOpenSubscription?.cancel();
     _searchController.removeListener(_handleSearchQueryChanged);
     _searchController.dispose();
@@ -143,6 +157,24 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _monthPageController.dispose();
     _calendarScrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _importSharedThemeFromLink(String shareValue) async {
+    if (shareValue.trim().isEmpty) {
+      return;
+    }
+    try {
+      final result = await _themeService.importSharedTheme(_session, shareValue);
+      _session = result.session;
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Imported "${result.theme.name}" and applied it.'),
+        ),
+      );
+    } catch (_) {}
   }
 
   Future<void> _handleNotificationOpen(Map<String, dynamic> data) async {

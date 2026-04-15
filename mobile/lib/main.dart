@@ -32,6 +32,7 @@ class _MyAppState extends State<MyApp> {
   final ThemeService _themeService = ThemeService();
   StreamSubscription<Uri>? _linkSubscription;
   String? _initialResetToken;
+  String? _initialThemeShareValue;
   bool _initialLinkResolved = true;
 
   @override
@@ -74,11 +75,17 @@ class _MyAppState extends State<MyApp> {
       if (initialTaskId != null) {
         AppLinkService.handleTaskId(initialTaskId);
       }
+      final initialThemeShareValue = _extractThemeShareValue(initialUri);
+      if (initialThemeShareValue != null) {
+        AppLinkService.handleThemeShareValue(initialThemeShareValue);
+        await _themeService.setPendingSharedThemeValue(initialThemeShareValue);
+      }
       if (!mounted) {
         return;
       }
       setState(() {
         _initialResetToken = _extractResetToken(initialUri);
+        _initialThemeShareValue = initialThemeShareValue;
         _initialLinkResolved = true;
       });
     } catch (_) {
@@ -119,6 +126,11 @@ class _MyAppState extends State<MyApp> {
     final taskId = _extractTaskId(uri);
     if (taskId != null) {
       AppLinkService.handleTaskId(taskId);
+    }
+    final themeShareValue = _extractThemeShareValue(uri);
+    if (themeShareValue != null) {
+      AppLinkService.handleThemeShareValue(themeShareValue);
+      unawaited(_themeService.setPendingSharedThemeValue(themeShareValue));
     }
 
     final token = _extractResetToken(uri);
@@ -176,6 +188,14 @@ class _MyAppState extends State<MyApp> {
     return null;
   }
 
+  String? _extractThemeShareValue(Uri? uri) {
+    if (uri == null) {
+      return null;
+    }
+    final value = uri.queryParameters['theme']?.trim() ?? '';
+    return value.isEmpty ? null : value;
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -190,7 +210,10 @@ class _MyAppState extends State<MyApp> {
           child: child ?? const SizedBox.shrink(),
         ),
         home: _initialLinkResolved
-            ? AppBootstrapScreen(initialResetToken: _initialResetToken)
+            ? AppBootstrapScreen(
+                initialResetToken: _initialResetToken,
+                initialThemeShareValue: _initialThemeShareValue,
+              )
             : const Scaffold(body: Center(child: CircularProgressIndicator())),
       ),
     );
