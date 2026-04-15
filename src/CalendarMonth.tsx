@@ -1,8 +1,9 @@
+// @ts-nocheck
 import './CalendarMonth.css';
 
 //DAY GRID FOR THE CALENDAR
-import DayGrid from './DayGrid.jsx';
-import Weather from './Weather.jsx';
+import DayGrid from './DayGrid';
+import Weather from './Weather';
 
 //USE STATE AND EFFECT FOR AUTO UPDATES & DOM RELOAD SAVE
 import { useState, useEffect, useMemo, cloneElement } from 'react';

@@ -1,8 +1,9 @@
+// @ts-nocheck
 import { useState, useRef, useEffect, useMemo } from 'react';
 import JSZip from 'jszip';
 
 import './Calendar.css';
-import CalendarMonth from './CalendarMonth.jsx';
+import CalendarMonth from './CalendarMonth';
 import { DEFAULT_WEATHER_LOCATION, requestWeatherLocation } from './weatherLocation.js';
 
 import ClearSky from './weather_backgrounds/ClearSky.jpg';
