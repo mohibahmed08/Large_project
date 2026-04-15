@@ -29,22 +29,54 @@
   z-index: 30;
 }
 
+/* Header: left arrows | centered title group | right arrows | search pill (far right) */
 .calendar-month-interactable-header {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) 56px minmax(240px, 360px);
+  display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 12px 16px 6px;
+  position: relative;
 }
 
 .calendar-month-header-row {
-  width: 100%;
+  /* becomes a flex row wrapper */
   display: contents;
 }
 
+/* The month title is absolutely centred in the header so it's always visually centred
+   regardless of how wide the search bar is */
+.calendar-month-month-name {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none; /* clicks fall through to buttons behind it */
+  font-size: clamp(1.1rem, 2vw, 1.4rem);
+}
+
+/* Arrow side buttons get their natural 56px slot */
+.calendar-month-header-side {
+  flex: 0 0 56px;
+  min-width: 0;
+}
+
+.calendar-month-header-left {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.calendar-month-header-right {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Search pill pushed to the far right with margin-left: auto */
 .calendar-month-header-search {
-  justify-self: end;
-  width: min(420px, 100%);
+  margin-left: auto;
+  width: min(340px, 100%);
+  flex-shrink: 1;
 }
 
 .calendar-month-header-search-inner {
@@ -55,6 +87,17 @@
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   padding: 2px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Magnifier icon prefix for the search input */
+.calendar-month-header-search-inner::before {
+  content: '⌕';
+  font-size: 1rem;
+  color: rgba(255,255,255,0.4);
+  flex-shrink: 0;
 }
 
 .calendar-month-header-search .calendar-search-input {
@@ -62,27 +105,13 @@
   border: 0;
   background: transparent;
   color: #f8fafc;
-  padding: 10px 8px;
+  padding: 10px 4px;
   outline: none;
+  font-size: 0.9rem;
 }
 
-.calendar-month-header-side {
-  min-width: 0;
-}
-
-.calendar-month-header-left {
-  justify-self: start;
-}
-
-.calendar-month-header-right {
-  justify-self: center;
-}
-
-.calendar-month-month-name {
-  justify-self: center;
-  margin: 0;
-  text-align: center;
-  white-space: nowrap;
+.calendar-month-header-search .calendar-search-input::placeholder {
+  color: rgba(255,255,255,0.35);
 }
 
 .calendar-task-modal {

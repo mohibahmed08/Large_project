@@ -628,6 +628,7 @@ function App() {
     const [customBgMode, setCustomBgMode] = useState('gradient'); // 'gradient' | 'universal' | 'perScene'
     const [selectedGradientStopIndex, setSelectedGradientStopIndex] = useState(0);
     const [gradientEditorOpen, setGradientEditorOpen] = useState(false);
+    const [gradientEditorTarget, setGradientEditorTarget] = useState('background'); // 'background' | 'button'
     const [themeImportValue, setThemeImportValue] = useState('');
     const [themeShareState, setThemeShareState] = useState({
         open: false,
@@ -686,13 +687,13 @@ function App() {
     const activeGradientStopIndex = Math.min(selectedGradientStopIndex, Math.max(0, draftGradientStops.length - 1));
     const activeGradientStop = draftGradientStops[activeGradientStopIndex] || draftGradientStops[0] || { color: '#60a5fa', position: 50 };
     const shareModalActions = [
-        { key: 'native', label: 'Share', icon: ShareArrowIcon, onClick: async () => shareThemeThroughSystem(themeShareState.theme), disabled: !themeShareState.theme?.shareUrl || typeof navigator.share !== 'function' },
-        { key: 'copy-link', label: 'Copy Link', icon: CopyIcon, onClick: () => copyThemeShareValue(themeShareState.theme?.shareUrl, 'Share link'), disabled: !themeShareState.theme?.shareUrl },
-        { key: 'copy-code', label: 'Copy Code', icon: CodeHashIcon, onClick: () => copyThemeShareValue(themeShareState.theme?.shareCode, 'Theme code'), disabled: !themeShareState.theme?.shareCode },
-        { key: 'sms', label: 'Messages', icon: MessagesIcon, onClick: () => openThemeShareTarget(themeShareTargets?.sms), disabled: !themeShareState.theme?.shareUrl },
-        { key: 'email', label: 'Email', icon: MailIcon, onClick: () => openThemeShareTarget(themeShareTargets?.email), disabled: !themeShareState.theme?.shareUrl },
-        { key: 'facebook', label: 'Facebook', icon: FacebookIcon, onClick: () => openThemeShareTarget(themeShareTargets?.facebook), disabled: !themeShareState.theme?.shareUrl },
-        { key: 'whatsapp', label: 'WhatsApp', icon: WhatsAppIcon, onClick: () => openThemeShareTarget(themeShareTargets?.whatsapp), disabled: !themeShareState.theme?.shareUrl },
+        { key: 'native',     label: 'Share',     icon: ShareArrowIcon, color: '#6366f1', onClick: async () => shareThemeThroughSystem(themeShareState.theme), disabled: !themeShareState.theme?.shareUrl || typeof navigator.share !== 'function' },
+        { key: 'copy-link',  label: 'Copy Link', icon: CopyIcon,       color: '#0ea5e9', onClick: () => copyThemeShareValue(themeShareState.theme?.shareUrl, 'Share link'), disabled: !themeShareState.theme?.shareUrl },
+        { key: 'copy-code',  label: 'Copy Code', icon: CodeHashIcon,   color: '#8b5cf6', onClick: () => copyThemeShareValue(themeShareState.theme?.shareCode, 'Theme code'), disabled: !themeShareState.theme?.shareCode },
+        { key: 'sms',        label: 'Messages',  icon: MessagesIcon,   color: '#22c55e', onClick: () => openThemeShareTarget(themeShareTargets?.sms), disabled: !themeShareState.theme?.shareUrl },
+        { key: 'email',      label: 'Email',     icon: MailIcon,       color: '#f97316', onClick: () => openThemeShareTarget(themeShareTargets?.email), disabled: !themeShareState.theme?.shareUrl },
+        { key: 'facebook',   label: 'Facebook',  icon: FacebookIcon,   color: '#1877f2', onClick: () => openThemeShareTarget(themeShareTargets?.facebook), disabled: !themeShareState.theme?.shareUrl },
+        { key: 'whatsapp',   label: 'WhatsApp',  icon: WhatsAppIcon,   color: '#25d366', onClick: () => openThemeShareTarget(themeShareTargets?.whatsapp), disabled: !themeShareState.theme?.shareUrl },
     ].filter((item) => item.key !== 'native' || typeof navigator.share === 'function');
 
     const logout = () => {
@@ -1180,15 +1181,55 @@ function App() {
         }
     };
 
+    // ── Gradient editor helpers (background or button) ───────────────────────
+    const isButtonGrad = gradientEditorTarget === 'button';
+
+    // Convert btnGradient (colors array) to the same stop format as background gradient
+    const btnGradientToStops = (draft) => {
+        const colors = draft?.btnGradient?.colors || [draft?.btnColor || '#60a5fa', '#2563eb'];
+        return colors.map((color, i) => ({ color, position: Math.round((i / Math.max(colors.length - 1, 1)) * 100) }));
+    };
+
+    const activeEditGradient = isButtonGrad ? null : themeDraft?.gradient;
+    const activeEditStops = isButtonGrad
+        ? btnGradientToStops(themeDraft)
+        : getEditableGradientStops(themeDraft?.gradient);
+    const activeEditAngle = isButtonGrad
+        ? Number(themeDraft?.btnGradient?.angle ?? 135)
+        : Number(themeDraft?.gradient?.angle ?? EMPTY_CUSTOM_THEME.gradient.angle);
+    const activeEditType = isButtonGrad ? 'linear' : (themeDraft?.gradient?.type || 'linear');
+
+    const getActiveCssPreview = () => {
+        if (isButtonGrad) {
+            const colors = activeEditStops.map((s) => s.color);
+            return `linear-gradient(${activeEditAngle}deg, ${colors.join(', ')})`;
+        }
+        return buildGradientCss(themeDraft?.gradient);
+    };
+
     const updateThemeGradient = (mutator) => {
-        setThemeDraft((prev) => {
-            const nextStops = mutator(getEditableGradientStops(prev?.gradient));
-            return {
-                ...prev,
-                backgroundMode: 'gradient',
-                gradient: syncGradientStops(nextStops, prev?.gradient),
-            };
-        });
+        if (isButtonGrad) {
+            setThemeDraft((prev) => {
+                const currentStops = btnGradientToStops(prev);
+                const nextStops = mutator(currentStops);
+                return {
+                    ...prev,
+                    btnGradient: {
+                        angle: Number.isFinite(Number(prev?.btnGradient?.angle)) ? Number(prev.btnGradient.angle) : 135,
+                        colors: nextStops.map((s) => s.color),
+                    },
+                };
+            });
+        } else {
+            setThemeDraft((prev) => {
+                const nextStops = mutator(getEditableGradientStops(prev?.gradient));
+                return {
+                    ...prev,
+                    backgroundMode: 'gradient',
+                    gradient: syncGradientStops(nextStops, prev?.gradient),
+                };
+            });
+        }
     };
 
     const addGradientStop = () => {
@@ -1196,17 +1237,14 @@ function App() {
             const baseStops = stops.length >= 1 ? stops : getEditableGradientStops(EMPTY_CUSTOM_THEME.gradient);
             const selected = baseStops[Math.min(selectedGradientStopIndex, baseStops.length - 1)] || baseStops[0];
             const position = nextGradientPosition(baseStops);
-            const nextStops = [...baseStops, { color: selected.color, position }];
-            return nextStops;
+            return [...baseStops, { color: selected.color, position }];
         });
         setSelectedGradientStopIndex((prev) => Math.min(prev + 1, 8));
     };
 
     const removeGradientStop = () => {
         updateThemeGradient((stops) => {
-            if (stops.length <= 1) {
-                return stops;
-            }
+            if (stops.length <= 1) return stops;
             return stops.filter((_, index) => index !== activeGradientStopIndex);
         });
         setSelectedGradientStopIndex((prev) => Math.max(0, prev - 1));
@@ -1224,136 +1262,164 @@ function App() {
         )));
     };
 
+    const updateGradientAngle = (angle) => {
+        if (isButtonGrad) {
+            setThemeDraft((prev) => ({
+                ...prev,
+                btnGradient: {
+                    colors: [...(prev?.btnGradient?.colors || [prev?.btnColor || '#60a5fa', '#2563eb'])],
+                    angle: Number(angle),
+                },
+            }));
+        } else {
+            setThemeDraft((prev) => ({
+                ...prev,
+                backgroundMode: 'gradient',
+                gradient: { ...(prev?.gradient || EMPTY_CUSTOM_THEME.gradient), angle: Number(angle) },
+            }));
+        }
+    };
+
+    const updateGradientType = (type) => {
+        setThemeDraft((prev) => ({
+            ...prev,
+            backgroundMode: 'gradient',
+            gradient: { ...(prev?.gradient || EMPTY_CUSTOM_THEME.gradient), type },
+        }));
+    };
+
+    // Clamp active stop index to actual stops
+    const modalStops = isButtonGrad ? activeEditStops : draftGradientStops;
+    const modalStopIndex = Math.min(selectedGradientStopIndex, Math.max(0, modalStops.length - 1));
+    const modalActiveStop = modalStops[modalStopIndex] || modalStops[0] || { color: '#60a5fa', position: 50 };
+
     const gradientEditorModal = gradientEditorOpen && themeDraft && typeof document !== 'undefined'
         ? createPortal(
             <div className="theme-overlay-backdrop" onClick={() => setGradientEditorOpen(false)}>
-                <div className="theme-gradient-modal" onClick={(event) => event.stopPropagation()}>
-                    <div className="theme-gradient-modal-header">
-                        <div>
-                            <div className="account-modal-kicker">Gradient Background</div>
-                            <h3>Custom Gradient</h3>
+                <div className="gx-modal" onClick={(event) => event.stopPropagation()}>
+                    {/* ── Pill header ── */}
+                    <div className="gx-header">
+                        <div className="gx-header-titles">
+                            <span className="gx-kicker">{isButtonGrad ? 'Button Gradient' : 'Background Gradient'}</span>
+                            <span className="gx-title">Custom Gradient</span>
                         </div>
-                        <button type="button" className="account-close-btn" onClick={() => setGradientEditorOpen(false)}>
-                            Close
-                        </button>
+                        <button type="button" className="gx-close-btn" onClick={() => setGradientEditorOpen(false)} aria-label="Close">✕</button>
                     </div>
-                    <div className="theme-gradient-editor theme-gradient-editor-modal">
-                        <div className="theme-gradient-editor-top">
-                            <label className="account-field">
-                                <span>Type</span>
-                                <select
-                                    value={themeDraft.gradient?.type || 'linear'}
-                                    onChange={(event) => setThemeDraft((prev) => ({
-                                        ...prev,
-                                        backgroundMode: 'gradient',
-                                        gradient: {
-                                            ...(prev.gradient || EMPTY_CUSTOM_THEME.gradient),
-                                            type: event.target.value,
-                                        },
-                                    }))}
-                                >
-                                    <option value="linear">Linear</option>
-                                    <option value="radial">Radial</option>
-                                </select>
-                            </label>
-                            <label className="account-field">
-                                <span>Angle</span>
-                                <select
-                                    value={Number(themeDraft.gradient?.angle ?? EMPTY_CUSTOM_THEME.gradient.angle)}
-                                    onChange={(event) => setThemeDraft((prev) => ({
-                                        ...prev,
-                                        backgroundMode: 'gradient',
-                                        gradient: {
-                                            ...(prev.gradient || EMPTY_CUSTOM_THEME.gradient),
-                                            angle: Number(event.target.value),
-                                        },
-                                    }))}
-                                    disabled={themeDraft.gradient?.type === 'radial'}
-                                >
-                                    {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
-                                        <option key={angle} value={angle}>{`${angle} deg`}</option>
-                                    ))}
-                                </select>
-                            </label>
-                            <div className="theme-gradient-preview-card">
-                                <span className="theme-gradient-preview-label">Preview</span>
-                                <div className="theme-gradient-preview-swatch" style={{ backgroundImage: buildGradientCss(themeDraft.gradient) }} />
+
+                    {/* ── Live preview strip ── */}
+                    <div className="gx-preview-strip" style={{ backgroundImage: getActiveCssPreview() }}>
+                        <div className="gx-preview-shimmer" />
+                    </div>
+
+                    {/* ── Type + Angle row (background only) ── */}
+                    {!isButtonGrad && (
+                        <div className="gx-row gx-type-row">
+                            <div className="gx-seg-group">
+                                {['linear', 'radial'].map((t) => (
+                                    <button
+                                        key={t}
+                                        type="button"
+                                        className={`gx-seg${activeEditType === t ? ' active' : ''}`}
+                                        onClick={() => updateGradientType(t)}
+                                    >
+                                        {t.charAt(0).toUpperCase() + t.slice(1)}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="gx-angle-group">
+                                {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => (
+                                    <button
+                                        key={a}
+                                        type="button"
+                                        className={`gx-angle-chip${activeEditAngle === a ? ' active' : ''}`}
+                                        onClick={() => updateGradientAngle(a)}
+                                        disabled={activeEditType === 'radial'}
+                                        title={`${a}°`}
+                                    >
+                                        {a}°
+                                    </button>
+                                ))}
                             </div>
                         </div>
-                        <div className="theme-gradient-editor-controls">
-                            <div className="theme-gradient-editor-header">
-                                <span className="theme-gradient-editor-title">Gradient Stops</span>
-                            </div>
-                            <div className="theme-gradient-stop-toolbar">
-                                <div className="theme-gradient-stop-actions">
-                                    <button type="button" className="account-secondary-btn" onClick={addGradientStop}>
-                                        Add
-                                    </button>
-                                    <button type="button" className="account-secondary-btn" onClick={removeGradientStop} disabled={draftGradientStops.length <= 1}>
-                                        Remove
-                                    </button>
-                                </div>
-                                <div className="theme-gradient-stop-swatch">
-                                    <input
-                                        type="color"
-                                        className="theme-color-input theme-gradient-color-input"
-                                        value={activeGradientStop.color}
-                                        onChange={(event) => updateGradientStopColor(event.target.value)}
-                                    />
-                                </div>
-                            </div>
-                            <div className="theme-gradient-stop-editor">
-                                <label className="account-check-row theme-gradient-rotate-row">
-                                    <input type="checkbox" checked readOnly />
-                                    <span>Rotate with shape</span>
-                                </label>
-                                <label className="account-field">
-                                    <span>Selected color</span>
-                                    <input
-                                        type="text"
-                                        className="theme-color-text"
-                                        value={activeGradientStop.color}
-                                        maxLength={7}
-                                        onChange={(event) => {
-                                            const value = event.target.value;
-                                            if (/^#[0-9a-fA-F]{0,6}$/.test(value)) {
-                                                updateGradientStopColor(value);
-                                            }
-                                        }}
-                                    />
-                                </label>
-                            </div>
-                            <div className="theme-gradient-rail-shell">
-                                <div className="theme-gradient-rail" style={{ backgroundImage: buildGradientCss(themeDraft.gradient) }}>
-                                    {draftGradientStops.map((stop, index) => (
-                                        <button
-                                            key={`${stop.color}-${stop.position}-${index}`}
-                                            type="button"
-                                            className={`theme-gradient-stop-handle${index === activeGradientStopIndex ? ' active' : ''}`}
-                                            style={{ left: `${stop.position}%`, background: stop.color }}
-                                            onClick={() => setSelectedGradientStopIndex(index)}
-                                            aria-label={`Select gradient stop ${index + 1}`}
-                                        />
-                                    ))}
-                                </div>
-                            </div>
+                    )}
+
+                    {/* ── Angle slider (button grad) ── */}
+                    {isButtonGrad && (
+                        <div className="gx-row">
+                            <span className="gx-field-label">Angle — {activeEditAngle}°</span>
                             <input
-                                className="theme-gradient-position-range"
-                                type="range"
-                                min="0"
-                                max="100"
-                                value={activeGradientStop.position}
-                                onChange={(event) => updateGradientStopPosition(Number(event.target.value))}
+                                className="gx-range"
+                                type="range" min="0" max="360"
+                                value={activeEditAngle}
+                                onChange={(e) => updateGradientAngle(Number(e.target.value))}
                             />
                         </div>
-                        <div className="theme-gradient-modal-actions">
-                            <button type="button" className="account-secondary-btn" onClick={() => setGradientEditorOpen(false)}>
-                                Cancel
-                            </button>
-                            <button type="button" className="account-primary-btn" onClick={() => setGradientEditorOpen(false)}>
-                                OK
-                            </button>
+                    )}
+
+                    {/* ── Gradient rail ── */}
+                    <div className="gx-rail-shell">
+                        <div className="gx-rail" style={{ backgroundImage: getActiveCssPreview() }}>
+                            {modalStops.map((stop, index) => (
+                                <button
+                                    key={`${stop.color}-${stop.position}-${index}`}
+                                    type="button"
+                                    className={`gx-stop-handle${index === modalStopIndex ? ' active' : ''}`}
+                                    style={{ left: `${stop.position}%`, background: stop.color }}
+                                    onClick={() => setSelectedGradientStopIndex(index)}
+                                    aria-label={`Stop ${index + 1}`}
+                                />
+                            ))}
                         </div>
+                        <input
+                            className="gx-position-range"
+                            type="range" min="0" max="100"
+                            value={modalActiveStop.position}
+                            onChange={(e) => updateGradientStopPosition(Number(e.target.value))}
+                        />
+                    </div>
+
+                    {/* ── Stop controls ── */}
+                    <div className="gx-stop-row">
+                        <input
+                            type="color"
+                            className="gx-color-swatch"
+                            value={modalActiveStop.color}
+                            onChange={(e) => updateGradientStopColor(e.target.value)}
+                        />
+                        <input
+                            type="text"
+                            className="gx-color-text"
+                            value={modalActiveStop.color}
+                            maxLength={7}
+                            onChange={(e) => {
+                                const v = e.target.value;
+                                if (/^#[0-9a-fA-F]{0,6}$/.test(v)) updateGradientStopColor(v);
+                            }}
+                        />
+                        <div className="gx-stop-btns">
+                            <button type="button" className="gx-stop-btn" onClick={addGradientStop}>＋ Add</button>
+                            <button type="button" className="gx-stop-btn" onClick={removeGradientStop} disabled={modalStops.length <= 1}>− Remove</button>
+                        </div>
+                    </div>
+
+                    {/* ── Stop pills (quick select) ── */}
+                    <div className="gx-stop-pills">
+                        {modalStops.map((stop, index) => (
+                            <button
+                                key={index}
+                                type="button"
+                                className={`gx-stop-pill${index === modalStopIndex ? ' active' : ''}`}
+                                style={{ background: stop.color }}
+                                onClick={() => setSelectedGradientStopIndex(index)}
+                                aria-label={`Stop ${index + 1}: ${stop.color}`}
+                            />
+                        ))}
+                    </div>
+
+                    {/* ── Actions ── */}
+                    <div className="gx-actions">
+                        <button type="button" className="gx-btn-cancel" onClick={() => setGradientEditorOpen(false)}>Cancel</button>
+                        <button type="button" className="gx-btn-ok" onClick={() => setGradientEditorOpen(false)}>Done</button>
                     </div>
                 </div>
             </div>,
@@ -1433,8 +1499,9 @@ function App() {
                                                 className="theme-share-action"
                                                 onClick={action.onClick}
                                                 disabled={action.disabled}
+                                                style={action.color ? { '--share-action-color': action.color, '--share-action-color-a': `${action.color}26` } as React.CSSProperties : undefined}
                                             >
-                                                <span className="theme-share-action-icon">
+                                                <span className="theme-share-action-icon" style={action.color ? { background: `${action.color}22`, border: `1px solid ${action.color}44`, color: action.color } : undefined}>
                                                     <Icon />
                                                 </span>
                                                 <span>{action.label}</span>
@@ -2508,11 +2575,12 @@ function App() {
                                                     </div>
                                                 </div>
 
-                                                <div className="account-section-card">
-                                                    <div className="theme-library-header">
-                                                        <div>
-                                                            <h3>Your Saved & Shared Themes</h3>
-                                                            <p className="account-section-copy">Save your own packs, import shared themes, and manage them from this library.</p>
+                                                <div className="account-section-card theme-saved-section">
+                                                    {/* ── Section header ── */}
+                                                    <div className="theme-section-masthead">
+                                                        <div className="theme-section-masthead-copy">
+                                                            <h3>Your Saved &amp; Shared Themes</h3>
+                                                            <p className="account-section-copy">Import, save, and manage your packs.</p>
                                                         </div>
                                                         <div className="theme-library-actions">
                                                             <button
@@ -2520,17 +2588,18 @@ function App() {
                                                                 className="account-secondary-btn"
                                                                 onClick={() => themeImportInputRef.current?.click()}
                                                             >
-                                                                Import from File
+                                                                Import file
                                                             </button>
                                                             <button
                                                                 type="button"
-                                                                className="theme-icon-btn"
+                                                                className="theme-share-pill-btn"
                                                                 onClick={() => openThemeShareDialog(themeDraft)}
                                                                 disabled={!themeDraft}
-                                                                title="Share theme"
+                                                                title="Share current theme"
                                                                 aria-label="Share theme"
                                                             >
-                                                                <img src={shareIcon} alt="" />
+                                                                <img src={shareIcon} alt="" style={{ width: 16, height: 16, filter: 'invert(1)', opacity: 0.9 }} />
+                                                                Share
                                                             </button>
                                                             <input
                                                                 ref={themeImportInputRef}
@@ -2546,33 +2615,31 @@ function App() {
                                                         </div>
                                                     </div>
 
-                                                    <div className="theme-import-row">
-                                                        <label className="account-field theme-import-field">
-                                                            <span>Import a shared theme</span>
-                                                            <input
-                                                                value={themeImportValue}
-                                                                onChange={(event) => setThemeImportValue(event.target.value)}
-                                                                placeholder="Paste a share link or 6-digit code"
-                                                            />
-                                                        </label>
-                                                        <div className="account-inline-actions">
-                                                            <button
-                                                                type="button"
-                                                                className="account-primary-btn"
-                                                                onClick={async () => {
-                                                                    try {
-                                                                        await importSharedTheme(themeImportValue);
-                                                                    } catch (error) {
-                                                                        setAccountFeedback(error.message);
-                                                                    }
-                                                                }}
-                                                                disabled={!themeImportValue.trim()}
-                                                            >
-                                                                Import & Apply
-                                                            </button>
-                                                        </div>
+                                                    {/* ── Import by code ── */}
+                                                    <div className="theme-import-pill-row">
+                                                        <input
+                                                            className="theme-import-pill-input"
+                                                            value={themeImportValue}
+                                                            onChange={(event) => setThemeImportValue(event.target.value)}
+                                                            placeholder="Paste a share link or 6-digit code…"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            className="account-primary-btn"
+                                                            onClick={async () => {
+                                                                try {
+                                                                    await importSharedTheme(themeImportValue);
+                                                                } catch (error) {
+                                                                    setAccountFeedback(error.message);
+                                                                }
+                                                            }}
+                                                            disabled={!themeImportValue.trim()}
+                                                        >
+                                                            Import &amp; Apply
+                                                        </button>
                                                     </div>
 
+                                                    {/* ── Saved packs grid ── */}
                                                     {savedThemePacks.length > 0 ? (
                                                         <div className="saved-theme-grid">
                                                             {savedThemePacks.map((pack) => {
@@ -2595,7 +2662,9 @@ function App() {
                                                                         <div
                                                                             className="saved-theme-swatch"
                                                                             style={{ background: previewBackground }}
-                                                                        />
+                                                                        >
+                                                                            {isSelected && <span className="saved-theme-active-badge">Active</span>}
+                                                                        </div>
                                                                         <div className="saved-theme-copy">
                                                                             <span className="saved-theme-name">{pack.name}</span>
                                                                             <span className="saved-theme-meta">{pack.authorLabel || 'By you'}</span>
@@ -2604,7 +2673,7 @@ function App() {
                                                                         <div className="saved-theme-actions">
                                                                             <button
                                                                                 type="button"
-                                                                                className="theme-icon-btn"
+                                                                                className="saved-theme-share-btn"
                                                                                 title="Share theme"
                                                                                 aria-label={`Share ${pack.name}`}
                                                                                 onClick={(event) => {
@@ -2612,11 +2681,12 @@ function App() {
                                                                                     openThemeShareDialog(pack);
                                                                                 }}
                                                                             >
-                                                                                <img src={shareIcon} alt="" />
+                                                                                <img src={shareIcon} alt="" style={{ width: 14, height: 14, filter: 'invert(1)', opacity: 0.85 }} />
+                                                                                Share
                                                                             </button>
                                                                             <button
                                                                                 type="button"
-                                                                                className="account-secondary-btn"
+                                                                                className="saved-theme-delete-btn"
                                                                                 onClick={(event) => {
                                                                                     event.stopPropagation();
                                                                                     deleteThemePack(pack);
@@ -2630,7 +2700,11 @@ function App() {
                                                             })}
                                                         </div>
                                                     ) : (
-                                                        <p className="theme-empty-state">No saved or imported themes yet.</p>
+                                                        <div className="theme-empty-well">
+                                                            <span className="theme-empty-icon">🎨</span>
+                                                            <p>No saved or imported themes yet.</p>
+                                                            <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Create a custom pack above or paste a share code.</p>
+                                                        </div>
                                                     )}
                                                 </div>
 
@@ -2673,8 +2747,13 @@ function App() {
                                                 )}
 
                                                 {isEditableThemePack(themeDraft) && (
-                                                    <div className="account-section-card">
-                                                        <h3>Customize</h3>
+                                                    <div className="account-section-card theme-customize-section">
+                                                        <div className="theme-section-masthead">
+                                                            <div className="theme-section-masthead-copy">
+                                                                <h3>Customize</h3>
+                                                                <p className="account-section-copy">Colors, gradients, and backgrounds for <strong>{themeDraft?.name || 'your pack'}</strong>.</p>
+                                                            </div>
+                                                        </div>
 
                                                         {/* Button color picker */}
                                                         <div className="theme-custom-row">
@@ -2729,47 +2808,36 @@ function App() {
                                                             </label>
                                                         </div>
 
-                                                        <div className="theme-custom-row">
-                                                            <label className="theme-color-label">
-                                                                <span>Button gradient</span>
-                                                                <div className="theme-color-row">
-                                                                    {[0, 1, 2].map((index) => (
-                                                                        <input
-                                                                            key={index}
-                                                                            type="color"
-                                                                            className="theme-color-input"
-                                                                            value={themeDraft.btnGradient?.colors?.[index] || themeDraft.btnColor || ACCENT_SWATCHES[index] || '#60a5fa'}
-                                                                            onChange={(event) => setThemeDraft((prev) => {
-                                                                                const nextColors = [...(prev.btnGradient?.colors || [prev.btnColor || '#60a5fa', '#2563eb', '#7dd3fc'])];
-                                                                                nextColors[index] = event.target.value;
-                                                                                return {
-                                                                                    ...prev,
-                                                                                    btnGradient: {
-                                                                                        angle: Number.isFinite(Number(prev.btnGradient?.angle)) ? Number(prev.btnGradient.angle) : 135,
-                                                                                        colors: nextColors.slice(0, 3),
-                                                                                    },
-                                                                                };
-                                                                            })}
-                                                                        />
-                                                                    ))}
-                                                                </div>
-                                                            </label>
-                                                            <label className="account-field" style={{ marginTop: 8 }}>
-                                                                <span>Gradient angle</span>
-                                                                <input
-                                                                    type="range"
-                                                                    min="0"
-                                                                    max="360"
-                                                                    value={Number(themeDraft.btnGradient?.angle ?? 135)}
-                                                                    onChange={(event) => setThemeDraft((prev) => ({
-                                                                        ...prev,
-                                                                        btnGradient: {
-                                                                            angle: Number(event.target.value),
-                                                                            colors: [...(prev.btnGradient?.colors || [prev.btnColor || '#60a5fa', '#2563eb', '#7dd3fc'])].slice(0, 3),
-                                                                        },
-                                                                    }))}
-                                                                />
-                                                            </label>
+                                                        {/* Button gradient — opens shared gradient editor */}
+                                                        <div className="theme-gradient-summary-card">
+                                                            <div
+                                                                className="theme-gradient-summary-preview"
+                                                                style={{
+                                                                    backgroundImage: themeDraft.btnGradient?.colors?.length
+                                                                        ? `linear-gradient(${themeDraft.btnGradient.angle ?? 135}deg, ${themeDraft.btnGradient.colors.join(', ')})`
+                                                                        : `linear-gradient(135deg, ${themeDraft.btnColor || '#60a5fa'}, #2563eb)`,
+                                                                }}
+                                                            />
+                                                            <div className="theme-gradient-summary-copy">
+                                                                <strong>Button Gradient</strong>
+                                                                <span>{`${themeDraft.btnGradient?.colors?.length ?? 0} stop${(themeDraft.btnGradient?.colors?.length ?? 0) === 1 ? '' : 's'} · ${themeDraft.btnGradient?.angle ?? 135}°`}</span>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                className="account-primary-btn"
+                                                                onClick={() => { setGradientEditorTarget('button'); setGradientEditorOpen(true); }}
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                            {themeDraft.btnGradient && (
+                                                                <button
+                                                                    type="button"
+                                                                    className="account-secondary-btn"
+                                                                    onClick={() => setThemeDraft((prev) => ({ ...prev, btnGradient: undefined }))}
+                                                                >
+                                                                    Clear
+                                                                </button>
+                                                            )}
                                                         </div>
 
                                                         {/* Background image mode toggle */}
@@ -2831,7 +2899,7 @@ function App() {
                                                                 <button
                                                                     type="button"
                                                                     className="account-primary-btn"
-                                                                    onClick={() => setGradientEditorOpen(true)}
+                                                                    onClick={() => { setGradientEditorTarget('background'); setGradientEditorOpen(true); }}
                                                                 >
                                                                     Edit Gradient
                                                                 </button>
@@ -3069,7 +3137,3 @@ function App() {
 }
 
 export default App;
-
-
-
-
