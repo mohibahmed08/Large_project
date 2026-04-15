@@ -1936,7 +1936,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          decoration: AppTheme.glassPanelDecoration(radius: 28, opacity: 0.68),
+          decoration: AppTheme.glassPanelDecoration(radius: 28, opacity: 0.74),
           child: TextField(
             controller: _searchController,
             textInputAction: TextInputAction.search,
@@ -2931,9 +2931,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget _buildWeatherWidgetModeButton() {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.08),
+        color: Colors.white.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
       ),
       child: PopupMenuButton<_WeatherWidgetMode>(
         initialValue: _weatherWidgetMode,

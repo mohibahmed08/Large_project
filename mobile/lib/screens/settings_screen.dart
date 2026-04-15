@@ -1935,8 +1935,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       decoration: const InputDecoration(
                                         labelText: 'Theme code / link ending',
                                         hintText: 'spring-mountain',
-                                        prefixText:
-                                            'calendarplusplus.xyz/?theme=',
                                       ),
                                     ),
                                     const SizedBox(height: 10),
@@ -2125,9 +2123,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             if (savedThemes.isNotEmpty) ...[
               const SizedBox(height: 16),
-              ...savedThemes.map(
-                (theme) => ListTile(
+              ...savedThemes.map((theme) {
+                final isCurrent = _themeService.themePackMatches(
+                  _themeService.current,
+                  theme,
+                );
+                return ListTile(
                   contentPadding: EdgeInsets.zero,
+                  onTap: () async {
+                    await _themeService.applyThemePack(theme);
+                    if (!mounted) {
+                      return;
+                    }
+                    await _loadTheme();
+                    _showSnackBar('Applied "${theme.name}".');
+                  },
+                  leading: isCurrent
+                      ? Icon(Icons.check_circle, color: theme.btnColor)
+                      : const Icon(Icons.palette_outlined),
                   title: Text(theme.name),
                   subtitle: Text(theme.authorLabel ?? theme.description),
                   trailing: Wrap(
@@ -2143,8 +2156,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ],
                   ),
-                ),
-              ),
+                );
+              }),
             ],
           ],
         ),

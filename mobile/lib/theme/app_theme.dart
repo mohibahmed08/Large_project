@@ -24,24 +24,26 @@ class AppTheme {
 
   static Color get surfaceAlt => _mix(const Color(0xFF172033), accent, 0.18);
 
-  static Color get border =>
-      _mix(const Color(0xFF334155), accent, 0.18).withValues(alpha: 0.44);
+  static Color get dropdownSurface => surfaceAlt.withValues(alpha: 0.94);
 
-  static Color glassSurface({double opacity = 0.72}) =>
+  static Color get border =>
+      _mix(const Color(0xFF334155), accent, 0.18).withValues(alpha: 0.52);
+
+  static Color glassSurface({double opacity = 0.78}) =>
       surface.withValues(alpha: opacity);
 
   static BoxDecoration glassPanelDecoration({
     double radius = 24,
-    double opacity = 0.74,
+    double opacity = 0.8,
   }) {
     return BoxDecoration(
       borderRadius: BorderRadius.circular(radius),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
       gradient: LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          Colors.white.withValues(alpha: 0.12),
+          Colors.white.withValues(alpha: 0.16),
           glassSurface(opacity: opacity),
         ],
       ),
@@ -118,7 +120,7 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
       ),
       cardTheme: CardThemeData(
-        color: surface.withValues(alpha: 0.82),
+        color: surface.withValues(alpha: 0.86),
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24),
@@ -126,7 +128,7 @@ class AppTheme {
         ),
       ),
       dialogTheme: DialogThemeData(
-        backgroundColor: surface.withValues(alpha: 0.9),
+        backgroundColor: surface.withValues(alpha: 0.93),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24),
           side: BorderSide(color: border),
@@ -134,7 +136,7 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.08),
+        fillColor: Colors.white.withValues(alpha: 0.12),
         labelStyle: TextStyle(color: textMuted),
         hintStyle: TextStyle(color: textMuted),
         floatingLabelStyle: TextStyle(
@@ -147,15 +149,15 @@ class AppTheme {
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(20),
-          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.18)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(20),
-          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.18)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(20),
-          borderSide: BorderSide(color: accent.withValues(alpha: 0.75)),
+          borderSide: BorderSide(color: accent.withValues(alpha: 0.88)),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
@@ -207,8 +209,8 @@ class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: surface.withValues(alpha: 0.92),
-        indicatorColor: accent.withValues(alpha: 0.2),
+        backgroundColor: surface.withValues(alpha: 0.95),
+        indicatorColor: accent.withValues(alpha: 0.24),
         labelTextStyle: WidgetStateProperty.resolveWith(
           (states) => TextStyle(
             color: states.contains(WidgetState.selected) ? accent : textMuted,

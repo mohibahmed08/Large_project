@@ -4590,6 +4590,7 @@ exports.setApp = function(app, client)
 
         try
         {
+            const db = getDatabase(client);
             const trimmedSlug = String(slug || '').trim().toLowerCase();
             if(!trimmedSlug || !THEME_SHARE_SLUG_PATTERN.test(trimmedSlug))
             {
