@@ -3,7 +3,11 @@
 import { useEffect } from 'react';
 import './DayGrid.css';
 
-// Render one day cell inside the monthly calendar grid.
+//THIS CLASS WILL BE ONE DAY INSIDE THE CALENDAR GRID
+//I.E. THE BOX THAT IS INTERACTABLE AND SHOWS STUFF
+//WITHIN THE CALENDAR U.I.
+
+//SHOULD BE USED AS AN ARRAY OF DAYS WITHIN THE CALENDAR U.I.
 function DayGrid({
     weather,
     setCurrentWeather,
@@ -20,10 +24,10 @@ function DayGrid({
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Flag the tile when it represents the current local date.
-    const isToday = dayOfMonth === today.getDate() && year === today.getFullYear() && month === today.getMonth();
+    //CHECK IF THIS DAY GRID IS ACTIVE (TODAY == DAY OF MONTH)
+    const isToday = dayOfMonth == date.getDate() && year == date.getFullYear() && month == date.getMonth();
 
-    // Normalize the rendered date so selection and weather checks use the same boundary.
+    //TARGET DATE FOR DAY INDEX AND WITHIN WEEK
     const targetDate = new Date(year, month, dayOfMonth);
     targetDate.setHours(0, 0, 0, 0);
     const normalizedSelectedDate = selectedDate ? new Date(selectedDate) : null;
@@ -42,8 +46,11 @@ function DayGrid({
             return;
         }
 
-        setCurrentWeather?.(generalWeather);
-    }, [generalWeather, isToday, setCurrentWeather]);
+    //GENERAL WEATHER FOR THE CURRENT DAY
+    const generalWeather = weather ? weatherCodeToText(getDailyGeneralWeather(weather.hourly.weathercode, dayIndex)) : "";
+    
+    //PASS IN THE CURRENT WEATHER FOR TODAY
+    if(isToday) setCurrentWeather(generalWeather);
 
     const eventPillClass = (task) => {
         const source = String(task?.source || '').toLowerCase();
@@ -86,7 +93,7 @@ function DayGrid({
 
     return (
         <>
-            {/* The tile can be active for today, selected, or dimmed when it belongs to an adjacent month. */}
+            {/* THE DATE BOX ITSELF CONTAINING SUBINFO AND IF ACTIVE (CURRRENT DAY), OTHER MONTH IF SPACER FROM PRIOR/NEXT MONTH BLEEDING OVER TO THIS ONE */}
             <div
                 className = {`day-grid-wrapper ${isToday ? "active" : ""} ${isSelected ? "selected" : ""} ${isOtherMonth ? "other-month" : ""}`}
                 onClick={() => onSelectDay?.(targetDate)}
@@ -185,9 +192,11 @@ export function getDailyGeneralWeather(hourlyInput, target) {
         return null;
     }
 
+    // Count frequency
     const counts = {};
     dayHours.forEach(code => counts[code] = (counts[code] || 0) + 1);
 
+    // Find most frequent
     let maxCount = 0;
     let generalCode = dayHours[0];
     for (const code in counts) {
