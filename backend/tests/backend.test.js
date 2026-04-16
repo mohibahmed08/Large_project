@@ -102,6 +102,35 @@ const tests = [
     },
   },
   {
+    name: 'normalizeCustomThemePack preserves mobile custom image and none background modes',
+    run() {
+      const customImageTheme = __testables.normalizeCustomThemePack({
+        name: 'Photo Theme',
+        backgroundMode: 'customImage',
+        images: {
+          universal: 'https://example.com/photo.jpg',
+        },
+        gradient: {
+          angle: 180,
+          colors: ['#08111f', '#10203a', '#163761'],
+        },
+      });
+
+      const noImageTheme = __testables.normalizeCustomThemePack({
+        name: 'No Image Theme',
+        backgroundMode: 'none',
+        gradient: {
+          angle: 180,
+          colors: ['#08111f', '#10203a', '#163761'],
+        },
+      });
+
+      assert.equal(customImageTheme.backgroundMode, 'customImage');
+      assert.equal(customImageTheme.images.universal, 'https://example.com/photo.jpg');
+      assert.equal(noImageTheme.backgroundMode, 'none');
+    },
+  },
+  {
     name: 'theme share helpers parse links, validate slugs, and build share URLs',
     run() {
       assert.equal(

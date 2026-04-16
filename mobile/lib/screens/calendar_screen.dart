@@ -84,9 +84,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   void _syncThemeWeather() {
+    final now = DateTime.now();
+    final referenceTime = DateUtils.isSameDay(_selectedDate, now)
+        ? now
+        : DateTime(
+            _selectedDate.year,
+            _selectedDate.month,
+            _selectedDate.day,
+            13,
+          );
     _themeService.setActiveWeatherCode(
       _selectedDayWeather?['code'] as int?,
-      at: _selectedDate,
+      at: referenceTime,
     );
   }
 
@@ -134,7 +143,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
       if (pendingTaskId != null) {
         unawaited(_openTaskById(pendingTaskId));
       }
-      final pendingThemeShareValue = AppLinkService.takePendingThemeShareValue();
+      final pendingThemeShareValue =
+          AppLinkService.takePendingThemeShareValue();
       if (pendingThemeShareValue != null) {
         unawaited(_importSharedThemeFromLink(pendingThemeShareValue));
       } else {
@@ -164,7 +174,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return;
     }
     try {
-      final result = await _themeService.importSharedTheme(_session, shareValue);
+      final result = await _themeService.importSharedTheme(
+        _session,
+        shareValue,
+      );
       _session = result.session;
       if (!mounted) {
         return;
@@ -555,10 +568,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Widget _buildTaskMetaRow({
-    required IconData icon,
-    required String label,
-  }) {
+  Widget _buildTaskMetaRow({required IconData icon, required String label}) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -735,7 +745,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Future<void> _loadMonth({bool showLoader = false}) async {
-    _debugLog('loadMonth start showLoader=$showLoader month=${_currentDate.year}-${_currentDate.month}');
+    _debugLog(
+      'loadMonth start showLoader=$showLoader month=${_currentDate.year}-${_currentDate.month}',
+    );
     if (showLoader) {
       setState(() {
         _isLoading = true;
@@ -905,13 +917,29 @@ class _CalendarScreenState extends State<CalendarScreen> {
     await _loadMonth(showLoader: false);
   }
 
+  Future<void> _changeDisplayedMonth(int monthDelta) {
+    return _setDisplayedMonth(
+      DateTime(_displayMonth.year, _displayMonth.month + monthDelta),
+      animatePage: true,
+    );
+  }
+
+  Future<void> _jumpToTodayMonth() {
+    final today = DateUtils.dateOnly(DateTime.now());
+    return _setDisplayedMonth(
+      DateTime(today.year, today.month),
+      animatePage: true,
+      selectedDateOverride: today,
+    );
+  }
+
   Future<Map<String, dynamic>?> _loadWeatherForecast({
     required double latitude,
     required double longitude,
   }) async {
     final today = DateTime.now();
     final start = _formatDate(today);
-    final end = _formatDate(today.add(const Duration(days: 10)));
+    final end = _formatDate(today.add(const Duration(days: 14)));
     final response = await http.get(
       Uri.parse(
         'https://api.open-meteo.com/v1/forecast?latitude=$latitude&longitude=$longitude&start_date=$start&end_date=$end&hourly=temperature_2m,weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit',
@@ -1085,7 +1113,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(task.source.toLowerCase() == 'task' ? 'Delete task?' : 'Delete item?'),
+        title: Text(
+          task.source.toLowerCase() == 'task' ? 'Delete task?' : 'Delete item?',
+        ),
         content: Text(
           'This will permanently delete "${task.title.trim().isEmpty ? 'this item' : task.title.trim()}" from your calendar.',
         ),
@@ -1905,40 +1935,71 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        TextField(
-          controller: _searchController,
-          textInputAction: TextInputAction.search,
-          decoration: InputDecoration(
-            hintText: 'Search',
-            prefixIcon: const Icon(Icons.search),
-            suffixIcon: _searchLoading
-                ? const Padding(
-                    padding: EdgeInsets.all(14),
-                    child: SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                : _isSearchActive
-                    ? IconButton(
-                        onPressed: () {
-                          _searchController.clear();
-                        },
-                        icon: const Icon(Icons.close),
-                        tooltip: 'Clear search',
-                      )
-                    : null,
+        Container(
+          decoration: AppTheme.glassPanelDecoration(radius: 28, opacity: 0.74),
+          child: TextField(
+            controller: _searchController,
+            textInputAction: TextInputAction.search,
+            style: const TextStyle(
+              color: AppTheme.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+            ),
+            decoration: InputDecoration(
+              hintText: 'Search',
+              hintStyle: TextStyle(
+                color: AppTheme.textMuted.withValues(alpha: 0.9),
+                fontSize: 18,
+              ),
+              prefixIcon: Padding(
+                padding: const EdgeInsets.only(left: 14, right: 2),
+                child: Icon(
+                  Icons.search_rounded,
+                  color: Colors.white.withValues(alpha: 0.72),
+                  size: 24,
+                ),
+              ),
+              prefixIconConstraints: const BoxConstraints(
+                minWidth: 44,
+                minHeight: 44,
+              ),
+              suffixIcon: _searchLoading
+                  ? const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : _isSearchActive
+                  ? IconButton(
+                      onPressed: () {
+                        _searchController.clear();
+                      },
+                      icon: Icon(
+                        Icons.close_rounded,
+                        color: Colors.white.withValues(alpha: 0.7),
+                      ),
+                      tooltip: 'Clear search',
+                    )
+                  : null,
+              filled: false,
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 18,
+              ),
+            ),
           ),
         ),
         if (_searchError.isNotEmpty) ...[
           const SizedBox(height: 6),
           Text(
             _searchError,
-            style: TextStyle(
-              color: AppTheme.danger,
-              fontSize: 12,
-            ),
+            style: TextStyle(color: AppTheme.danger, fontSize: 12),
           ),
         ],
       ],
@@ -1968,257 +2029,358 @@ class _CalendarScreenState extends State<CalendarScreen> {
               child: CustomScrollView(
                 controller: _calendarScrollController,
                 slivers: [
-                // ── Month header row ──────────────────────────────────────
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '${_monthName(_displayMonth.month)} ${_displayMonth.year}',
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.chevron_left),
-                          onPressed: () => unawaited(
-                            _setDisplayedMonth(
-                              DateTime(
-                                _displayMonth.year,
-                                _displayMonth.month - 1,
-                              ),
-                              animatePage: true,
-                            ),
-                          ),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.chevron_right),
-                          onPressed: () => unawaited(
-                            _setDisplayedMonth(
-                              DateTime(
-                                _displayMonth.year,
-                                _displayMonth.month + 1,
-                              ),
-                              animatePage: true,
-                            ),
-                          ),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.today_outlined),
-                          onPressed: () => unawaited(
-                            _setDisplayedMonth(
-                              DateTime(today.year, today.month),
-                              animatePage: true,
-                              selectedDateOverride: today,
-                            ),
-                          ),
-                          tooltip: 'Today',
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // ── Weekday labels ────────────────────────────────────────
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                    child: _buildSearchCard(),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Row(
-                      children: ['S', 'M', 'T', 'W', 'T', 'F', 'S']
-                          .map(
-                            (d) => Expanded(
-                              child: Center(
-                                child: Text(
-                                  d,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppTheme.textMuted,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ),
-                ),
-
-                // ── Swipeable month grid ──────────────────────────────────
-                SliverToBoxAdapter(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final viewportHeight = (MediaQuery.sizeOf(context).height *
-                              0.38)
-                          .clamp(300.0, 430.0)
-                          .toDouble();
-
-                      return SizedBox(
-                        height: viewportHeight,
-                        child: PageView.builder(
-                          controller: _monthPageController,
-                          onPageChanged: (page) {
-                            final base = DateTime(today.year, today.month);
-                            unawaited(
-                              _setDisplayedMonth(
-                                DateTime(
-                                  base.year,
-                                  base.month + (page - 1200),
-                                ),
-                              ),
-                            );
-                            return DayGrid(
-                              day: dayNum,
-                              isToday: DateUtils.isSameDay(date, today),
-                              isSelected: DateUtils.isSameDay(
-                                date,
-                                _selectedDate,
-                              ),
-                              weatherData: _weatherData,
-                              tasks: _visibleTasks
-                                  .where(
-                                    (t) =>
-                                        DateUtils.isSameDay(t.startDate, date),
-                                  )
-                                  .toList(),
-                              onDayTap: (selectedDay) {
-                                setState(() {
-                                  _selectedDate = DateTime(
-                                    pageMonth.year,
-                                    pageMonth.month,
-                                    selectedDay,
-                                  );
-                                });
-                                _syncThemeWeather();
-                              },
-                            );
-                          },
-                        ),
-                      );
-                    },
-                  ),
-                ),
-
-                // ── Divider ───────────────────────────────────────────────
-                SliverToBoxAdapter(
-                  child: Divider(height: 1, color: AppTheme.border),
-                ),
-
-                // ── Selected-day header ───────────────────────────────────
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
-                    child: Row(
-                      children: [
-                        Expanded(
+                  // ── Month header row ──────────────────────────────────────
+                  SliverToBoxAdapter(
+                    child: SafeArea(
+                      bottom: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                        child: Container(
+                          padding: const EdgeInsets.fromLTRB(18, 14, 10, 8),
+                          decoration: const BoxDecoration(),
                           child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                DateUtils.isSameDay(_selectedDate, today)
-                                    ? 'Today'
-                                    : '${_weekdayName(_selectedDate.weekday)}, '
-                                          '${_monthName(_selectedDate.month)} '
-                                          '${_selectedDate.day}',
-                                style: Theme.of(context).textTheme.titleSmall
-                                    ?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                              if (selectedDayWeather != null)
-                                Text(
-                                  '${(selectedDayWeather['max'] as num?)?.round() ?? 0}° / '
-                                  '${(selectedDayWeather['min'] as num?)?.round() ?? 0}°  '
-                                  '${_weatherGlyph(selectedDayWeather['code'] as int?)}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: AppTheme.textMuted,
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'Calendar++',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .headlineSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
                                   ),
-                                ),
+                                  IconButton(
+                                    onPressed: _openImportDialog,
+                                    icon: const Icon(Icons.link_rounded),
+                                    tooltip: 'Connect calendar',
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  IconButton(
+                                    onPressed: _openSettings,
+                                    icon: const Icon(Icons.settings_outlined),
+                                    tooltip: 'Settings',
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  IconButton(
+                                    onPressed: _logout,
+                                    icon: const Icon(Icons.logout),
+                                    tooltip: 'Logout',
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      '${_monthName(_displayMonth.month)} ${_displayMonth.year}',
+                                      style: const TextStyle(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                  IconButton(
+                                    onPressed: () => _changeDisplayedMonth(-1),
+                                    icon: const Icon(
+                                      Icons.chevron_left_rounded,
+                                    ),
+                                    tooltip: 'Previous month',
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  IconButton(
+                                    onPressed: () => _changeDisplayedMonth(1),
+                                    icon: const Icon(
+                                      Icons.chevron_right_rounded,
+                                    ),
+                                    tooltip: 'Next month',
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  IconButton(
+                                    onPressed: _jumpToTodayMonth,
+                                    icon: const Icon(
+                                      Icons.calendar_month_outlined,
+                                    ),
+                                    tooltip: 'Jump to today',
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                ],
+                              ),
                             ],
                           ),
                         ),
-                        TextButton.icon(
-                          onPressed: () => _openTaskDialog(),
-                          icon: const Icon(Icons.add, size: 16),
-                          label: const Text('Add'),
-                          style: TextButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
 
-                // ── Quick-add bar ─────────────────────────────────────────
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: TextField(
-                      controller: _quickAddController,
-                      decoration: InputDecoration(
-                        hintText: 'Quick add…',
-                        hintStyle: TextStyle(color: AppTheme.textMuted),
-                        prefixIcon: const Icon(
-                          Icons.add_circle_outline,
-                          size: 18,
-                        ),
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
+                  // ── Weekday labels ────────────────────────────────────────
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                      child: const SizedBox.shrink(),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
                           vertical: 10,
                         ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: AppTheme.border),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: AppTheme.border),
+                        decoration: const BoxDecoration(),
+                        child: Row(
+                          children: ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+                              .map(
+                                (d) => Expanded(
+                                  child: Center(
+                                    child: Text(
+                                      d,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppTheme.textMuted,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
                         ),
                       ),
-                      onSubmitted: (value) => unawaited(_submitQuickAdd(value)),
                     ),
                   ),
-                ),
 
-                // ── Agenda list ───────────────────────────────────────────
-                if (dayTasks.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Text(
-                          'Nothing scheduled',
-                          style: TextStyle(color: AppTheme.textMuted),
-                        ),
-                      ),
+                  // ── Swipeable month grid ──────────────────────────────────
+                  SliverToBoxAdapter(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final viewportHeight =
+                            (MediaQuery.sizeOf(context).height * 0.38)
+                                .clamp(300.0, 430.0)
+                                .toDouble();
+
+                        return SizedBox(
+                          height: viewportHeight,
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 8),
+                            padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
+                            decoration: const BoxDecoration(),
+                            child: PageView.builder(
+                              controller: _monthPageController,
+                              onPageChanged: (page) {
+                                final base = DateTime(today.year, today.month);
+                                unawaited(
+                                  _setDisplayedMonth(
+                                    DateTime(
+                                      base.year,
+                                      base.month + (page - 1200),
+                                    ),
+                                  ),
+                                );
+                              },
+                              itemBuilder: (context, page) {
+                                final base = DateTime(today.year, today.month);
+                                final pageMonth = DateTime(
+                                  base.year,
+                                  base.month + (page - 1200),
+                                );
+                                final firstDay = DateTime(
+                                  pageMonth.year,
+                                  pageMonth.month,
+                                  1,
+                                );
+                                final firstWeekdayOffset = firstDay.weekday % 7;
+                                final daysInMonth = DateUtils.getDaysInMonth(
+                                  pageMonth.year,
+                                  pageMonth.month,
+                                );
+                                final totalCells =
+                                    firstWeekdayOffset + daysInMonth;
+                                final rowCount = (totalCells / 7).ceil();
+                                final cellCount = rowCount * 7;
+
+                                return GridView.builder(
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  padding: EdgeInsets.zero,
+                                  gridDelegate:
+                                      const SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: 7,
+                                        crossAxisSpacing: 6,
+                                        mainAxisSpacing: 6,
+                                        childAspectRatio: 0.92,
+                                      ),
+                                  itemCount: cellCount,
+                                  itemBuilder: (context, index) {
+                                    if (index < firstWeekdayOffset ||
+                                        index >=
+                                            firstWeekdayOffset + daysInMonth) {
+                                      return const SizedBox.shrink();
+                                    }
+
+                                    final dayNum =
+                                        index - firstWeekdayOffset + 1;
+                                    final date = DateTime(
+                                      pageMonth.year,
+                                      pageMonth.month,
+                                      dayNum,
+                                    );
+
+                                    return DayGrid(
+                                      day: dayNum,
+                                      isToday: DateUtils.isSameDay(date, today),
+                                      isSelected: DateUtils.isSameDay(
+                                        date,
+                                        _selectedDate,
+                                      ),
+                                      weatherData: _weatherData,
+                                      tasks: _visibleTasks
+                                          .where(
+                                            (t) => DateUtils.isSameDay(
+                                              t.startDate,
+                                              date,
+                                            ),
+                                          )
+                                          .toList(),
+                                      onDayTap: (selectedDay) {
+                                        setState(() {
+                                          _selectedDate = DateTime(
+                                            pageMonth.year,
+                                            pageMonth.month,
+                                            selectedDay,
+                                          );
+                                        });
+                                        _syncThemeWeather();
+                                      },
+                                    );
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, i) => Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: _buildTaskPreviewRow(dayTasks[i]),
-                        ),
-                        childCount: dayTasks.length,
+                  ),
+
+                  // ── Divider ───────────────────────────────────────────────
+                  SliverToBoxAdapter(
+                    child: Divider(
+                      height: 1,
+                      color: Colors.white.withValues(alpha: 0.14),
+                    ),
+                  ),
+
+                  // ── Selected-day header ───────────────────────────────────
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  DateUtils.isSameDay(_selectedDate, today)
+                                      ? 'Today'
+                                      : '${_weekdayName(_selectedDate.weekday)}, '
+                                            '${_monthName(_selectedDate.month)} '
+                                            '${_selectedDate.day}',
+                                  style: Theme.of(context).textTheme.titleSmall
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                                if (selectedDayWeather != null)
+                                  Text(
+                                    '${(selectedDayWeather['max'] as num?)?.round() ?? 0}° / '
+                                    '${(selectedDayWeather['min'] as num?)?.round() ?? 0}°  '
+                                    '${_weatherGlyph(selectedDayWeather['code'] as int?)}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: AppTheme.textMuted,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: () => _openTaskDialog(),
+                            icon: const Icon(Icons.add, size: 16),
+                            label: const Text('Add'),
+                            style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
+
+                  // ── Quick-add bar ─────────────────────────────────────────
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: TextField(
+                        controller: _quickAddController,
+                        decoration: InputDecoration(
+                          hintText: 'Quick add…',
+                          hintStyle: TextStyle(color: AppTheme.textMuted),
+                          prefixIcon: const Icon(
+                            Icons.add_circle_outline,
+                            size: 18,
+                          ),
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: AppTheme.border),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: AppTheme.border),
+                          ),
+                        ),
+                        onSubmitted: (value) =>
+                            unawaited(_submitQuickAdd(value)),
+                      ),
+                    ),
+                  ),
+
+                  // ── Agenda list ───────────────────────────────────────────
+                  if (dayTasks.isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Text(
+                            'Nothing scheduled',
+                            style: TextStyle(color: AppTheme.textMuted),
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                      sliver: SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, i) => Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: _buildTaskPreviewRow(dayTasks[i]),
+                          ),
+                          childCount: dayTasks.length,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -2769,9 +2931,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget _buildWeatherWidgetModeButton() {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.08),
+        color: Colors.white.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
       ),
       child: PopupMenuButton<_WeatherWidgetMode>(
         initialValue: _weatherWidgetMode,
@@ -3614,7 +3776,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final selectedDateLabel =
         '${_monthName(_selectedDate.month)} ${_selectedDate.day}, ${_selectedDate.year}';
 
-    if (_selectedIndex == 1) {
+    if (_selectedIndex == 0 || _selectedIndex == 1) {
       return null;
     }
 
@@ -3684,12 +3846,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
         ],
       ),
-      floatingActionButton: (_selectedIndex == 0 || _selectedIndex == 1)
+      floatingActionButton: _selectedIndex == 1
           ? FloatingActionButton.extended(
               onPressed: () => _openTaskDialog(),
               tooltip: 'Add Item',
               icon: const Icon(Icons.add),
-              label: Text(_selectedIndex == 0 ? 'Add Item' : 'Add to Day'),
+              label: const Text('Add to Day'),
             )
           : null,
       bottomNavigationBar: NavigationBar(

@@ -674,6 +674,7 @@ function App() {
         open: false,
         nextTab: '',
         shouldCloseModal: false,
+        nextTheme: null,
     });
     const [themeShareState, setThemeShareState] = useState({
         open: false,
@@ -707,6 +708,7 @@ function App() {
     const searchInputRef = useRef(null);
     const locationRequestRef = useRef(null);
     const themeImportInputRef = useRef(null);
+    const customizeSectionRef = useRef(null);
     const sharedThemeImportInFlight = useRef(false);
 
     const currentDate = new Date();
@@ -965,12 +967,12 @@ function App() {
 
     const closeAccountModalNow = () => {
         setAccountModalOpen(false);
-        setDiscardThemeDialog({ open: false, nextTab: '', shouldCloseModal: false });
+        setDiscardThemeDialog({ open: false, nextTab: '', shouldCloseModal: false, nextTheme: null });
     };
 
     const requestAccountModalClose = () => {
         if (themeDraftDirty) {
-            setDiscardThemeDialog({ open: true, nextTab: '', shouldCloseModal: true });
+            setDiscardThemeDialog({ open: true, nextTab: '', shouldCloseModal: true, nextTheme: null });
             return;
         }
 
@@ -983,7 +985,7 @@ function App() {
         }
 
         if (themeDraftDirty && accountTab === 'themes') {
-            setDiscardThemeDialog({ open: true, nextTab, shouldCloseModal: false });
+            setDiscardThemeDialog({ open: true, nextTab, shouldCloseModal: false, nextTheme: null });
             return;
         }
 
@@ -994,11 +996,16 @@ function App() {
     };
 
     const confirmDiscardThemeChanges = () => {
-        const { nextTab, shouldCloseModal } = discardThemeDialog;
-        setDiscardThemeDialog({ open: false, nextTab: '', shouldCloseModal: false });
+        const { nextTab, shouldCloseModal, nextTheme } = discardThemeDialog;
+        setDiscardThemeDialog({ open: false, nextTab: '', shouldCloseModal: false, nextTheme: null });
 
         if (shouldCloseModal) {
             closeAccountModalNow();
+            return;
+        }
+
+        if (nextTheme) {
+            syncThemeDraft(nextTheme, { markClean: true });
             return;
         }
 
@@ -1008,6 +1015,31 @@ function App() {
                 syncThemeDraft(cloneThemePack(activeTheme), { markClean: true });
             }
         }
+    };
+
+    const requestThemeDraftReplace = (nextTheme) => {
+        if (!nextTheme || themePackMatches(themeDraft, nextTheme)) {
+            return;
+        }
+
+        if (themeDraftDirty && accountTab === 'themes') {
+            setDiscardThemeDialog({
+                open: true,
+                nextTab: '',
+                shouldCloseModal: false,
+                nextTheme,
+            });
+            return;
+        }
+
+        syncThemeDraft(nextTheme, { markClean: true });
+    };
+
+    const scrollToCustomizeSection = () => {
+        customizeSectionRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+        });
     };
 
     const themePackMatches = (first, second) => {
@@ -1787,7 +1819,7 @@ function App() {
 
     const discardThemeChangesModal = discardThemeDialog.open && typeof document !== 'undefined'
         ? createPortal(
-            <div className="theme-overlay-backdrop" onClick={() => setDiscardThemeDialog({ open: false, nextTab: '', shouldCloseModal: false })}>
+            <div className="theme-overlay-backdrop" onClick={() => setDiscardThemeDialog({ open: false, nextTab: '', shouldCloseModal: false, nextTheme: null })}>
                 <div className="discard-confirm-modal" onClick={(event) => event.stopPropagation()}>
                     <div className="account-modal-kicker">Unsaved changes</div>
                     <h3>Leave without saving?</h3>
@@ -1796,7 +1828,7 @@ function App() {
                         <button
                             type="button"
                             className="account-secondary-btn"
-                            onClick={() => setDiscardThemeDialog({ open: false, nextTab: '', shouldCloseModal: false })}
+                            onClick={() => setDiscardThemeDialog({ open: false, nextTab: '', shouldCloseModal: false, nextTheme: null })}
                         >
                             Keep editing
                         </button>
@@ -2817,7 +2849,7 @@ function App() {
                                                                     key={theme.id}
                                                                     type="button"
                                                                     className={`featured-theme-card${isSelected ? ' selected' : ''}`}
-                                                                    onClick={() => syncThemeDraft(theme)}
+                                                                    onClick={() => requestThemeDraftReplace(theme)}
                                                                 >
                                                                     <div
                                                                         className="featured-theme-media"
@@ -2835,6 +2867,22 @@ function App() {
                                                             );
                                                         })}
                                                     </div>
+
+                                                    {isEditableThemePack(themeDraft) && (
+                                                        <div className="theme-customize-shortcut">
+                                                            <div className="theme-customize-shortcut-copy">
+                                                                <strong>Make this pack yours</strong>
+                                                                <span>Jump to the controls for button colors, gradients, and background tuning on {themeDraft?.name || 'your current pack'}.</span>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                className="account-primary-btn theme-customize-shortcut-btn"
+                                                                onClick={scrollToCustomizeSection}
+                                                            >
+                                                                Customize current pack
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                 </div>
 
                                                 <div className="account-section-card theme-saved-section">
@@ -2911,11 +2959,11 @@ function App() {
                                                                     <div
                                                                         key={pack.sharedThemeId || pack.id}
                                                                         className={`saved-theme-card${isSelected ? ' selected' : ''}`}
-                                                                        onClick={() => syncThemeDraft(pack)}
+                                                                        onClick={() => requestThemeDraftReplace(pack)}
                                                                         onKeyDown={(event) => {
                                                                             if (event.key === 'Enter' || event.key === ' ') {
                                                                                 event.preventDefault();
-                                                                                syncThemeDraft(pack);
+                                                                                requestThemeDraftReplace(pack);
                                                                             }
                                                                         }}
                                                                         role="button"
@@ -3009,7 +3057,7 @@ function App() {
                                                 )}
 
                                                 {isEditableThemePack(themeDraft) && (
-                                                    <div className="account-section-card theme-customize-section">
+                                                    <div ref={customizeSectionRef} className="account-section-card theme-customize-section">
                                                         <div className="theme-section-masthead">
                                                             <div className="theme-section-masthead-copy">
                                                                 <h3>Customize</h3>

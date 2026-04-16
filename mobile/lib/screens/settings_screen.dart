@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
@@ -40,7 +41,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final AccountService _accountService = AccountService();
   final BiometricAuthService _biometricAuthService = BiometricAuthService();
   final ThemeService _themeService = ThemeService();
-  static const int _maxAvatarBytes = 2 * 1024 * 1024;
+  static const int _maxAvatarBytes = 12 * 1024 * 1024;
+  static const int _maxThemeImageBytes = 12 * 1024 * 1024;
   static const List<String> _reminderDeliveryOptions = [
     'email',
     'push',
@@ -72,12 +74,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _avatarMarkedForRemoval = false;
   static const List<int> _reminderOptions = [0, 5, 10, 15, 30, 60, 120, 1440];
   Color _draftAccent = AppTheme.accent;
-  String _draftPresetId = 'default';
-  String _draftBackgroundPackageId = 'default';
+  String _draftPresetId = 'mobile-default';
+  String _draftBackgroundPackageId = 'mobile-default';
   ThemeBackgroundMode _draftBackgroundMode = ThemeBackgroundMode.none;
   WeatherThemeKind _previewWeatherKind = WeatherThemeKind.clear;
   String _draftBgPath = '';
   BoxFit _draftBgFit = BoxFit.cover;
+  Map<String, String> _draftSceneImages = <String, String>{};
   final TextEditingController _themeImportController = TextEditingController();
 
   Future<bool> _confirmBiometricSetup({
@@ -157,6 +160,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _previewWeatherKind = _themeService.activeWeatherKind;
       _draftBgPath = t.backgroundImagePath ?? '';
       _draftBgFit = t.backgroundFit;
+      _draftSceneImages = Map<String, String>.from(t.images);
     });
   }
 
@@ -380,12 +384,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final bytes = await picked.readAsBytes();
       if (bytes.length > _maxAvatarBytes) {
         if (!mounted) return;
-        _showSnackBar('Profile picture must be 2 MB or smaller.');
+        _showSnackBar('Profile picture must be 12 MB or smaller.');
         return;
       }
 
       final extension = _fileExtension(picked.name).toLowerCase();
-      final mime = _mimeTypeForExtension(extension.isNotEmpty ? extension : 'jpg');
+      final mime = _mimeTypeForExtension(
+        extension.isNotEmpty ? extension : 'jpg',
+      );
       final dataUrl = 'data:$mime;base64,${base64Encode(bytes)}';
       if (!mounted) return;
       setState(() {
@@ -416,17 +422,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'heic',
         'heif',
       }.contains(extension)) {
-        _showSnackBar('Profile picture must be PNG, JPEG, GIF, WEBP, AVIF, HEIC, or HEIF.');
+        _showSnackBar(
+          'Profile picture must be PNG, JPEG, GIF, WEBP, AVIF, HEIC, or HEIF.',
+        );
         return;
       }
 
       final bytes = await file.readAsBytes();
       if (bytes.length > _maxAvatarBytes) {
-        _showSnackBar('Profile picture must be 2 MB or smaller.');
+        _showSnackBar('Profile picture must be 12 MB or smaller.');
         return;
       }
 
-      final dataUrl = 'data:${_mimeTypeForExtension(extension)};base64,${base64Encode(bytes)}';
+      final dataUrl =
+          'data:${_mimeTypeForExtension(extension)};base64,${base64Encode(bytes)}';
       setState(() {
         _pendingAvatarDataUrl = dataUrl;
         _avatarMarkedForRemoval = false;
@@ -638,10 +647,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         result.icsContent,
         result.filename,
       );
-      await Share.shareXFiles(
-        [shareFile],
-        subject: result.filename,
-      );
+      await Share.shareXFiles([shareFile], subject: result.filename);
     } catch (error) {
       if (!mounted) return;
       _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
@@ -713,47 +719,464 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // ── Appearance / Theme card ───────────────────────────────────────────────
 
   Future<void> _applyTheme() async {
-    if (_draftPresetId == 'custom') {
-      await _themeService.applyAccentColor(_draftAccent);
-    } else {
-      final preset = kPresetThemes.firstWhere(
-        (p) => p.id == _draftPresetId,
-        orElse: () => kPresetThemes.first,
-      );
-      await _themeService.applyPreset(preset);
-    }
-    await _themeService.applyBackgroundPackage(_draftBackgroundPackageId);
-    await _themeService.applyBackgroundMode(_draftBackgroundMode);
-    await _themeService.setStoredBackgroundImage(
-      _draftBgPath.isEmpty ? null : _draftBgPath,
-      _draftBgFit,
+    final previewPackage = _themeService.presetById(_draftBackgroundPackageId);
+    await _themeService.applyThemePack(
+      _draftPreviewTheme.copyWith(
+        name: previewPackage.name,
+        description: previewPackage.description,
+        gradient: previewPackage.gradient,
+        galleryImages: previewPackage.galleryImages,
+        selectedGalleryImage: previewPackage.selectedGalleryImage,
+        preview: previewPackage.preview,
+        previewImage: previewPackage.previewImage,
+        source: _draftPresetId == 'custom' ? 'user' : previewPackage.source,
+      ),
     );
     if (!mounted) return;
     _showSnackBar('Appearance saved.');
   }
 
   Future<void> _pickThemeBackground(ImageSource source) async {
-    final path = await _themeService.pickBackgroundImage(source);
+    final path = await _pickAndUploadThemeImage(
+      source,
+      fileNamePrefix: 'theme-background',
+    );
     if (path == null || !mounted) return;
     setState(() {
       _draftBgPath = path;
     });
   }
 
-  Widget _buildAppearanceCard(BuildContext context) {
-    final previewTheme = MobileTheme(
+  Future<void> _pickThemeSceneBackground(
+    ThemeSceneSlot slot,
+    ImageSource source,
+  ) async {
+    final path = await _pickAndUploadThemeImage(
+      source,
+      fileNamePrefix: slot.key,
+    );
+    if (path == null || !mounted) return;
+    setState(() {
+      _draftSceneImages = Map<String, String>.from(_draftSceneImages)
+        ..[slot.key] = path;
+    });
+  }
+
+  Future<String?> _pickAndUploadThemeImage(
+    ImageSource source, {
+    required String fileNamePrefix,
+  }) async {
+    try {
+      final picker = ImagePicker();
+      final XFile? picked = await picker.pickImage(
+        source: source,
+        imageQuality: 84,
+      );
+      if (picked == null) {
+        return null;
+      }
+
+      final bytes = await picked.readAsBytes();
+      if (bytes.length > _maxThemeImageBytes) {
+        if (mounted) {
+          _showSnackBar('Theme image must be 12 MB or smaller.');
+        }
+        return null;
+      }
+
+      final rawExtension = _fileExtension(picked.name);
+      final extension = rawExtension.isEmpty ? 'jpg' : rawExtension;
+      final mimeType = _mimeTypeForExtension(extension);
+      if (!mimeType.startsWith('image/')) {
+        if (mounted) {
+          _showSnackBar(
+            'Theme image must be PNG, JPEG, GIF, WEBP, AVIF, HEIC, or HEIF.',
+          );
+        }
+        return null;
+      }
+
+      final upload = await _accountService.uploadImage(
+        session: _session,
+        imageDataUrl: 'data:$mimeType;base64,${base64Encode(bytes)}',
+        purpose: 'theme-backgrounds',
+        fileName: '$fileNamePrefix.$extension',
+      );
+      _session = upload.session;
+      widget.onSessionUpdated(_session);
+      return upload.imageUrl;
+    } catch (error) {
+      if (mounted) {
+        _showSnackBar(error.toString().replaceFirst('Exception: ', ''));
+      }
+      return null;
+    }
+  }
+
+  List<Color> _dynamicAccentChoices(BuildContext context, Color seedColor) {
+    final layoutWidth = MediaQuery.of(context).size.width - 32;
+    final columns = (layoutWidth / 52).floor().clamp(5, 8);
+    final targetCount = columns * 2;
+    final colors = <Color>[seedColor, ...kThemeAccentSwatches];
+    final seedHsl = HSLColor.fromColor(seedColor);
+    final generated = <Color>[
+      seedHsl
+          .withLightness((seedHsl.lightness + 0.18).clamp(0.18, 0.82))
+          .toColor(),
+      seedHsl
+          .withLightness((seedHsl.lightness - 0.18).clamp(0.18, 0.82))
+          .toColor(),
+      seedHsl.withHue((seedHsl.hue + 24) % 360).toColor(),
+      seedHsl.withHue((seedHsl.hue + 330) % 360).toColor(),
+      seedHsl
+          .withSaturation((seedHsl.saturation + 0.14).clamp(0.18, 1.0))
+          .toColor(),
+      seedHsl
+          .withSaturation((seedHsl.saturation - 0.18).clamp(0.18, 1.0))
+          .toColor(),
+      seedHsl
+          .withLightness((seedHsl.lightness + 0.28).clamp(0.18, 0.84))
+          .toColor(),
+      seedHsl
+          .withLightness((seedHsl.lightness - 0.28).clamp(0.16, 0.82))
+          .toColor(),
+    ];
+
+    for (final color in generated) {
+      if (!colors.any((existing) => existing.toARGB32() == color.toARGB32())) {
+        colors.add(color);
+      }
+      if (colors.length >= targetCount) {
+        break;
+      }
+    }
+
+    return colors.take(targetCount).toList();
+  }
+
+  Widget _buildAccentSwatchButton({
+    required Color color,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isSelected
+                ? Colors.white
+                : Colors.white.withValues(alpha: 0.18),
+            width: isSelected ? 2.4 : 1.2,
+          ),
+        ),
+        child: isSelected
+            ? const Icon(Icons.check, color: Colors.white, size: 18)
+            : null,
+      ),
+    );
+  }
+
+  Widget _buildSceneImageEditor() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+        const Text(
+          'Custom weather pack',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppTheme.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Set a different image for each weather/time scene.',
+          style: TextStyle(
+            color: AppTheme.textMuted,
+            fontSize: 12,
+            height: 1.35,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ...ThemeSceneSlot.values.map((slot) {
+          final imagePath = _draftSceneImages[slot.key]?.trim() ?? '';
+          final imageProvider = imagePath.isEmpty
+              ? null
+              : _themeService.imageProviderForPath(imagePath);
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              color: Colors.white.withValues(alpha: 0.05),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  slot.label,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 84,
+                      height: 62,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        color: Colors.white.withValues(alpha: 0.06),
+                        image: imageProvider == null
+                            ? null
+                            : DecorationImage(
+                                image: imageProvider,
+                                fit: BoxFit.cover,
+                                onError: (error, stackTrace) {},
+                              ),
+                      ),
+                      child: imageProvider == null
+                          ? const Icon(
+                              Icons.image_outlined,
+                              color: AppTheme.textMuted,
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () => _pickThemeSceneBackground(
+                              slot,
+                              ImageSource.gallery,
+                            ),
+                            icon: const Icon(
+                              Icons.photo_library_outlined,
+                              size: 16,
+                            ),
+                            label: const Text('Gallery'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: () => _pickThemeSceneBackground(
+                              slot,
+                              ImageSource.camera,
+                            ),
+                            icon: const Icon(
+                              Icons.camera_alt_outlined,
+                              size: 16,
+                            ),
+                            label: const Text('Camera'),
+                          ),
+                          if (imagePath.isNotEmpty)
+                            TextButton(
+                              onPressed: () {
+                                setState(() {
+                                  _draftSceneImages = Map<String, String>.from(
+                                    _draftSceneImages,
+                                  )..remove(slot.key);
+                                });
+                              },
+                              child: const Text(
+                                'Remove',
+                                style: TextStyle(color: AppTheme.danger),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  MobileTheme get _draftPreviewTheme {
+    final previewPackage = _themeService.presetById(_draftBackgroundPackageId);
+    final resolvedImages = switch (_draftBackgroundMode) {
+      ThemeBackgroundMode.customImage => {
+        ...previewPackage.images,
+        'universal': _draftBgPath,
+      }..removeWhere((key, value) => value.trim().isEmpty),
+      ThemeBackgroundMode.perScene || ThemeBackgroundMode.weatherPackage => {
+        ...previewPackage.images,
+        ..._draftSceneImages,
+      }..removeWhere((key, value) => value.trim().isEmpty),
+      _ => Map<String, String>.from(
+        _draftSceneImages,
+      )..removeWhere((key, value) => value.trim().isEmpty),
+    };
+
+    return MobileTheme(
       presetId: _draftPresetId,
       backgroundPackageId: _draftBackgroundPackageId,
       accentColor: _draftAccent,
       backgroundMode: _draftBackgroundMode,
       backgroundImagePath: _draftBgPath.isEmpty ? null : _draftBgPath,
       backgroundFit: _draftBgFit,
+      images: resolvedImages,
+      gradient: previewPackage.gradient,
+      galleryImages: previewPackage.galleryImages,
+      selectedGalleryImage: previewPackage.selectedGalleryImage,
+      preview: previewPackage.preview,
+      previewImage: previewPackage.previewImage,
+      name: previewPackage.name,
+      description: previewPackage.description,
+      source: _draftPresetId == 'custom' ? 'user' : previewPackage.source,
     );
-    final previewPackage = _themeService.presetById(_draftBackgroundPackageId);
-    final previewImageProvider = _themeService.backgroundImageProvider(
-      theme: previewTheme,
-      previewWeatherKind: _previewWeatherKind,
-    );
+  }
+
+  Future<void> _resetThemeDraft() async {
+    await _themeService.reset();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _draftPresetId = MobileTheme.defaultTheme.id;
+      _draftBackgroundPackageId = MobileTheme.defaultTheme.id;
+      _draftBackgroundMode = ThemeBackgroundMode.none;
+      _previewWeatherKind = WeatherThemeKind.clear;
+      _draftAccent = MobileTheme.defaultTheme.accentColor;
+      _draftBgPath = '';
+      _draftBgFit = BoxFit.cover;
+      _draftSceneImages = <String, String>{};
+    });
+    _showSnackBar('Appearance reset to default.');
+  }
+
+  bool _isValidThemeSlug(String value) {
+    final slug = value.trim().toLowerCase();
+    return RegExp(r'^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])?$').hasMatch(slug);
+  }
+
+  String _suggestThemeSlug(MobileTheme theme) {
+    final existing = theme.shareSlug?.trim().toLowerCase() ?? '';
+    if (existing.isNotEmpty) {
+      return existing;
+    }
+    final normalized = theme.name
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'-{2,}'), '-')
+        .replaceAll(RegExp(r'^-+|-+$'), '');
+    if (normalized.isEmpty) {
+      return 'calendar-theme';
+    }
+    return normalized.length > 32 ? normalized.substring(0, 32) : normalized;
+  }
+
+  Widget _buildFeaturedWeatherThemesCard(BuildContext context) {
+    final featuredThemes = <MobileTheme>[...kPresetThemes, ...kFeaturedThemes];
+    final selectedTheme = _themeService.presetById(_draftBackgroundPackageId);
+    final backgroundModes = <ThemeBackgroundMode>[
+      ThemeBackgroundMode.none,
+      ThemeBackgroundMode.weatherPackage,
+      ThemeBackgroundMode.perScene,
+      ThemeBackgroundMode.customImage,
+    ];
+
+    Widget buildThemeTile(MobileTheme theme) {
+      final isSelected =
+          (_draftBackgroundPackageId == theme.id) ||
+          (_draftBackgroundPackageId == theme.packId);
+      final previewImage = _themeService.backgroundImageProvider(
+        theme: theme,
+        previewWeatherKind: WeatherThemeKind.clear,
+      );
+      final previewColors = theme.gradientColors.length >= 2
+          ? theme.gradientColors
+          : MobileTheme.defaultTheme.gradientColors;
+      return SizedBox(
+        width: 172,
+        child: GestureDetector(
+          onTap: () {
+            setState(() {
+              _draftPresetId = theme.id;
+              _draftBackgroundPackageId = theme.packId ?? theme.id;
+              _draftAccent = theme.accentColor;
+              _draftBackgroundMode = ThemeBackgroundMode.weatherPackage;
+              _draftBgPath = '';
+              _draftSceneImages = Map<String, String>.from(theme.images);
+            });
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(22),
+              color: Colors.white.withValues(alpha: isSelected ? 0.08 : 0.04),
+              border: Border.all(
+                color: isSelected
+                    ? theme.accentColor
+                    : Colors.white.withValues(alpha: 0.10),
+                width: isSelected ? 2 : 1.2,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  height: 96,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    gradient: LinearGradient(
+                      colors: previewColors,
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    image: previewImage == null
+                        ? null
+                        : DecorationImage(
+                            image: previewImage,
+                            fit: BoxFit.cover,
+                            onError: (error, stackTrace) {},
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  theme.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: isSelected
+                        ? theme.accentColor
+                        : AppTheme.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  theme.description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppTheme.textMuted,
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Card(
       child: Padding(
@@ -761,160 +1184,108 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Appearance', style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'Featured Weather Photo Themes',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 4),
             const Text(
-              'Choose colors and background style.',
-              style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+              'Match the desktop theme browser, tuned for a phone-sized layout. Mobile defaults to no background unless you pick a photo pack.',
+              style: TextStyle(color: AppTheme.textMuted, height: 1.4),
             ),
             const SizedBox(height: 14),
-            const Text(
-              'Theme package',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: kPresetThemes.map((preset) {
-                final isSelected = _draftBackgroundPackageId == preset.id;
-                return GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _draftPresetId = preset.id;
-                      _draftBackgroundPackageId = preset.id;
-                      _draftAccent = preset.accentColor;
-                    });
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    width: 90,
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 10,
-                      horizontal: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: isSelected
-                            ? preset.accentColor
-                            : Colors.white.withValues(alpha: 0.08),
-                        width: isSelected ? 2 : 1.5,
-                      ),
-                      color: isSelected
-                          ? preset.accentColor.withValues(alpha: 0.08)
-                          : Colors.white.withValues(alpha: 0.03),
-                    ),
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: LinearGradient(
-                              colors: preset.gradientColors,
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.15),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          preset.name,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: isSelected
-                                ? preset.accentColor
-                                : AppTheme.textPrimary,
-                          ),
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          preset.description,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: AppTheme.textMuted,
-                          ),
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 18),
-            Row(
-              children: [
-                const Text(
-                  'Accent color',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                const Spacer(),
-                for (final color in [
-                  ...kPresetThemes.map((preset) => preset.accentColor),
-                  const Color(0xFFFB7185),
-                  const Color(0xFF38BDF8),
-                  const Color(0xFFF97316),
-                ])
-                  GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _draftAccent = color;
-                        _draftPresetId = 'custom';
-                      });
-                    },
-                    child: Container(
-                      width: 24,
-                      height: 24,
-                      margin: const EdgeInsets.only(left: 5),
-                      decoration: BoxDecoration(
-                        color: color,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: _draftAccent.toARGB32() == color.toARGB32()
-                              ? Colors.white
-                              : Colors.transparent,
-                          width: 2,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            const Text(
-              'Background behavior',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: ThemeBackgroundMode.values.map((mode) {
+              children: [
+                ChoiceChip(
+                  label: const Text('No background'),
+                  selected: _draftBackgroundMode == ThemeBackgroundMode.none,
+                  onSelected: (_) {
+                    setState(() {
+                      _draftBackgroundMode = ThemeBackgroundMode.none;
+                      _draftBackgroundPackageId = MobileTheme.defaultTheme.id;
+                      _draftPresetId = MobileTheme.defaultTheme.id;
+                      _draftBgPath = '';
+                      _draftSceneImages = <String, String>{};
+                    });
+                  },
+                ),
+                if (_draftBackgroundPackageId != MobileTheme.defaultTheme.id)
+                  ChoiceChip(
+                    label: Text(selectedTheme.name),
+                    selected: _draftBackgroundMode != ThemeBackgroundMode.none,
+                    onSelected: (_) {},
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              height: 196,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemBuilder: (context, index) =>
+                    buildThemeTile(featuredThemes[index]),
+                separatorBuilder: (context, index) => const SizedBox(width: 12),
+                itemCount: featuredThemes.length,
+              ),
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              'Accent color',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final accentChoices = _dynamicAccentChoices(
+                  context,
+                  selectedTheme.accentColor,
+                );
+                return Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: accentChoices.map((color) {
+                    final isSelected =
+                        _draftAccent.toARGB32() == color.toARGB32();
+                    return _buildAccentSwatchButton(
+                      color: color,
+                      isSelected: isSelected,
+                      onTap: () {
+                        setState(() {
+                          _draftAccent = color;
+                          _draftPresetId = 'custom';
+                        });
+                      },
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              'Background style',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: backgroundModes.map((mode) {
+                final label = switch (mode) {
+                  ThemeBackgroundMode.perScene => 'Custom weather pack',
+                  _ => mode.label,
+                };
                 return ChoiceChip(
-                  label: Text(mode.label),
+                  label: Text(label),
                   selected: _draftBackgroundMode == mode,
                   onSelected: (_) {
                     setState(() {
@@ -924,28 +1295,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 );
               }).toList(),
             ),
-            if (_draftBackgroundMode == ThemeBackgroundMode.none) ...[
-              const SizedBox(height: 10),
-              const Text(
-                'No background image.',
-                style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
-              ),
-            ],
-            if (_draftBackgroundMode == ThemeBackgroundMode.weatherPackage) ...[
-              const SizedBox(height: 12),
+            if (_draftBackgroundMode == ThemeBackgroundMode.perScene)
+              _buildSceneImageEditor(),
+            if (_draftBackgroundMode == ThemeBackgroundMode.weatherPackage ||
+                _draftBackgroundMode == ThemeBackgroundMode.perScene) ...[
+              const SizedBox(height: 14),
               Text(
-                'Weather package: ${previewPackage.name}',
-                style: const TextStyle(
-                  color: AppTheme.textPrimary,
-                  fontWeight: FontWeight.w600,
-                ),
+                'Preview weather scene',
+                style: Theme.of(context).textTheme.labelLarge,
               ),
-              const SizedBox(height: 4),
-              const Text(
-                'Preview weather type.',
-                style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
-              ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -963,16 +1322,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
             if (_draftBackgroundMode == ThemeBackgroundMode.customImage) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               Row(
                 children: [
-                  const Text(
+                  Text(
                     'Custom image',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppTheme.textPrimary,
-                    ),
+                    style: Theme.of(context).textTheme.labelLarge,
                   ),
                   const Spacer(),
                   if (_draftBgPath.isNotEmpty)
@@ -982,43 +1337,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       }),
                       child: const Text(
                         'Remove',
-                        style: TextStyle(color: AppTheme.danger, fontSize: 12),
+                        style: TextStyle(color: AppTheme.danger),
                       ),
                     ),
                 ],
               ),
               const SizedBox(height: 8),
-              Row(
-                children: [
-                  Container(
-                    width: 80,
-                    height: 50,
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final stacked = constraints.maxWidth < 420;
+                  final previewThumb = Container(
+                    width: stacked ? double.infinity : 108,
+                    height: 76,
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(14),
                       color: Colors.white.withValues(alpha: 0.06),
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.1),
+                        color: Colors.white.withValues(alpha: 0.10),
                       ),
-                      image: _draftBgPath.isNotEmpty
-                          ? (() {
+                      image: _draftBgPath.isEmpty
+                          ? null
+                          : (() {
                               final imageProvider = _themeService
                                   .imageProviderForPath(_draftBgPath);
                               if (imageProvider == null) {
                                 return null;
                               }
-
                               return DecorationImage(
                                 image: imageProvider,
                                 fit: _draftBgFit,
                                 onError: (error, stackTrace) {},
                               );
-                            })()
-                          : null,
+                            })(),
                     ),
                     child: _draftBgPath.isEmpty
                         ? const Center(
                             child: Text(
-                              'None',
+                              'No image selected',
                               style: TextStyle(
                                 color: AppTheme.textMuted,
                                 fontSize: 11,
@@ -1026,38 +1381,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           )
                         : null,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                  );
+                  final actions = Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            _pickThemeBackground(ImageSource.gallery),
+                        icon: const Icon(
+                          Icons.photo_library_outlined,
+                          size: 16,
+                        ),
+                        label: const Text('Gallery'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () =>
+                            _pickThemeBackground(ImageSource.camera),
+                        icon: const Icon(Icons.camera_alt_outlined, size: 16),
+                        label: const Text('Camera'),
+                      ),
+                    ],
+                  );
+
+                  if (stacked) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        OutlinedButton.icon(
-                          icon: const Icon(
-                            Icons.photo_library_outlined,
-                            size: 16,
-                          ),
-                          label: const Text(
-                            'Gallery',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          onPressed: () =>
-                              _pickThemeBackground(ImageSource.gallery),
-                        ),
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.camera_alt_outlined, size: 16),
-                          label: const Text(
-                            'Camera',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          onPressed: () =>
-                              _pickThemeBackground(ImageSource.camera),
-                        ),
+                        previewThumb,
+                        const SizedBox(height: 12),
+                        actions,
                       ],
-                    ),
-                  ),
-                ],
+                    );
+                  }
+
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      previewThumb,
+                      const SizedBox(width: 12),
+                      Expanded(child: actions),
+                    ],
+                  );
+                },
               ),
               if (_draftBgPath.isNotEmpty) ...[
                 const SizedBox(height: 12),
@@ -1089,11 +1455,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ],
             ],
-            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAppearanceCard(BuildContext context) {
+    final previewTheme = _draftPreviewTheme;
+    final previewPackage = _themeService.presetById(_draftBackgroundPackageId);
+    final previewImageProvider = _themeService.backgroundImageProvider(
+      theme: previewTheme,
+      previewWeatherKind: _previewWeatherKind,
+    );
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Preview', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 4),
+            const Text(
+              'Live mobile preview of the current Calendar++ theme draft.',
+              style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+            ),
+            const SizedBox(height: 14),
             Container(
-              height: 80,
+              height: 168,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(22),
                 gradient: LinearGradient(
                   colors: previewPackage.gradientColors,
                   begin: Alignment.topLeft,
@@ -1103,7 +1494,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ? null
                     : DecorationImage(
                         image: previewImageProvider,
-                        fit: _draftBackgroundMode == ThemeBackgroundMode.customImage
+                        fit:
+                            _draftBackgroundMode ==
+                                ThemeBackgroundMode.customImage
                             ? _draftBgFit
                             : BoxFit.cover,
                         onError: (error, stackTrace) {},
@@ -1111,46 +1504,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               child: Container(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  color: Colors.black.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(22),
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.18),
+                      Colors.black.withValues(alpha: 0.52),
+                    ],
+                  ),
                 ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
-                child: Row(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    FilledButton(
-                      onPressed: null,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _draftAccent,
-                        foregroundColor: AppTheme.onColorFor(_draftAccent),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 8,
-                        ),
-                        textStyle: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                        ),
+                    Text(
+                      previewPackage.name,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
                       ),
-                      child: const Text('Preview'),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        _draftBackgroundMode == ThemeBackgroundMode.weatherPackage
-                            ? '${previewPackage.name} • ${_previewWeatherKind.label}'
-                            : _draftBackgroundMode == ThemeBackgroundMode.customImage
-                                ? 'Custom image'
-                                : 'No image',
-                        style: TextStyle(
-                          color: _draftAccent,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+                    const SizedBox(height: 4),
+                    Text(
+                      _draftBackgroundMode == ThemeBackgroundMode.weatherPackage
+                          ? '${_previewWeatherKind.label} scene preview'
+                          : _draftBackgroundMode ==
+                                ThemeBackgroundMode.customImage
+                          ? 'Custom photo background'
+                          : _draftBackgroundMode.label,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.8),
+                        fontSize: 12,
                       ),
+                    ),
+                    const Spacer(),
+                    Row(
+                      children: [
+                        FilledButton(
+                          onPressed: null,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _draftAccent,
+                            foregroundColor: AppTheme.onColorFor(_draftAccent),
+                          ),
+                          child: const Text('Preview'),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            previewPackage.description,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.92),
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -1160,22 +1570,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Row(
               children: [
                 OutlinedButton(
-                  onPressed: () async {
-                    await _themeService.reset();
-                    if (!mounted) {
-                      return;
-                    }
-                    setState(() {
-                      _draftPresetId = 'default';
-                      _draftBackgroundPackageId = 'default';
-                      _draftBackgroundMode = ThemeBackgroundMode.none;
-                      _previewWeatherKind = WeatherThemeKind.clear;
-                      _draftAccent = MobileTheme.defaultTheme.accentColor;
-                      _draftBgPath = '';
-                      _draftBgFit = BoxFit.cover;
-                    });
-                    _showSnackBar('Appearance reset to default.');
-                  },
+                  onPressed: _resetThemeDraft,
                   child: const Text('Reset'),
                 ),
                 const SizedBox(width: 10),
@@ -1211,41 +1606,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _shareThemePack(
-    BuildContext context,
-    MobileTheme theme,
-  ) async {
+  Future<void> _shareThemePack(BuildContext context, MobileTheme theme) async {
     final box = context.findRenderObject() as RenderBox?;
-    MobileTheme shareTheme = theme;
-    if ((shareTheme.shareUrl ?? '').trim().isEmpty &&
-        (shareTheme.shareCode ?? '').trim().isEmpty) {
-      final result = await _themeService.saveSharedTheme(_session, shareTheme);
-      _session = result.session;
-      widget.onSessionUpdated(_session);
-      shareTheme = result.theme;
-      await _loadTheme();
-    }
+    final result = await _themeService.saveSharedTheme(_session, theme);
+    _session = result.session;
+    widget.onSessionUpdated(_session);
+    final shareTheme = result.theme;
+    await _loadTheme();
     if (!mounted) return;
     await Share.share(
       'Check out this Calendar++ theme: ${shareTheme.name}'
       '${(shareTheme.shareCode ?? '').trim().isNotEmpty ? ' (${shareTheme.shareCode})' : ''}'
       '${(shareTheme.shareUrl ?? '').trim().isNotEmpty ? ' ${shareTheme.shareUrl}' : ''}',
       subject: 'Calendar++ theme: ${shareTheme.name}',
-      sharePositionOrigin:
-          box == null ? null : box.localToGlobal(Offset.zero) & box.size,
+      sharePositionOrigin: box == null
+          ? null
+          : box.localToGlobal(Offset.zero) & box.size,
     );
   }
 
   Future<void> _openThemeShareSheet(MobileTheme theme) async {
+    final initialResult = await _themeService.saveSharedTheme(_session, theme);
+    _session = initialResult.session;
+    widget.onSessionUpdated(_session);
+    MobileTheme shareTheme = initialResult.theme;
+    await _loadTheme();
+    final slugController = TextEditingController(
+      text: _suggestThemeSlug(shareTheme),
+    );
+    final titleController = TextEditingController(text: shareTheme.name);
+    final descriptionController = TextEditingController(
+      text: shareTheme.description,
+    );
+    Timer? slugDebounce;
     String mode = 'qr';
-    MobileTheme shareTheme = theme;
-    if ((shareTheme.shareUrl ?? '').trim().isEmpty &&
-        (shareTheme.shareCode ?? '').trim().isEmpty) {
-      final result = await _themeService.saveSharedTheme(_session, shareTheme);
-      _session = result.session;
-      widget.onSessionUpdated(_session);
-      shareTheme = result.theme;
-      await _loadTheme();
+    bool isSavingSlug = false;
+    bool isCheckingSlug = false;
+    bool? isSlugAvailable;
+    String slugMessage = '';
+
+    if (!mounted) {
+      slugController.dispose();
+      titleController.dispose();
+      descriptionController.dispose();
+      return;
     }
     await showModalBottomSheet<void>(
       context: context,
@@ -1253,142 +1657,526 @@ class _SettingsScreenState extends State<SettingsScreen> {
       isScrollControlled: true,
       builder: (sheetContext) {
         return StatefulBuilder(
-          builder: (context, setSheetState) => Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(28),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-                child: Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF101828).withValues(alpha: 0.84),
-                    borderRadius: BorderRadius.circular(28),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+          builder: (context, setSheetState) {
+            Future<void> refreshShare({
+              String? shareSlug,
+              bool announceSaved = false,
+            }) async {
+              setSheetState(() {
+                isSavingSlug = true;
+              });
+              try {
+                final draftTheme = shareTheme.copyWith(
+                  name: titleController.text.trim().isEmpty
+                      ? shareTheme.name
+                      : titleController.text.trim(),
+                  description: descriptionController.text.trim(),
+                );
+                final result = await _themeService.saveSharedTheme(
+                  _session,
+                  draftTheme,
+                  shareSlug: shareSlug,
+                );
+                _session = result.session;
+                widget.onSessionUpdated(_session);
+                shareTheme = result.theme;
+                titleController.value = TextEditingValue(
+                  text: shareTheme.name,
+                  selection: TextSelection.collapsed(
+                    offset: shareTheme.name.length,
                   ),
-                  child: SafeArea(
-                    top: false,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Center(
-                          child: Container(
-                            width: 40,
-                            height: 5,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.22),
-                              borderRadius: BorderRadius.circular(999),
+                );
+                descriptionController.value = TextEditingValue(
+                  text: shareTheme.description,
+                  selection: TextSelection.collapsed(
+                    offset: shareTheme.description.length,
+                  ),
+                );
+                slugController.value = TextEditingValue(
+                  text: _suggestThemeSlug(shareTheme),
+                  selection: TextSelection.collapsed(
+                    offset: _suggestThemeSlug(shareTheme).length,
+                  ),
+                );
+                await _loadTheme();
+                if (!mounted) {
+                  return;
+                }
+                setSheetState(() {
+                  isSavingSlug = false;
+                  isSlugAvailable = shareSlug == null ? isSlugAvailable : true;
+                  slugMessage = announceSaved
+                      ? 'Theme link updated.'
+                      : slugMessage;
+                });
+                if (announceSaved) {
+                  _showSnackBar('Theme link updated.');
+                }
+              } catch (error) {
+                if (!mounted) {
+                  return;
+                }
+                setSheetState(() {
+                  isSavingSlug = false;
+                  slugMessage = error.toString().replaceFirst(
+                    'Exception: ',
+                    '',
+                  );
+                });
+              }
+            }
+
+            void scheduleSlugCheck(String rawValue) {
+              final candidate = rawValue.trim().toLowerCase();
+              slugDebounce?.cancel();
+              if (candidate.isEmpty) {
+                setSheetState(() {
+                  isCheckingSlug = false;
+                  isSlugAvailable = null;
+                  slugMessage = 'Pick a short ending for your share link.';
+                });
+                return;
+              }
+              if (!_isValidThemeSlug(candidate)) {
+                setSheetState(() {
+                  isCheckingSlug = false;
+                  isSlugAvailable = false;
+                  slugMessage =
+                      'Use lowercase letters, numbers, or hyphens only.';
+                });
+                return;
+              }
+              setSheetState(() {
+                isCheckingSlug = true;
+                slugMessage = 'Checking availability...';
+              });
+              slugDebounce = Timer(const Duration(milliseconds: 280), () async {
+                try {
+                  final available = await _themeService
+                      .checkShareSlugAvailability(
+                        _session,
+                        candidate,
+                        excludeThemeId: shareTheme.sharedThemeId,
+                      );
+                  if (!mounted) {
+                    return;
+                  }
+                  setSheetState(() {
+                    isCheckingSlug = false;
+                    isSlugAvailable = available;
+                    slugMessage = available
+                        ? 'This code is available.'
+                        : 'That code is already taken.';
+                  });
+                } catch (_) {
+                  if (!mounted) {
+                    return;
+                  }
+                  setSheetState(() {
+                    isCheckingSlug = false;
+                    isSlugAvailable = null;
+                    slugMessage = 'Could not check availability right now.';
+                  });
+                }
+              });
+            }
+
+            final shareUrl = (shareTheme.shareUrl ?? '').trim();
+            final shareCode =
+                (shareTheme.shareSlug ?? shareTheme.shareCode ?? '').trim();
+
+            Widget buildInfoTile({
+              required String label,
+              required String value,
+              required String fallback,
+              required VoidCallback onCopy,
+            }) {
+              final displayValue = value.isEmpty ? fallback : value;
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(18),
+                  color: Colors.white.withValues(alpha: 0.06),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.08),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: AppTheme.textMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SelectableText(
+                      displayValue,
+                      style: const TextStyle(fontSize: 15, height: 1.35),
+                    ),
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: OutlinedButton(
+                        onPressed: value.isEmpty ? null : onCopy,
+                        child: Text('Copy $label'),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+                  child: Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF101828).withValues(alpha: 0.84),
+                      borderRadius: BorderRadius.circular(28),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.14),
+                      ),
+                    ),
+                    child: SafeArea(
+                      top: false,
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Center(
+                              child: Container(
+                                width: 40,
+                                height: 5,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.22),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Text('Share Theme', style: Theme.of(context).textTheme.titleLarge),
-                        const SizedBox(height: 6),
-                        const Text(
-                          'Native iOS share sheet for sending out. Deep links import themes back in.',
-                          style: TextStyle(color: AppTheme.textMuted, height: 1.4),
-                        ),
-                        const SizedBox(height: 16),
-                        CupertinoSlidingSegmentedControl<String>(
-                          groupValue: mode,
-                          children: const {
-                            'qr': Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              child: Text('QR'),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Share Theme',
+                              style: Theme.of(context).textTheme.titleLarge,
                             ),
-                            'link': Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              child: Text('Link'),
+                            const SizedBox(height: 6),
+                            const Text(
+                              'Deep links import themes right back in. Share the QR, send the link, or edit the code ending to make it easier to remember.',
+                              style: TextStyle(
+                                color: AppTheme.textMuted,
+                                height: 1.4,
+                              ),
                             ),
-                            'code': Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              child: Text('Code'),
+                            const SizedBox(height: 16),
+                            TextField(
+                              controller: titleController,
+                              textCapitalization: TextCapitalization.words,
+                              decoration: const InputDecoration(
+                                labelText: 'Theme title',
+                                hintText: 'My custom pack',
+                              ),
                             ),
-                          },
-                          onValueChanged: (value) {
-                            if (value == null) return;
-                            setSheetState(() {
-                              mode = value;
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(20),
-                            color: Colors.white.withValues(alpha: 0.08),
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                          ),
-                          child: mode == 'qr'
-                              ? Column(
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: descriptionController,
+                              minLines: 2,
+                              maxLines: 3,
+                              decoration: const InputDecoration(
+                                labelText: 'Theme description',
+                                hintText: 'A short summary of this look.',
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Center(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: CupertinoSlidingSegmentedControl<String>(
+                                  groupValue: mode,
+                                  children: const {
+                                    'qr': Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 8,
+                                      ),
+                                      child: Text('QR'),
+                                    ),
+                                    'link': Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 8,
+                                      ),
+                                      child: Text('Link'),
+                                    ),
+                                    'edit': Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 8,
+                                      ),
+                                      child: Text(
+                                        'Edit Code',
+                                        style: TextStyle(fontSize: 14),
+                                      ),
+                                    ),
+                                  },
+                                  onValueChanged: (value) {
+                                    if (value == null) {
+                                      return;
+                                    }
+                                    setSheetState(() {
+                                      mode = value;
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(20),
+                                color: Colors.white.withValues(alpha: 0.08),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.08),
+                                ),
+                              ),
+                              child: switch (mode) {
+                                'qr' => Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    if ((shareTheme.shareUrl ?? '').isNotEmpty)
+                                    if (shareUrl.isNotEmpty)
                                       QrImageView(
-                                        data: shareTheme.shareUrl!,
+                                        data: shareUrl,
                                         size: 210,
                                         backgroundColor: Colors.white,
                                       )
                                     else
                                       const Text('Create a share link first.'),
                                     const SizedBox(height: 12),
-                                    Text(
-                                      shareTheme.shareUrl ?? 'Create a share link first.',
+                                    SelectableText(
+                                      shareUrl.isEmpty
+                                          ? 'Create a share link first.'
+                                          : shareUrl,
                                       textAlign: TextAlign.center,
                                     ),
                                   ],
-                                )
-                              : Text(
-                                  mode == 'link'
-                                      ? (shareTheme.shareUrl ?? 'Create a share link first.')
-                                      : (shareTheme.shareCode ?? 'Create a share code first.'),
                                 ),
-                        ),
-                        const SizedBox(height: 14),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: FilledButton(
-                                onPressed: () async {
-                                  final result = await _themeService.saveSharedTheme(
-                                    _session,
-                                    shareTheme,
-                                  );
-                                  _session = result.session;
-                                  widget.onSessionUpdated(_session);
-                                  shareTheme = result.theme;
-                                  await _loadTheme();
-                                  setSheetState(() {});
-                                },
-                                child: Text(
-                                  (shareTheme.shareCode ?? '').isEmpty
-                                      ? 'Create Share'
-                                      : 'Refresh Share',
+                                'link' => Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    buildInfoTile(
+                                      label: 'Link',
+                                      value: shareUrl,
+                                      fallback: 'Create a share link first.',
+                                      onCopy: () => _copyToClipboard(
+                                        shareUrl,
+                                        'Theme link',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    buildInfoTile(
+                                      label: 'Code',
+                                      value: shareCode,
+                                      fallback: 'Create a share code first.',
+                                      onCopy: () => _copyToClipboard(
+                                        shareCode,
+                                        'Theme code',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: OutlinedButton.icon(
+                                        onPressed: () => _shareThemePack(
+                                          context,
+                                          shareTheme.copyWith(
+                                            name:
+                                                titleController.text
+                                                    .trim()
+                                                    .isEmpty
+                                                ? shareTheme.name
+                                                : titleController.text.trim(),
+                                            description: descriptionController
+                                                .text
+                                                .trim(),
+                                          ),
+                                        ),
+                                        icon: const Icon(
+                                          Icons.ios_share_outlined,
+                                        ),
+                                        label: const Text('Open Share Sheet'),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ),
+                                _ => Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Edit the ending of your theme link.',
+                                      style: TextStyle(
+                                        color: AppTheme.textMuted,
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextField(
+                                      controller: slugController,
+                                      autocorrect: false,
+                                      textCapitalization:
+                                          TextCapitalization.none,
+                                      onChanged: scheduleSlugCheck,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Theme code / link ending',
+                                        hintText: 'spring-mountain',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      children: [
+                                        if (isCheckingSlug)
+                                          const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        else if (isSlugAvailable == true)
+                                          const Icon(
+                                            Icons.check_circle_outline,
+                                            size: 18,
+                                            color: Colors.greenAccent,
+                                          )
+                                        else if (isSlugAvailable == false)
+                                          const Icon(
+                                            Icons.error_outline,
+                                            size: 18,
+                                            color: Colors.orangeAccent,
+                                          ),
+                                        if (isCheckingSlug ||
+                                            isSlugAvailable != null)
+                                          const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            slugMessage.isEmpty
+                                                ? 'Short, readable codes work best.'
+                                                : slugMessage,
+                                            style: const TextStyle(
+                                              color: AppTheme.textMuted,
+                                              fontSize: 12,
+                                              height: 1.35,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 14),
+                                    buildInfoTile(
+                                      label: 'Current Link',
+                                      value: shareUrl,
+                                      fallback: 'Create a share link first.',
+                                      onCopy: () => _copyToClipboard(
+                                        shareUrl,
+                                        'Theme link',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: FilledButton(
+                                        onPressed: isSavingSlug
+                                            ? null
+                                            : () async {
+                                                final candidate = slugController
+                                                    .text
+                                                    .trim()
+                                                    .toLowerCase();
+                                                if (!_isValidThemeSlug(
+                                                  candidate,
+                                                )) {
+                                                  setSheetState(() {
+                                                    isSlugAvailable = false;
+                                                    slugMessage =
+                                                        'Use lowercase letters, numbers, or hyphens only.';
+                                                  });
+                                                  return;
+                                                }
+                                                await refreshShare(
+                                                  shareSlug: candidate,
+                                                  announceSaved: true,
+                                                );
+                                              },
+                                        child: Text(
+                                          isSavingSlug
+                                              ? 'Saving...'
+                                              : 'Save Code',
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              },
                             ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed: () => _shareThemePack(context, shareTheme),
-                                child: const Text('Native Share'),
-                              ),
+                            const SizedBox(height: 14),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: FilledButton(
+                                    onPressed: isSavingSlug
+                                        ? null
+                                        : () => refreshShare(),
+                                    child: Text(
+                                      shareCode.isEmpty
+                                          ? 'Create Share'
+                                          : 'Refresh Share',
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: () => _shareThemePack(
+                                      context,
+                                      shareTheme.copyWith(
+                                        name:
+                                            titleController.text.trim().isEmpty
+                                            ? shareTheme.name
+                                            : titleController.text.trim(),
+                                        description: descriptionController.text
+                                            .trim(),
+                                      ),
+                                    ),
+                                    child: const Text('Open Share Sheet'),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
+    slugDebounce?.cancel();
+    slugController.dispose();
+    titleController.dispose();
+    descriptionController.dispose();
   }
 
   Future<void> _deleteThemeFromLibrary(MobileTheme theme) async {
@@ -1405,17 +2193,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildThemeSharingCard(BuildContext context) {
-    final savedThemes = _themeService.savedThemePacks;
+    final savedThemes = _themeService.savedThemePacks
+        .where((theme) => !theme.isBuiltIn)
+        .toList();
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Theme Sharing', style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'Theme Sharing',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 4),
             const Text(
-              'Send themes with the native iOS share sheet, or import a shared link/code and auto-apply it.',
+              'Import a link or code, open the share sheet, and edit the ending of your theme links without leaving mobile.',
               style: TextStyle(color: AppTheme.textMuted, height: 1.4),
             ),
             const SizedBox(height: 14),
@@ -1438,30 +2231,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(width: 10),
                 OutlinedButton(
                   onPressed: () => _openThemeShareSheet(_themeService.current),
-                  child: const Text('Share Current'),
+                  child: const Text('Share Current Theme'),
                 ),
               ],
             ),
             if (savedThemes.isNotEmpty) ...[
               const SizedBox(height: 16),
-              ...savedThemes.map((theme) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(theme.name),
-                    subtitle: Text(theme.authorLabel ?? theme.description),
-                    trailing: Wrap(
-                      spacing: 6,
-                      children: [
-                        IconButton(
-                          onPressed: () => _openThemeShareSheet(theme),
-                          icon: const Icon(Icons.ios_share_outlined),
-                        ),
-                        IconButton(
-                          onPressed: () => _deleteThemeFromLibrary(theme),
-                          icon: const Icon(Icons.delete_outline),
-                        ),
-                      ],
-                    ),
-                  )),
+              ...savedThemes.map((theme) {
+                final isCurrent = ThemeService.themePackMatches(
+                  _themeService.current,
+                  theme,
+                );
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  onTap: () async {
+                    await _themeService.applyThemePack(theme);
+                    if (!mounted) {
+                      return;
+                    }
+                    await _loadTheme();
+                    _showSnackBar('Applied "${theme.name}".');
+                  },
+                  leading: isCurrent
+                      ? Icon(Icons.check_circle, color: theme.btnColor)
+                      : const Icon(Icons.palette_outlined),
+                  title: Text(theme.name),
+                  subtitle: Text(theme.authorLabel ?? theme.description),
+                  trailing: Wrap(
+                    spacing: 6,
+                    children: [
+                      IconButton(
+                        onPressed: () => _openThemeShareSheet(theme),
+                        icon: const Icon(Icons.ios_share_outlined),
+                      ),
+                      IconButton(
+                        onPressed: () => _deleteThemeFromLibrary(theme),
+                        icon: const Icon(Icons.delete_outline),
+                      ),
+                    ],
+                  ),
+                );
+              }),
             ],
           ],
         ),
@@ -1474,7 +2284,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final avatarDataUrl = _currentAvatarDataUrl();
-    final avatarLabel = '${_firstNameController.text.trim()} ${_lastNameController.text.trim()}'.trim();
+    final avatarLabel =
+        '${_firstNameController.text.trim()} ${_lastNameController.text.trim()}'
+            .trim();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -1507,12 +2319,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 children: [
                                   const Text(
                                     'Profile picture',
-                                    style: TextStyle(fontWeight: FontWeight.w600),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    'PNG, JPEG, GIF, WEBP, AVIF, HEIC, or HEIF up to 2 MB.',
-                                    style: const TextStyle(color: AppTheme.textMuted),
+                                    'PNG, JPEG, GIF, WEBP, AVIF, HEIC, or HEIF up to 12 MB.',
+                                    style: const TextStyle(
+                                      color: AppTheme.textMuted,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -1530,7 +2346,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                             if (avatarDataUrl.isNotEmpty)
                               OutlinedButton(
-                                onPressed: _isSaving ? null : _removeAvatarImage,
+                                onPressed: _isSaving
+                                    ? null
+                                    : _removeAvatarImage,
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: Colors.white,
                                   side: BorderSide(
@@ -1557,19 +2375,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         const SizedBox(height: 12),
                         InputDecorator(
-                          decoration: const InputDecoration(labelText: 'Current email'),
+                          decoration: const InputDecoration(
+                            labelText: 'Current email',
+                          ),
                           child: Text(_settings?.email ?? ''),
                         ),
                         if ((_settings?.pendingEmail ?? '').isNotEmpty) ...[
                           const SizedBox(height: 8),
                           Row(
                             children: [
-                              const Icon(Icons.mark_email_unread_outlined, size: 14, color: AppTheme.textMuted),
+                              const Icon(
+                                Icons.mark_email_unread_outlined,
+                                size: 14,
+                                color: AppTheme.textMuted,
+                              ),
                               const SizedBox(width: 6),
                               Expanded(
                                 child: Text(
                                   'Pending: ${_settings!.pendingEmail}',
-                                  style: const TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                                  style: const TextStyle(
+                                    color: AppTheme.textMuted,
+                                    fontSize: 13,
+                                  ),
                                 ),
                               ),
                             ],
@@ -1591,8 +2418,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         SizedBox(
                           width: double.infinity,
                           child: FilledButton.tonal(
-                            onPressed: _isRequestingEmailChange ? null : _requestEmailChange,
-                            child: Text(_isRequestingEmailChange ? 'Sending...' : 'Change email'),
+                            onPressed: _isRequestingEmailChange
+                                ? null
+                                : _requestEmailChange,
+                            child: Text(
+                              _isRequestingEmailChange
+                                  ? 'Sending...'
+                                  : 'Change email',
+                            ),
                           ),
                         ),
                         if (_emailChangeFeedback.isNotEmpty) ...[
@@ -1601,9 +2434,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             _emailChangeFeedback,
                             style: TextStyle(
                               fontSize: 13,
-                              color: _emailChangeFeedback.toLowerCase().contains('error') ||
-                                      _emailChangeFeedback.toLowerCase().contains('could not') ||
-                                      _emailChangeFeedback.toLowerCase().contains('invalid')
+                              color:
+                                  _emailChangeFeedback.toLowerCase().contains(
+                                        'error',
+                                      ) ||
+                                      _emailChangeFeedback
+                                          .toLowerCase()
+                                          .contains('could not') ||
+                                      _emailChangeFeedback
+                                          .toLowerCase()
+                                          .contains('invalid')
                                   ? Theme.of(context).colorScheme.error
                                   : AppTheme.textMuted,
                             ),
@@ -1787,10 +2627,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ),
                             ),
                             OutlinedButton.icon(
-                              onPressed: _isExportingCalendar ? null : _exportCalendar,
-                              icon: const Icon(Icons.download_outlined, size: 16),
+                              onPressed: _isExportingCalendar
+                                  ? null
+                                  : _exportCalendar,
+                              icon: const Icon(
+                                Icons.download_outlined,
+                                size: 16,
+                              ),
                               label: Text(
-                                _isExportingCalendar ? 'Exporting...' : 'Export .ics',
+                                _isExportingCalendar
+                                    ? 'Exporting...'
+                                    : 'Export .ics',
                               ),
                             ),
                           ],
@@ -1799,6 +2646,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 16),
+                _buildFeaturedWeatherThemesCard(context),
                 const SizedBox(height: 16),
                 _buildThemeSharingCard(context),
                 const SizedBox(height: 16),

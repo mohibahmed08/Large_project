@@ -74,33 +74,42 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          onPressed: widget.onDone,
-          icon: const Icon(Icons.arrow_back),
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: AppTheme.backgroundDecoration(authSurface: true),
+          ),
         ),
-        title: const Text('Reset Password'),
-      ),
-      body: SafeArea(
-        child: Container(
-          decoration: AppTheme.backgroundDecoration(authSurface: true),
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: _isSuccess ? _buildSuccessState() : _buildFormState(),
+        Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: AppBar(
+            leading: IconButton(
+              onPressed: widget.onDone,
+              icon: const Icon(Icons.arrow_back),
+            ),
+            title: const Text('Reset Password'),
+          ),
+          body: SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: _isSuccess
+                          ? _buildSuccessState()
+                          : _buildFormState(),
+                    ),
                   ),
                 ),
               ),
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 

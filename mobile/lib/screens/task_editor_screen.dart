@@ -408,7 +408,7 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
                   labelText: 'Use an existing group',
                 ),
                 borderRadius: BorderRadius.circular(20),
-                dropdownColor: const Color(0xFF182235),
+                dropdownColor: AppTheme.dropdownSurface,
                 icon: const Icon(CupertinoIcons.chevron_down, size: 18),
                 menuMaxHeight: 280,
                 style: _dropdownTextStyle(context),
@@ -519,9 +519,9 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.08),
+                color: Colors.white.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
               ),
               child: Row(
                 children: [
@@ -568,7 +568,7 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
                     : 30,
                 decoration: const InputDecoration(labelText: 'Reminder timing'),
                 borderRadius: BorderRadius.circular(20),
-                dropdownColor: const Color(0xFF182235),
+                dropdownColor: AppTheme.dropdownSurface,
                 icon: const Icon(CupertinoIcons.chevron_down, size: 18),
                 menuMaxHeight: 280,
                 style: _dropdownTextStyle(context),
@@ -596,7 +596,7 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
                   labelText: 'Reminder delivery',
                 ),
                 borderRadius: BorderRadius.circular(20),
-                dropdownColor: const Color(0xFF182235),
+                dropdownColor: AppTheme.dropdownSurface,
                 icon: const Icon(CupertinoIcons.chevron_down, size: 18),
                 menuMaxHeight: 280,
                 style: _dropdownTextStyle(context),
@@ -658,9 +658,9 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
 
   ButtonStyle _dateTimeButtonStyle(BuildContext context) {
     return OutlinedButton.styleFrom(
-      backgroundColor: Colors.white.withValues(alpha: 0.08),
+      backgroundColor: Colors.white.withValues(alpha: 0.12),
       foregroundColor: Theme.of(context).colorScheme.onSurface,
-      side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+      side: BorderSide(color: Colors.white.withValues(alpha: 0.18)),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
       textStyle: const TextStyle(fontWeight: FontWeight.w600),

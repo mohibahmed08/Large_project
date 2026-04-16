@@ -5,27 +5,26 @@
   --btn-background: #60a5fa;
 }
 
-/* --- GLOBAL RESETS --- */
-* {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-*::-webkit-scrollbar {
-  display: none;
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
 }
 
-/* --- SIDEBAR LAYOUT --- */
 .main-layout {
   display: flex;
-  height: 100%;
+  height: 100vh;
   width: 100%;
-  background-color: #1e1e2f;          /* fallback */
-  background-image: var(--bg-img);    /* dynamic background from style prop */
+  overflow: hidden;
+  background-color: #1e1e2f;
+  background-image: var(--bg-img);
   background-repeat: no-repeat;
   background-position: center center;
   background-size: cover;
-  background-attachment: scroll;      /* better cross-browser behavior */
+  background-attachment: scroll;
 }
+
 .sidebar {
   background-color: rgba(30, 30, 47, 0.55); /* Semi-transparent dark color */
   backdrop-filter: blur(12px);              /* Glass blur effect */
@@ -41,6 +40,30 @@
 .sidebar.open { width: 292px; }
 .sidebar.right-sidebar.open { width: 360px; }
 .sidebar.closed { width: 60px; }
+.sidebar-content {
+  padding: 0 15px 20px 15px;
+  color: #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+}
+
+.left-sidebar .sidebar-content {
+  padding-top: 56px;
+  height: 100%;
+  min-height: 0;
+}
+
+/* --- GLOBAL RESETS --- */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
 
 /* --- TOGGLE BUTTONS --- */
 .toggle-btn {
@@ -66,19 +89,6 @@
 }
 
 /* --- SIDEBAR NAV MENU --- */
-.sidebar-content {
-  padding: 0 15px 20px 15px;
-  color: #e0e0e0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  height: calc(100vh - 80px); 
-}
-
-.left-sidebar .sidebar-content {
-  padding-top: 56px;
-  height: 100vh;
-}
 
 .nav-item {
   display: flex;
@@ -108,17 +118,25 @@
 
 /* --- CENTER CONTENT --- */
 .center-content {
-  flex-grow: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  height: 100vh;      /* Force exact height to stop overflow */
-  overflow: hidden; 
+  overflow: hidden;
 }
 
 .calendar-wrapper {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;   /* If the calendar is too tall, it scrolls neatly inside its box */
+  overflow: hidden;
+}
+
+.ai-panel {
+  gap: 4px;
+  padding: 8px 10px 10px 10px;
+  height: 100%;
+  min-height: 0;
 }
 
 .calendar-search-shell {
@@ -238,12 +256,6 @@
 }
 
 .ai-input::placeholder { color: #9ca3af; }
-
-.ai-panel {
-  gap: 4px;
-  padding: 8px 10px 10px 10px;
-  height: 100vh;
-}
 
 .ai-panel-header h2 {
   margin: 0;
@@ -750,21 +762,26 @@
     align-items: center;
     gap: 12px;
     padding: 10px 12px;
-    background: var(--btn-background, var(--btn-color, #60a5fa));
-    border: 1px solid rgba(var(--btn-color-rgb), 0.42);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 8px;
-    color: var(--btn-text-color, #0f172a);
+    color: #f8fafc;
     font-size: 16px; 
     font-weight: bold; 
     cursor: pointer;
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.22),
-      0 10px 24px rgba(var(--btn-color-rgb), 0.18);
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      0 8px 18px rgba(15, 23, 42, 0.14);
     transition: filter 0.2s ease, transform 0.2s ease;
 }
 
 .logout-btn:hover {
-    filter: brightness(1.05);
+    background:
+      linear-gradient(180deg, rgba(127, 29, 29, 0.14), rgba(127, 29, 29, 0.06)),
+      rgba(239, 68, 68, 0.08);
+    border-color: rgba(248, 113, 113, 0.45);
+    color: #fee2e2;
+    filter: brightness(1.02);
     transform: translateY(-1px);
 }
 
@@ -821,7 +838,7 @@
 }
 
 .account-modal-kicker {
-  color: #9fbef5;
+  color: #233555;
   font-size: 0.76rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -838,6 +855,11 @@
   background: rgba(255, 255, 255, 0.05);
   color: #e5e7eb;
   cursor: pointer;
+}
+
+.account-close-btn#shareCloseButton {
+  border: 1px solid #909090;
+  color: #303030;
 }
 
 .account-primary-btn {
@@ -2072,6 +2094,25 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.96);
 }
 
+.theme-share-floating-modal .account-modal-kicker {
+  color: #7c93b4;
+}
+
+.theme-share-floating-modal .account-close-btn,
+.theme-share-floating-modal .account-secondary-btn,
+.theme-share-floating-modal .account-primary-btn {
+  color: #0f172a;
+  background: rgba(255, 255, 255, 0.82);
+  border-color: rgba(100, 116, 139, 0.24);
+}
+
+.theme-share-floating-modal .account-primary-btn {
+  background:
+    linear-gradient(180deg, rgba(var(--btn-color-rgb), 0.3), rgba(var(--btn-color-rgb), 0.18)),
+    rgba(255, 255, 255, 0.88);
+  border-color: rgba(var(--btn-color-rgb), 0.34);
+}
+
 .theme-share-header-copy {
   display: flex;
   flex-direction: column;
@@ -2199,6 +2240,12 @@
   color: #0f172a;
 }
 
+.theme-share-value-stack.compact .theme-share-value-card input::placeholder,
+.theme-share-edit-card .account-field input::placeholder,
+.theme-slug-input::placeholder {
+  color: #94a3b8;
+}
+
 .theme-share-edit-stack {
   display: flex;
   flex-direction: column;
@@ -2249,6 +2296,15 @@
   .theme-share-action-grid.compact,
   .theme-share-value-stack.compact {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .theme-customize-shortcut {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .theme-customize-shortcut-btn {
+    width: 100%;
   }
 }
 
@@ -2935,6 +2991,41 @@
   background-clip: text;
 }
 
+.theme-customize-shortcut {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(var(--btn-color-rgb), 0.2);
+  background:
+    radial-gradient(circle at left top, rgba(var(--btn-color-rgb), 0.14), transparent 38%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.18), rgba(15, 23, 42, 0.08)),
+    rgba(15, 23, 42, 0.18);
+}
+
+.theme-customize-shortcut-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.theme-customize-shortcut-copy strong {
+  color: #f8fafc;
+}
+
+.theme-customize-shortcut-copy span {
+  color: #cbd5e1;
+  line-height: 1.45;
+}
+
+.theme-customize-shortcut-btn {
+  flex-shrink: 0;
+}
+
 
 /* ─── Search bar width — wider, jitter-free ─────────────────────────────────── */
 
@@ -3080,9 +3171,9 @@
   display: flex;
   align-items: center;
   background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid rgba(128, 128, 128, 0.5);
   border-radius: 8px;
-  overflow: hidden;
+  overflow: auto;
   transition: border-color 0.15s;
 }
 
@@ -3092,7 +3183,7 @@
 
 .theme-slug-prefix {
   padding: 0 8px 0 12px;
-  color: rgba(255,255,255,0.35);
+  color: #64748b;
   font-size: 0.82rem;
   white-space: nowrap;
   flex-shrink: 0;
@@ -3143,4 +3234,9 @@
   background: rgba(234,179,8,0.1);
   color: #fbbf24;
   border: 1px solid rgba(234,179,8,0.22);
+}
+
+button#ExportButton {
+  border: 1px solid rgba(100,116,139,0.25);
+  color: rgba(48, 48, 48, 0.5);
 }
