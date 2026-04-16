@@ -365,6 +365,11 @@ async function normalizeStorageAssetUrl(value)
 
     try
     {
+        const admin = tryInitFirebaseAdmin();
+        if(!admin)
+        {
+            return normalizedInput;
+        }
         const bucket = admin.storage().bucket(parsed.bucketName);
         return await ensureFirebaseStorageDownloadUrl(bucket, parsed.objectPath);
     }
