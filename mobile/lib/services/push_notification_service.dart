@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -10,6 +9,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 
 import 'api_config.dart';
+import 'platform_runtime.dart';
 import 'session_storage.dart';
 
 class _NotificationContent {
@@ -318,7 +318,7 @@ class PushNotificationService {
 
     try {
       await _refreshNativeStatus(reason: 'before_registerDeviceToken');
-      if (Platform.isIOS) {
+      if (isNativeIOS) {
         await _debugRegisterForRemoteNotifications(
           reason: 'registerDeviceToken',
         );
@@ -375,7 +375,7 @@ class PushNotificationService {
         return;
       }
 
-      final platform = Platform.isIOS ? 'ios' : 'android';
+      final platform = deviceRegistrationPlatform;
       _log(
         'uploading device token platform=$platform token=${_tokenPreview(token)}',
       );
@@ -404,7 +404,7 @@ class PushNotificationService {
         'token upload response status=${res.statusCode} body=${_truncate(res.body)}',
       );
       if (res.statusCode < 200 || res.statusCode >= 300) {
-        throw HttpException(
+        throw Exception(
           'registerdevicetoken failed with status ${res.statusCode}',
         );
       }
@@ -448,7 +448,7 @@ class PushNotificationService {
         _failStep('snapshot/getNotificationSettings', e);
       }
 
-      if (Platform.isIOS) {
+      if (isNativeIOS) {
         try {
           _startStep('snapshot/getAPNSToken');
           apnsToken = await _withTimeoutNullable(
@@ -481,7 +481,7 @@ class PushNotificationService {
       initialized: _initialized,
       initializationInFlight: _initializationFuture != null,
       firebaseReady: _firebaseReady,
-      platform: Platform.operatingSystem,
+      platform: platformRuntimeLabel,
       authorizationStatus:
           authorizationStatus?.name ??
           (_firebaseReady ? 'unavailable' : 'firebase_not_ready'),
@@ -541,7 +541,7 @@ class PushNotificationService {
   }
 
   static Future<void> _refreshNativeStatus({required String reason}) async {
-    if (!Platform.isIOS) {
+    if (!isNativeIOS) {
       _nativeAuthorizationStatus = 'not_ios';
       _nativeRegistrationState = 'not_ios';
       return;
@@ -577,7 +577,7 @@ class PushNotificationService {
   static Future<void> _debugRegisterForRemoteNotifications({
     required String reason,
   }) async {
-    if (!Platform.isIOS) {
+    if (!isNativeIOS) {
       return;
     }
 

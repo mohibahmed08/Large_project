@@ -1,24 +1,24 @@
 // @ts-nocheck
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from 'react';
 import { DEFAULT_WEATHER_LOCATION, requestWeatherLocation } from './weatherLocation.js';
 
-//RETURNS THE WEATHER FOR A SPECIFIC DATE
+// Fetch weather data for the visible calendar range.
 function Weather({ setWeather, desiredDate, additionalDays, priorDays }) {
 
-    //HOLDS CURRENT LONGITUDE AND LATITUDE THAT THE USER IS AT (ONCE ENABLED)
+    // Start with the fallback location so the calendar can render immediately.
     const [coords, setCoords] = useState(() => ({
         latitude: DEFAULT_WEATHER_LOCATION.latitude,
         longitude: DEFAULT_WEATHER_LOCATION.longitude,
     }));
 
-    //FIRST DAY TO GO BACK TO IN THE PAST FROM TODAY
+    // Build the first requested day from the month range and any earlier days we want to include.
     const firstDay = desiredDate ? new Date(desiredDate) : new Date();
     firstDay.setDate(firstDay.getDate() - priorDays);
 
-    //GET START AND END DATE STRINGS FOR OPEN-METEO API
+    // Convert the range to the format expected by Open-Meteo.
     const { startDate, endDate } = getDateRange(firstDay, priorDays + additionalDays);
 
-    //REQUESTS THE USER'S LOCATION WHEN COMPONENT MOUNTS
+    // Refresh the coordinates once the browser location request resolves.
     useEffect(() => {
         let ignore = false;
 
@@ -40,7 +40,7 @@ function Weather({ setWeather, desiredDate, additionalDays, priorDays }) {
         };
     }, []);
 
-    //USE EFFECT FOR WEATHER INITIALIZATION WHEN LOCATION CHANGES OR DATE CHANGES
+    // Refetch weather whenever the range or coordinates change.
     useEffect(() => {
         fetch(
             `https://api.open-meteo.com/v1/forecast?latitude=${coords.latitude}&longitude=${coords.longitude}&start_date=${startDate}&end_date=${endDate}&hourly=temperature_2m,weathercode,windspeed_10m`
@@ -50,11 +50,9 @@ function Weather({ setWeather, desiredDate, additionalDays, priorDays }) {
             return res.json();
         })
         .then((data) => {
-            console.log("Weather fetched:", data); // debug
-            setWeather(data); // STORE FULL DATA (hourly/daily)
+            setWeather(data);
         })
-        .catch((err) => console.error("Failed to fetch weather:", err));
-    //USE EFFECT FOR WEATHER INITIALIZATION WHEN LOCATION CHANGES OR DATE CHANGES
+        .catch((err) => console.error('Failed to fetch weather:', err));
     }, [coords.latitude, coords.longitude, startDate, endDate]);
 
     return null;
@@ -72,8 +70,8 @@ export function getDateRange(date, totalDays = 0) {
 
     // Format start date
     const yyyy = targetDate.getFullYear();
-    const mm = String(targetDate.getMonth() + 1).padStart(2, "0");
-    const dd = String(targetDate.getDate()).padStart(2, "0");
+    const mm = String(targetDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(targetDate.getDate()).padStart(2, '0');
     const startDate = `${yyyy}-${mm}-${dd}`;
 
     // Calculate end date
@@ -90,8 +88,8 @@ export function getDateRange(date, totalDays = 0) {
     }
 
     const endY = endDateObj.getFullYear();
-    const endM = String(endDateObj.getMonth() + 1).padStart(2, "0");
-    const endD = String(endDateObj.getDate()).padStart(2, "0");
+    const endM = String(endDateObj.getMonth() + 1).padStart(2, '0');
+    const endD = String(endDateObj.getDate()).padStart(2, '0');
     const endDate = `${endY}-${endM}-${endD}`;
 
     return { startDate, endDate };

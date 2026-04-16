@@ -1,5 +1,6 @@
 // @ts-nocheck
-//IMMPORT THE STYLE SHEET
+// Calendar day cell styles.
+import { useEffect } from 'react';
 import './DayGrid.css';
 
 //THIS CLASS WILL BE ONE DAY INSIDE THE CALENDAR GRID
@@ -10,8 +11,6 @@ import './DayGrid.css';
 function DayGrid({
     weather,
     setCurrentWeather,
-    maxFutureWeatherDays,
-    maxPastWeatherDays,
     dayOfMonth,
     year,
     month,
@@ -30,8 +29,7 @@ function DayGrid({
 
     //TARGET DATE FOR DAY INDEX AND WITHIN WEEK
     const targetDate = new Date(year, month, dayOfMonth);
-    //NORMALIZE THE HOURS
-    targetDate.setHours(0,0,0,0);
+    targetDate.setHours(0, 0, 0, 0);
     const normalizedSelectedDate = selectedDate ? new Date(selectedDate) : null;
     if (normalizedSelectedDate) {
         normalizedSelectedDate.setHours(0, 0, 0, 0);
@@ -94,7 +92,6 @@ function DayGrid({
 
     const taskDisplayColor = (task) => parseTaskColor(task?.color) || fallbackTaskColor(task);
 
-    //RETURN DOM
     return (
         <>
             {/* THE DATE BOX ITSELF CONTAINING SUBINFO AND IF ACTIVE (CURRRENT DAY), OTHER MONTH IF SPACER FROM PRIOR/NEXT MONTH BLEEDING OVER TO THIS ONE */}
@@ -102,11 +99,11 @@ function DayGrid({
                 className = {`day-grid-wrapper ${isToday ? "active" : ""} ${isSelected ? "selected" : ""} ${isOtherMonth ? "other-month" : ""}`}
                 onClick={() => onSelectDay?.(targetDate)}
             >
-                {/* TOP LEFT WEATHER OF THE CURRENT DAY */}
+                {/* Show the dominant weather label when the fetched dataset includes this date. */}
                 {isWithinWeather && <span className = "day-grid-weather-header">{generalWeather}</span>}
-                {/* TOP RIGHT DAY NUMBER IN THE BOX */}
+                {/* Day number in the upper-right corner. */}
                 <span className = "day-grid-day-number">{dayOfMonth}</span>
-                {/* SECTION TO HOLD TILED REMINDERS / SUGGESTIONS */}
+                {/* Task pills for the current date. */}
                 <div className = {`day-grid-tile-wrapper`}>
                     {tasks.length > 0 && <ul className = "day-grid-ul">
                         {tasks.map((task) => (

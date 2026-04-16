@@ -6,7 +6,7 @@ exports.createToken = function ( fn, ln, id )
     return _createToken( fn, ln, id );
 }
 
-_createToken = function ( fn, ln, id )
+function _createToken(fn, ln, id)
 {
     try
     {
@@ -34,20 +34,15 @@ _createToken = function ( fn, ln, id )
 
 exports.isExpired = function( token )
 {
-    var isError = jwt.verify( token, process.env.ACCESS_TOKEN_SECRET,
-        (err, verifiedJwt) =>
-        {
-            if( err )
-            {
-                return true;
-            }
-            else
-            {
-                return false;
-            }
-        });
-
-    return isError;
+    try
+    {
+        jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+        return false;
+    }
+    catch
+    {
+        return true;
+    }
 }
 
 exports.refresh = function( token )

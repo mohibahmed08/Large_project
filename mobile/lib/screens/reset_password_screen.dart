@@ -84,17 +84,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       ),
       body: SafeArea(
         child: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Color(0xFF23263A),
-                AppTheme.background,
-                AppTheme.surface,
-              ],
-            ),
-          ),
+          decoration: AppTheme.backgroundDecoration(authSurface: true),
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),
