@@ -332,7 +332,7 @@ export function dayWeatherRange() {
     start.setHours(0, 0, 0, 0);
     start.setDate(start.getDate() - 7);
     const end = new Date(start);
-    end.setDate(end.getDate() + 21);
+    end.setDate(end.getDate() + 22);
     return {
         startDate: start.toISOString().slice(0, 10),
         endDate: end.toISOString().slice(0, 10),

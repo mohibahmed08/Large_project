@@ -148,6 +148,25 @@ function buildLocalDateKey(dateValue) {
     return `${dateValue.getFullYear()}-${String(dateValue.getMonth() + 1).padStart(2, '0')}-${String(dateValue.getDate()).padStart(2, '0')}`;
 }
 
+function buildDateKeyFromTimeValue(timeValue) {
+    const normalized = String(timeValue || '').trim();
+    if (!normalized) {
+        return '';
+    }
+
+    const directMatch = normalized.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (directMatch) {
+        return directMatch[1];
+    }
+
+    const parsed = new Date(normalized);
+    if (Number.isNaN(parsed.getTime())) {
+        return '';
+    }
+
+    return buildLocalDateKey(parsed);
+}
+
 // Support both the current hourly payload shape and the older array/dayIndex test helper shape.
 export function getDailyGeneralWeather(hourlyInput, target) {
     let dayHours = [];
@@ -159,7 +178,7 @@ export function getDailyGeneralWeather(hourlyInput, target) {
         const hourlyTimes = Array.isArray(hourlyInput?.time) ? hourlyInput.time : [];
         const hourlyWeather = Array.isArray(hourlyInput?.weathercode) ? hourlyInput.weathercode : [];
         const targetDateKey = target instanceof Date ? buildLocalDateKey(target) : '';
-        dayHours = hourlyWeather.filter((code, index) => String(hourlyTimes[index] || '').startsWith(targetDateKey));
+        dayHours = hourlyWeather.filter((code, index) => buildDateKeyFromTimeValue(hourlyTimes[index]) === targetDateKey);
     }
 
     if (dayHours.length === 0) {

@@ -148,6 +148,16 @@ const tests = [
         }).shareUrl,
         'https://calendarplusplus.xyz/?theme=mountain_theme',
       );
+
+      assert.deepEqual(
+        __testables.buildThemeLookupQuery('abc123'),
+        {
+          $or: [
+            { shareSlug: 'abc123' },
+            { shareCode: 'ABC123' },
+          ],
+        },
+      );
     },
   },
   {

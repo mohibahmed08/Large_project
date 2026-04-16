@@ -69,6 +69,21 @@ describe("getDailyGeneralWeather", () => {
       expect(getDailyGeneralWeather(input, dayIndex)).toBe(expected);
     });
   });
+
+  it("matches ISO timestamps to the local day without falling back to unknown", () => {
+    const targetDate = new Date(2026, 3, 15);
+    const hourly = {
+      time: [
+        "2026-04-14T23:00",
+        "2026-04-15T00:00",
+        "2026-04-15T06:00",
+        "2026-04-15T12:00",
+      ],
+      weathercode: [3, 2, 2, 2],
+    };
+
+    expect(getDailyGeneralWeather(hourly, targetDate)).toBe(2);
+  });
 });
 
 /// WEATHER CODE TO TEXT RETURN TEST ////

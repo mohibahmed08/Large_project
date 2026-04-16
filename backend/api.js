@@ -1637,12 +1637,22 @@ function buildThemeLookupQuery(shareValue)
         throw new Error('Theme code or link is required.');
     }
 
-    if(/^[a-f0-9]{6}$/i.test(lookupKey))
+    const normalizedSlug = normalizeThemeShareSlug(lookupKey);
+    const normalizedCode = /^[a-f0-9]{6}$/i.test(lookupKey)
+        ? lookupKey.toUpperCase()
+        : '';
+
+    if(normalizedCode)
     {
-        return { shareCode: lookupKey.toUpperCase() };
+        return {
+            $or: [
+                { shareSlug: normalizedSlug },
+                { shareCode: normalizedCode },
+            ],
+        };
     }
 
-    return { shareSlug: normalizeThemeShareSlug(lookupKey) };
+    return { shareSlug: normalizedSlug };
 }
 
 async function listUserCustomThemes(db, user)
@@ -2599,19 +2609,6 @@ function buildCalendarTaskSearchText(task)
         .filter((value) => value !== null && value !== undefined && String(value).trim())
         .join(' ')
         .toLowerCase();
-}
-
-function matchesCalendarTaskSearch(task, searchText)
-{
-    const normalizedSearch = String(searchText || '').trim().toLowerCase();
-    if(!normalizedSearch)
-    {
-        return true;
-    }
-
-    const searchTokens = normalizedSearch.split(/\s+/).filter(Boolean);
-    const searchableText = buildCalendarTaskSearchText(task);
-    return searchTokens.every((token) => searchableText.includes(token));
 }
 
 function buildReminderFields(taskLike, reminderInput = {}, fallback = {})
@@ -4903,12 +4900,19 @@ exports.setApp = function(app, client)
                 return;
             }
 
-            const tasks = await db.collection('tasks')
-                .find({ user_id: new ObjectId(userId) })
+            const results = await db.collection('tasks').find(
+            {
+                user_id: new ObjectId(userId),
+                $or:
+                [
+                    { title:       { $regex: trimmedSearch + '.*', $options: 'i' } },
+                    { description: { $regex: trimmedSearch + '.*', $options: 'i' } },
+                    { location:    { $regex: trimmedSearch + '.*', $options: 'i' } },
+                    { group:       { $regex: trimmedSearch + '.*', $options: 'i' } },
+                ]
+            })
                 .sort({ dueDate: 1 })
                 .toArray();
-
-            const results = tasks.filter((task) => matchesCalendarTaskSearch(task, trimmedSearch));
 
             res.status(200).json({
                 results: results.map((task) => normalizeLegacyIcsTaskForResponse(task)),
@@ -5847,6 +5851,7 @@ exports.__testables = {
     normalizeCustomThemePack,
     normalizeThemeShareSlug,
     extractThemeShareLookupKey,
+    buildThemeLookupQuery,
     buildSharedThemeUrls,
     readPositiveIntEnv,
     getConfiguredOpenAIModel,
