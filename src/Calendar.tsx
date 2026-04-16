@@ -75,7 +75,7 @@ const ITEM_TYPE_META = {
     },
 };
 
-function normalizeItemType(taskLike) {
+export function normalizeItemType(taskLike) {
     const source = String(taskLike?.source || '').toLowerCase();
     if (source === 'plan' || source === 'event' || source === 'task') {
         return source;
@@ -83,11 +83,11 @@ function normalizeItemType(taskLike) {
     return 'event';
 }
 
-function formatTimeValue(dateValue) {
+export function formatTimeValue(dateValue) {
     return `${dateValue.getHours().toString().padStart(2, '0')}:${dateValue.getMinutes().toString().padStart(2, '0')}`;
 }
 
-function formatTaskTime(dateValue) {
+export function formatTaskTime(dateValue) {
     const date = new Date(dateValue);
     if (Number.isNaN(date.getTime())) {
         return 'No time';
@@ -96,7 +96,7 @@ function formatTaskTime(dateValue) {
     return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-function taskGroupLabel(task) {
+export function taskGroupLabel(task) {
     const explicitGroup = String(task?.group || '').trim();
     if (explicitGroup) {
         return explicitGroup;
@@ -110,7 +110,7 @@ function taskGroupLabel(task) {
     return source ? source.charAt(0).toUpperCase() + source.slice(1) : 'Other';
 }
 
-function parseTaskColor(colorValue) {
+export function parseTaskColor(colorValue) {
     const normalized = String(colorValue || '').trim().replace('#', '');
     if (!normalized || (normalized.length !== 6 && normalized.length !== 8)) {
         return '';
@@ -285,6 +285,32 @@ function renderCalendarMarkdown(text) {
     return blocks.length ? blocks : text;
 }
 
+export function getWeatherImg(currentWeather){
+    const hour = new Date().getHours();
+    let timeOfDay = 'night';
+    if (hour >= 6 && hour < 9) timeOfDay = 'sunrise';
+    else if (hour >= 9 && hour < 18) timeOfDay = 'day';
+    else if (hour >= 18 && hour < 21) timeOfDay = 'sunset';
+
+    switch(currentWeather){
+        case 'Clear sky':
+        case 'Mostly clear':
+            if(timeOfDay === 'sunrise' || timeOfDay === 'sunset') return SunsetSunriseClearSky;
+            if(timeOfDay === 'day') return ClearSky;
+            return NightClear;
+        case 'Overcast':
+            if(timeOfDay === 'sunrise' || timeOfDay === 'sunset') return SunsetSunriseCloudy;
+            if(timeOfDay === 'day') return Cloudy;
+            return NightCloudy;
+        case 'Partly cloudy':
+            if(timeOfDay === 'sunrise' || timeOfDay === 'sunset') return SunsetSunrisePartlyCloudy;
+            if(timeOfDay === 'day') return PartlyCloudy;
+            return NightPartlyCloudy;
+        default:
+            return null;
+    }
+}
+
 function normalizeDateKey(dateValue) {
     const date = new Date(dateValue);
     date.setHours(0, 0, 0, 0);
@@ -301,7 +327,7 @@ function weatherCodeToEmoji(code) {
     return '•';
 }
 
-function weatherCodeToLabel(code) {
+export function weatherCodeToLabel(code) {
     if ([0].includes(code)) return 'Clear';
     if ([1].includes(code)) return 'Mostly clear';
     if ([2].includes(code)) return 'Partly cloudy';
@@ -313,7 +339,7 @@ function weatherCodeToLabel(code) {
     return 'Weather';
 }
 
-function weatherGlyph(code) {
+export function weatherGlyph(code) {
     if ([0, 1].includes(code)) return '\u2600\uFE0F';
     if ([2, 3].includes(code)) return '\u26C5';
     if ([45, 48].includes(code)) return '\uD83C\uDF2B\uFE0F';
@@ -323,7 +349,7 @@ function weatherGlyph(code) {
     return '\u2022';
 }
 
-function dayWeatherRange() {
+export function dayWeatherRange() {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     start.setDate(start.getDate() - 7);

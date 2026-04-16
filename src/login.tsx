@@ -261,6 +261,15 @@ const Login = ({ setIsAuthenticated }) => {
 
       <div className="w-full max-w-md rounded-xl bg-gray-800 p-8 shadow-2xl text-white border border-gray-700">
 
+        <h1 className="calendar-title">
+          Calendar++
+        </h1>
+
+        {/* Add this new subtitle line right here! */}
+        <p className="calendar-subtitle">
+          Stop Planning. Start Doing.
+        </p>
+
         {/* ── Tab switcher (Login / Register only) ────────────────────── */}
         {view !== 'forgot' && (
           <div className="mb-8 flex border-b border-gray-700">
