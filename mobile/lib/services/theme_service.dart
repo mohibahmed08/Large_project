@@ -620,10 +620,11 @@ class ThemeService extends ChangeNotifier {
       if (rawPacks != null && rawPacks.isNotEmpty) {
         final decoded = jsonDecode(rawPacks);
         if (decoded is List) {
-          _savedThemePacks = decoded
+          final loadedPacks = decoded
               .whereType<Map>()
               .map((item) => MobileTheme.fromJson(item.cast<String, dynamic>()))
               .toList();
+          _savedThemePacks = _mergeThemePacks(const [], loadedPacks);
         }
       }
     } catch (_) {
@@ -1121,7 +1122,13 @@ class ThemeService extends ChangeNotifier {
     }
     try {
       final uri = Uri.parse(trimmed);
-      return uri.queryParameters['theme']?.trim() ?? '';
+      final sharedValue = uri.queryParameters['theme']?.trim() ?? '';
+      if (sharedValue.isNotEmpty) {
+        return sharedValue;
+      }
+      return (uri.scheme.isEmpty && uri.host.isEmpty && uri.path.isNotEmpty)
+          ? uri.path.trim()
+          : trimmed;
     } catch (_) {
       return trimmed;
     }
@@ -1402,9 +1409,33 @@ List<MobileTheme> _mergeThemePacks(
 ) {
   final merged = <String, MobileTheme>{};
   for (final theme in [...first, ...second]) {
-    merged[theme.identity] = theme;
+    merged[_themePackMergeKey(theme)] = theme;
   }
   return merged.values.toList();
+}
+
+String _themePackMergeKey(MobileTheme theme) {
+  final sharedThemeId = theme.sharedThemeId?.trim() ?? '';
+  if (sharedThemeId.isNotEmpty) {
+    return 'shared:$sharedThemeId';
+  }
+
+  final shareSlug = theme.shareSlug?.trim().toLowerCase() ?? '';
+  if (shareSlug.isNotEmpty) {
+    return 'slug:$shareSlug';
+  }
+
+  final shareCode = theme.shareCode?.trim().toUpperCase() ?? '';
+  if (shareCode.isNotEmpty) {
+    return 'code:$shareCode';
+  }
+
+  final shareValue = ThemeService.extractSharedThemeValue(theme.shareUrl);
+  if (shareValue.isNotEmpty) {
+    return 'share:${shareValue.toLowerCase()}';
+  }
+
+  return theme.identity;
 }
 
 MobileTheme _buildFeaturedTheme({
