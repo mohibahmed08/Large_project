@@ -72,8 +72,11 @@ dev_dependencies:
 flutter:
   assets:
     - assets/
-    - assets/theme_packages/
     - assets/theme_featured/
+    - assets/theme_featured/mountain/
+    - assets/theme_featured/forest/
+    - assets/theme_featured/desert/
+    - assets/theme_featured/beach/
     - assets/theme_fallbacks/
     - assets/images/
 

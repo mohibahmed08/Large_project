@@ -42,7 +42,9 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
   void initState() {
     super.initState();
     _resetToken = _normalizeToken(widget.initialResetToken);
-    unawaited(_themeService.setPendingSharedThemeValue(widget.initialThemeShareValue));
+    unawaited(
+      _themeService.setPendingSharedThemeValue(widget.initialThemeShareValue),
+    );
     unawaited(_bootstrap());
   }
 
@@ -194,10 +196,9 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
         _lockedSession = null;
         _unlockMessage = null;
       } else {
-        _unlockMessage =
-            auto
-                ? 'Unlock with $_biometricLabel when you are ready, or choose password login instead.'
-                : '$_biometricLabel did not complete. You can try again or sign in with your password.';
+        _unlockMessage = auto
+            ? 'Unlock with $_biometricLabel when you are ready, or choose password login instead.'
+            : '$_biometricLabel did not complete. You can try again or sign in with your password.';
       }
     });
   }
@@ -258,11 +259,18 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
   }
 
   Widget _buildLoadingState() {
-    return Scaffold(
-      body: Container(
-        decoration: AppTheme.backgroundDecoration(authSurface: true),
-        child: const Center(child: CircularProgressIndicator()),
-      ),
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: AppTheme.backgroundDecoration(authSurface: true),
+          ),
+        ),
+        const Scaffold(
+          backgroundColor: Colors.transparent,
+          body: Center(child: CircularProgressIndicator()),
+        ),
+      ],
     );
   }
 
@@ -270,70 +278,81 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
     final unlockLabel = _biometricLabel.toLowerCase().contains('face')
         ? 'Unlock with Face ID'
         : _biometricLabel.toLowerCase().contains('fingerprint')
-            ? 'Unlock with Fingerprint'
-            : 'Unlock securely';
+        ? 'Unlock with Fingerprint'
+        : 'Unlock securely';
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Unlock Calendar++')),
-      body: SafeArea(
-        child: Container(
-          decoration: AppTheme.backgroundDecoration(authSurface: true),
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.lock_outline,
-                          size: 42,
-                          color: AppTheme.accent,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Saved session detected',
-                          style: Theme.of(context).textTheme.headlineSmall,
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          _unlockMessage ??
-                              'Use $_biometricLabel to unlock your saved Calendar++ session.',
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 20),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton(
-                            onPressed: _isUnlocking ? null : _retryUnlock,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              child: _isUnlocking
-                                  ? const SizedBox(
-                                      height: 20,
-                                      width: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : Text(unlockLabel),
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: AppTheme.backgroundDecoration(authSurface: true),
+          ),
+        ),
+        Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: AppBar(title: const Text('Unlock Calendar++')),
+          body: SafeArea(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.lock_outline,
+                            size: 42,
+                            color: AppTheme.accent,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Saved session detected',
+                            style: Theme.of(context).textTheme.headlineSmall,
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            _unlockMessage ??
+                                'Use $_biometricLabel to unlock your saved Calendar++ session.',
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 20),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton(
+                              onPressed: _isUnlocking ? null : _retryUnlock,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                child: _isUnlocking
+                                    ? const SizedBox(
+                                        height: 20,
+                                        width: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : Text(unlockLabel),
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton(
-                            onPressed: _isUnlocking ? null : _usePasswordInstead,
-                            child: const Text('Use password instead'),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton(
+                              onPressed: _isUnlocking
+                                  ? null
+                                  : _usePasswordInstead,
+                              child: const Text('Use password instead'),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -341,7 +360,7 @@ class _AppBootstrapScreenState extends State<AppBootstrapScreen> {
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 }

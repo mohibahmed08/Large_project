@@ -24,8 +24,7 @@ Future<void> maybeSuggestBiometricSetup(
 
   final biometricUnlockEnabled =
       await SessionStorage.isBiometricUnlockEnabled();
-  final biometricLoginEnabled =
-      await SessionStorage.isBiometricLoginEnabled();
+  final biometricLoginEnabled = await SessionStorage.isBiometricLoginEnabled();
   if (biometricUnlockEnabled || biometricLoginEnabled) return;
 
   if (!context.mounted) return;
@@ -34,10 +33,8 @@ Future<void> maybeSuggestBiometricSetup(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => _BiometricSetupSheet(
-      biometricLabel: status.label,
-      session: session,
-    ),
+    builder: (_) =>
+        _BiometricSetupSheet(biometricLabel: status.label, session: session),
   );
 }
 
@@ -63,9 +60,8 @@ Future<bool> _confirmBiometricSetupFromPrompt({
   final action = await showModalBottomSheet<_PromptBiometricRecoveryAction>(
     context: context,
     backgroundColor: Colors.transparent,
-    builder: (_) => _PromptBiometricRecoverySheet(
-      biometricLabel: biometricLabel,
-    ),
+    builder: (_) =>
+        _PromptBiometricRecoverySheet(biometricLabel: biometricLabel),
   );
 
   if (!context.mounted) {
@@ -307,10 +303,8 @@ class _LoginScreenState extends State<LoginScreen> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(
-              dialogContext,
-              emailController.text.trim(),
-            ),
+            onPressed: () =>
+                Navigator.pop(dialogContext, emailController.text.trim()),
             child: const Text('Send link'),
           ),
         ],
@@ -357,17 +351,15 @@ class _LoginScreenState extends State<LoginScreen> {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (ctx) => _BiometricOnboardingWrapper(
-          session: session,
-        ),
+        builder: (ctx) => _BiometricOnboardingWrapper(session: session),
       ),
     );
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   bool get _showBiometricButton =>
@@ -378,267 +370,282 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Calendar++')),
-      body: SafeArea(
-        child: Container(
-          decoration: AppTheme.backgroundDecoration(authSurface: true),
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Center(
-                            child: Text(
-                              'Calendar++',
-                              style: Theme.of(context).textTheme.headlineSmall,
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          Center(
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: AppTheme.surfaceAlt.withValues(alpha: 0.45),
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: AppTheme.border),
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: AppTheme.backgroundDecoration(authSurface: true),
+          ),
+        ),
+        Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: AppBar(title: const Text('Calendar++')),
+          body: SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Center(
+                              child: Text(
+                                'Calendar++',
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.headlineSmall,
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
+                            ),
+                            const SizedBox(height: 20),
+                            Center(
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: AppTheme.surfaceAlt.withValues(
+                                    alpha: 0.45,
+                                  ),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: AppTheme.border),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _AuthTabButton(
+                                      label: 'LOGIN',
+                                      isSelected: _isLogin,
+                                      onTap: () {
+                                        setState(() {
+                                          _isLogin = true;
+                                        });
+                                      },
+                                    ),
+                                    _AuthTabButton(
+                                      label: 'REGISTER',
+                                      isSelected: !_isLogin,
+                                      onTap: () {
+                                        setState(() {
+                                          _isLogin = false;
+                                        });
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            Center(
+                              child: Text(
+                                _isLogin ? 'Welcome Back' : 'Create Account',
+                                style: Theme.of(context).textTheme.titleLarge,
+                              ),
+                            ),
+
+                            // ── Face ID / Touch ID quick-login ───────────────
+                            if (_showBiometricButton) ...[
+                              const SizedBox(height: 20),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: _isLoading
+                                      ? null
+                                      : () => _loginWithBiometrics(),
+                                  icon: Icon(
+                                    _biometricLabel.toLowerCase().contains(
+                                          'face',
+                                        )
+                                        ? Icons.face_unlock_outlined
+                                        : Icons.fingerprint,
+                                    color: AppTheme.accent,
+                                  ),
+                                  label: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                    child: Text(
+                                      'Sign in with $_biometricLabel',
+                                      style: TextStyle(
+                                        color: AppTheme.accent,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    side: BorderSide(
+                                      color: AppTheme.accent.withValues(
+                                        alpha: 0.5,
+                                      ),
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Row(
                                 children: [
-                                  _AuthTabButton(
-                                    label: 'LOGIN',
-                                    isSelected: _isLogin,
-                                    onTap: () {
-                                      setState(() {
-                                        _isLogin = true;
-                                      });
-                                    },
+                                  const Expanded(child: Divider()),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    child: Text(
+                                      'or sign in with password',
+                                      style: TextStyle(
+                                        color: AppTheme.textMuted,
+                                        fontSize: 12,
+                                      ),
+                                    ),
                                   ),
-                                  _AuthTabButton(
-                                    label: 'REGISTER',
-                                    isSelected: !_isLogin,
-                                    onTap: () {
-                                      setState(() {
-                                        _isLogin = false;
-                                      });
-                                    },
-                                  ),
+                                  const Expanded(child: Divider()),
                                 ],
                               ),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          Center(
-                            child: Text(
-                              _isLogin ? 'Welcome Back' : 'Create Account',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                          ),
+                            ],
 
-                          // ── Face ID / Touch ID quick-login ───────────────
-                          if (_showBiometricButton) ...[
+                            const SizedBox(height: 18),
+                            if (!_isLogin) ...[
+                              TextFormField(
+                                controller: _firstNameController,
+                                decoration: const InputDecoration(
+                                  labelText: 'First name',
+                                  border: OutlineInputBorder(),
+                                ),
+                                validator: (value) {
+                                  if (_isLogin) {
+                                    return null;
+                                  }
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Enter your first name';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 12),
+                              TextFormField(
+                                controller: _lastNameController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Last name',
+                                  border: OutlineInputBorder(),
+                                ),
+                                validator: (value) {
+                                  if (_isLogin) {
+                                    return null;
+                                  }
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Enter your last name';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 12),
+                            ],
+                            TextFormField(
+                              controller: _emailController,
+                              keyboardType: TextInputType.emailAddress,
+                              decoration: const InputDecoration(
+                                labelText: 'Email',
+                                border: OutlineInputBorder(),
+                              ),
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Enter your email';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _passwordController,
+                              obscureText: !_showPassword,
+                              decoration: InputDecoration(
+                                labelText: 'Password',
+                                border: const OutlineInputBorder(),
+                                suffixIcon: IconButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _showPassword = !_showPassword;
+                                    });
+                                  },
+                                  icon: Icon(
+                                    _showPassword
+                                        ? Icons.visibility_off
+                                        : Icons.visibility,
+                                  ),
+                                ),
+                              ),
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Enter your password';
+                                }
+                                if (!_isLogin && value.length < 8) {
+                                  return 'Use at least 8 characters';
+                                }
+                                return null;
+                              },
+                            ),
+                            if (_isLogin) ...[
+                              const SizedBox(height: 6),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton(
+                                  onPressed: _isLoading
+                                      ? null
+                                      : _handleForgotPassword,
+                                  child: const Text('Forgot password?'),
+                                ),
+                              ),
+                            ],
+                            if (!_isLogin) ...[
+                              const SizedBox(height: 12),
+                              TextFormField(
+                                controller: _confirmPasswordController,
+                                obscureText: !_showPassword,
+                                decoration: const InputDecoration(
+                                  labelText: 'Confirm password',
+                                  border: OutlineInputBorder(),
+                                ),
+                                validator: (value) {
+                                  if (_isLogin) {
+                                    return null;
+                                  }
+                                  if (value != _passwordController.text) {
+                                    return 'Passwords do not match';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ],
                             const SizedBox(height: 20),
                             SizedBox(
                               width: double.infinity,
-                              child: OutlinedButton.icon(
-                                onPressed: _isLoading
-                                    ? null
-                                    : () => _loginWithBiometrics(),
-                                icon: Icon(
-                                  _biometricLabel.toLowerCase().contains('face')
-                                      ? Icons.face_unlock_outlined
-                                      : Icons.fingerprint,
-                                  color: AppTheme.accent,
-                                ),
-                                label: Padding(
+                              child: FilledButton(
+                                onPressed: _isLoading ? null : _submit,
+                                child: Padding(
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 12,
                                   ),
-                                  child: Text(
-                                    'Sign in with $_biometricLabel',
-                                    style: TextStyle(
-                                      color: AppTheme.accent,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  side: BorderSide(
-                                    color: AppTheme.accent.withValues(alpha: 0.5),
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            Row(
-                              children: [
-                                const Expanded(child: Divider()),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                  ),
-                                  child: Text(
-                                    'or sign in with password',
-                                    style: TextStyle(
-                                      color: AppTheme.textMuted,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                                const Expanded(child: Divider()),
-                              ],
-                            ),
-                          ],
-
-                          const SizedBox(height: 18),
-                          if (!_isLogin) ...[
-                            TextFormField(
-                              controller: _firstNameController,
-                              decoration: const InputDecoration(
-                                labelText: 'First name',
-                                border: OutlineInputBorder(),
-                              ),
-                              validator: (value) {
-                                if (_isLogin) {
-                                  return null;
-                                }
-                                if (value == null || value.trim().isEmpty) {
-                                  return 'Enter your first name';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _lastNameController,
-                              decoration: const InputDecoration(
-                                labelText: 'Last name',
-                                border: OutlineInputBorder(),
-                              ),
-                              validator: (value) {
-                                if (_isLogin) {
-                                  return null;
-                                }
-                                if (value == null || value.trim().isEmpty) {
-                                  return 'Enter your last name';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 12),
-                          ],
-                          TextFormField(
-                            controller: _emailController,
-                            keyboardType: TextInputType.emailAddress,
-                            decoration: const InputDecoration(
-                              labelText: 'Email',
-                              border: OutlineInputBorder(),
-                            ),
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'Enter your email';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: _passwordController,
-                            obscureText: !_showPassword,
-                            decoration: InputDecoration(
-                              labelText: 'Password',
-                              border: const OutlineInputBorder(),
-                              suffixIcon: IconButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _showPassword = !_showPassword;
-                                  });
-                                },
-                                icon: Icon(
-                                  _showPassword
-                                      ? Icons.visibility_off
-                                      : Icons.visibility,
-                                ),
-                              ),
-                            ),
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return 'Enter your password';
-                              }
-                              if (!_isLogin && value.length < 8) {
-                                return 'Use at least 8 characters';
-                              }
-                              return null;
-                            },
-                          ),
-                          if (_isLogin) ...[
-                            const SizedBox(height: 6),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton(
-                                onPressed:
-                                    _isLoading ? null : _handleForgotPassword,
-                                child: const Text('Forgot password?'),
-                              ),
-                            ),
-                          ],
-                          if (!_isLogin) ...[
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _confirmPasswordController,
-                              obscureText: !_showPassword,
-                              decoration: const InputDecoration(
-                                labelText: 'Confirm password',
-                                border: OutlineInputBorder(),
-                              ),
-                              validator: (value) {
-                                if (_isLogin) {
-                                  return null;
-                                }
-                                if (value != _passwordController.text) {
-                                  return 'Passwords do not match';
-                                }
-                                return null;
-                              },
-                            ),
-                          ],
-                          const SizedBox(height: 20),
-                          SizedBox(
-                            width: double.infinity,
-                            child: FilledButton(
-                              onPressed: _isLoading ? null : _submit,
-                              child: Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
-                                child: _isLoading
-                                    ? const SizedBox(
-                                        height: 20,
-                                        width: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
+                                  child: _isLoading
+                                      ? const SizedBox(
+                                          height: 20,
+                                          width: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : Text(
+                                          _isLogin ? 'Login' : 'Create account',
                                         ),
-                                      )
-                                    : Text(
-                                        _isLogin
-                                            ? 'Login'
-                                            : 'Create account',
-                                      ),
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -647,7 +654,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 }
@@ -672,10 +679,7 @@ class _BiometricOnboardingWrapperState
       Future.delayed(const Duration(milliseconds: 800), () {
         if (mounted) {
           unawaited(
-            maybeSuggestBiometricSetup(
-              context,
-              session: widget.session,
-            ),
+            maybeSuggestBiometricSetup(context, session: widget.session),
           );
         }
       });
@@ -767,9 +771,7 @@ class _BiometricSetupSheet extends StatelessWidget {
                   return;
                 }
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('$biometricLabel sign in enabled.'),
-                  ),
+                  SnackBar(content: Text('$biometricLabel sign in enabled.')),
                 );
                 Navigator.pop(context);
               },
@@ -795,9 +797,7 @@ class _BiometricSetupSheet extends StatelessWidget {
 enum _PromptBiometricRecoveryAction { retry, settings }
 
 class _PromptBiometricRecoverySheet extends StatelessWidget {
-  const _PromptBiometricRecoverySheet({
-    required this.biometricLabel,
-  });
+  const _PromptBiometricRecoverySheet({required this.biometricLabel});
 
   final String biometricLabel;
 
@@ -826,19 +826,14 @@ class _PromptBiometricRecoverySheet extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             'You can retry the system biometric prompt now. If you denied it before, open system settings and allow $biometricLabel for Calendar++ first.',
-            style: const TextStyle(
-              color: AppTheme.textMuted,
-              height: 1.45,
-            ),
+            style: const TextStyle(color: AppTheme.textMuted, height: 1.45),
           ),
           const SizedBox(height: 18),
           SizedBox(
             width: double.infinity,
             child: FilledButton(
-              onPressed: () => Navigator.pop(
-                context,
-                _PromptBiometricRecoveryAction.retry,
-              ),
+              onPressed: () =>
+                  Navigator.pop(context, _PromptBiometricRecoveryAction.retry),
               child: Text('Try $biometricLabel again'),
             ),
           ),

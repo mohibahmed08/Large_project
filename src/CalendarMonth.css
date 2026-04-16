@@ -4,69 +4,8 @@
   display: grid;
 }
 
-/* ================= MONTH NAME ================= */
-.calendar-month-interactable-header {
-  position: sticky;
-  top: 0;
-  z-index: 9;
-
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) 56px minmax(240px, 360px);
-  align-items: center;
-  gap: 12px;
-
-  user-select: none; /* prevent text highlighting */
-
-  padding: 10px 16px;
-  background-color: rgba(26, 26, 46, 0.5); /* lighter than full black */
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);     /* Safari */
-}
-
-.calendar-month-header-side {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-}
-
-.calendar-month-month-name {
-  cursor: pointer;
-  font-weight: 600;
-  text-align: center; /* center the text inside */
-}
-.calendar-month-month-name,
-.calendar-month-arrow {
-  cursor: pointer;
-  margin: 0; /* remove default margin */
-  font-weight: 600;
-}
-
 .calendar-month-arrow{
   filter: invert(1) brightness(2);
-}
-
-/* ================= WEEKDAY HEADER ================= */
-.calendar-weekdays {
-  position: sticky;
-  top: 57px; /* match height of month header (content + padding) */
-  z-index: 10;
-
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-
-  text-align: center;
-  font-weight: 600;
-
-  padding: 8px 0;  /* internal spacing for the header cells */
-  margin: 0;        /* remove default margin */
-  background-color: rgba(26, 26, 46, 0.5); /* lighter than full black */
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);     /* Safari */
-}
-
-.weekday {
-  padding: 10px; /* remove extra padding from individual weekday cells */
 }
 /* ================= DAY GRID ================= */
 
