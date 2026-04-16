@@ -1,0 +1,15 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["5QT26Z28QX.com.jonathan.calendar"],
+        "components": [
+          {
+            "/": "/*",
+            "comment": "Open Calendar++ web links in the iOS app when installed."
+          }
+        ]
+      }
+    ]
+  }
+}

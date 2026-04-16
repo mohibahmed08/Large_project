@@ -23,6 +23,11 @@ name was obtained through GoDaddy.
 ## How To Access Application (as of April 16, 2026)
 **http://calendarplusplus.xyz/**
 
+## Deployment Notes
+* iOS universal links require the app entitlement `applinks:calendarplusplus.xyz` and the server endpoint `/.well-known/apple-app-site-association`.
+* The checked-in nginx example is at `backend/deploy/nginx-calendarplusplus.conf`.
+* nginx must keep `client_max_body_size 24m;` so larger base64 JSON image uploads from mobile are not rejected before Express handles them.
+
 ## AI Use
 We acknowledge the use of AI to help set up, debug, and configure this application, helping us learn along the way.
 

@@ -1,6 +1,7 @@
 const express    = require('express');
 const bodyParser = require('body-parser');
 const cors       = require('cors');
+const fs         = require('fs');
 const path       = require('path');
 
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
@@ -11,6 +12,24 @@ const client = new MongoClient(process.env.MONGODB_URI);
 client.connect();
 
 const app = express();
+const appleAssociationPath = path.resolve(__dirname, 'apple-app-site-association');
+const appleAssociationBody = fs.existsSync(appleAssociationPath)
+    ? fs.readFileSync(appleAssociationPath, 'utf8')
+    : JSON.stringify({
+        applinks: {
+            details: [
+                {
+                    appIDs: ['5QT26Z28QX.com.jonathan.calendar'],
+                    components: [
+                        {
+                            '/': '/*',
+                            comment: 'Open Calendar++ web links in the iOS app when installed.',
+                        },
+                    ],
+                },
+            ],
+        },
+    });
 
 app.use(cors());
 app.use(bodyParser.json({ limit: '24mb' }));
@@ -28,6 +47,16 @@ app.use((req, res, next) =>
     );
     next();
 });
+
+function sendAppleAssociation(req, res)
+{
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.status(200).send(appleAssociationBody);
+}
+
+app.get('/apple-app-site-association', sendAppleAssociation);
+app.get('/.well-known/apple-app-site-association', sendAppleAssociation);
 
 // API routing
 const api = require('./api.js');

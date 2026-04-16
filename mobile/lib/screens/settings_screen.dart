@@ -1608,15 +1608,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _shareThemePack(BuildContext context, MobileTheme theme) async {
     final box = context.findRenderObject() as RenderBox?;
-    MobileTheme shareTheme = theme;
-    if ((shareTheme.shareUrl ?? '').trim().isEmpty &&
-        (shareTheme.shareCode ?? '').trim().isEmpty) {
-      final result = await _themeService.saveSharedTheme(_session, shareTheme);
-      _session = result.session;
-      widget.onSessionUpdated(_session);
-      shareTheme = result.theme;
-      await _loadTheme();
-    }
+    final result = await _themeService.saveSharedTheme(_session, theme);
+    _session = result.session;
+    widget.onSessionUpdated(_session);
+    final shareTheme = result.theme;
+    await _loadTheme();
     if (!mounted) return;
     await Share.share(
       'Check out this Calendar++ theme: ${shareTheme.name}'
@@ -1630,17 +1626,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _openThemeShareSheet(MobileTheme theme) async {
-    MobileTheme shareTheme = theme;
-    if ((shareTheme.shareUrl ?? '').trim().isEmpty &&
-        (shareTheme.shareCode ?? '').trim().isEmpty) {
-      final result = await _themeService.saveSharedTheme(_session, shareTheme);
-      _session = result.session;
-      widget.onSessionUpdated(_session);
-      shareTheme = result.theme;
-      await _loadTheme();
-    }
+    final initialResult = await _themeService.saveSharedTheme(_session, theme);
+    _session = initialResult.session;
+    widget.onSessionUpdated(_session);
+    MobileTheme shareTheme = initialResult.theme;
+    await _loadTheme();
     final slugController = TextEditingController(
       text: _suggestThemeSlug(shareTheme),
+    );
+    final titleController = TextEditingController(text: shareTheme.name);
+    final descriptionController = TextEditingController(
+      text: shareTheme.description,
     );
     Timer? slugDebounce;
     String mode = 'qr';
@@ -1651,6 +1647,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (!mounted) {
       slugController.dispose();
+      titleController.dispose();
+      descriptionController.dispose();
       return;
     }
     await showModalBottomSheet<void>(
@@ -1668,14 +1666,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 isSavingSlug = true;
               });
               try {
+                final draftTheme = shareTheme.copyWith(
+                  name: titleController.text.trim().isEmpty
+                      ? shareTheme.name
+                      : titleController.text.trim(),
+                  description: descriptionController.text.trim(),
+                );
                 final result = await _themeService.saveSharedTheme(
                   _session,
-                  shareTheme,
+                  draftTheme,
                   shareSlug: shareSlug,
                 );
                 _session = result.session;
                 widget.onSessionUpdated(_session);
                 shareTheme = result.theme;
+                titleController.value = TextEditingValue(
+                  text: shareTheme.name,
+                  selection: TextSelection.collapsed(
+                    offset: shareTheme.name.length,
+                  ),
+                );
+                descriptionController.value = TextEditingValue(
+                  text: shareTheme.description,
+                  selection: TextSelection.collapsed(
+                    offset: shareTheme.description.length,
+                  ),
+                );
                 slugController.value = TextEditingValue(
                   text: _suggestThemeSlug(shareTheme),
                   selection: TextSelection.collapsed(
@@ -1861,6 +1877,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ),
                             ),
                             const SizedBox(height: 16),
+                            TextField(
+                              controller: titleController,
+                              textCapitalization: TextCapitalization.words,
+                              decoration: const InputDecoration(
+                                labelText: 'Theme title',
+                                hintText: 'My custom pack',
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: descriptionController,
+                              minLines: 2,
+                              maxLines: 3,
+                              decoration: const InputDecoration(
+                                labelText: 'Theme description',
+                                hintText: 'A short summary of this look.',
+                              ),
+                            ),
+                            const SizedBox(height: 16),
                             Center(
                               child: FittedBox(
                                 fit: BoxFit.scaleDown,
@@ -1963,7 +1998,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       child: OutlinedButton.icon(
                                         onPressed: () => _shareThemePack(
                                           context,
-                                          shareTheme,
+                                          shareTheme.copyWith(
+                                            name:
+                                                titleController.text
+                                                    .trim()
+                                                    .isEmpty
+                                                ? shareTheme.name
+                                                : titleController.text.trim(),
+                                            description: descriptionController
+                                                .text
+                                                .trim(),
+                                          ),
                                         ),
                                         icon: const Icon(
                                           Icons.ios_share_outlined,
@@ -2100,8 +2145,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: OutlinedButton(
-                                    onPressed: () =>
-                                        _shareThemePack(context, shareTheme),
+                                    onPressed: () => _shareThemePack(
+                                      context,
+                                      shareTheme.copyWith(
+                                        name:
+                                            titleController.text.trim().isEmpty
+                                            ? shareTheme.name
+                                            : titleController.text.trim(),
+                                        description: descriptionController.text
+                                            .trim(),
+                                      ),
+                                    ),
                                     child: const Text('Open Share Sheet'),
                                   ),
                                 ),
@@ -2121,6 +2175,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     slugDebounce?.cancel();
     slugController.dispose();
+    titleController.dispose();
+    descriptionController.dispose();
   }
 
   Future<void> _deleteThemeFromLibrary(MobileTheme theme) async {

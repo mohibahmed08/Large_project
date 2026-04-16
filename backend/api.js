@@ -1438,19 +1438,19 @@ function normalizeThemeGalleryImages(images)
 function inferThemeBackgroundMode(theme)
 {
     const mode = String(theme?.backgroundMode || '').trim();
-    if(['gradient', 'universal', 'perScene'].includes(mode))
+    if(['gradient', 'universal', 'perScene', 'none', 'weatherPackage', 'customImage'].includes(mode))
     {
         return mode;
-    }
-
-    if(theme?.gradient?.colors?.length >= 2)
-    {
-        return 'gradient';
     }
 
     if(theme?.images?.universal || theme?.galleryImages?.length)
     {
         return 'universal';
+    }
+
+    if(theme?.gradient?.colors?.length >= 2)
+    {
+        return 'gradient';
     }
 
     return 'perScene';
