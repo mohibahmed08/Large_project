@@ -710,6 +710,7 @@ function App() {
     const themeImportInputRef = useRef(null);
     const customizeSectionRef = useRef(null);
     const sharedThemeImportInFlight = useRef(false);
+    const aiChatFeedRef = useRef(null);
 
     const currentDate = new Date();
     const verticalDateString = selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -916,6 +917,24 @@ function App() {
             searchInputRef.current?.focus();
         });
     }, [searchOpen]);
+
+    useEffect(() => {
+        if (aiMode !== 'chat') {
+            return;
+        }
+
+        window.requestAnimationFrame(() => {
+            const feed = aiChatFeedRef.current;
+            if (!feed) {
+                return;
+            }
+
+            feed.scrollTo({
+                top: feed.scrollHeight,
+                behavior: aiLoading ? 'auto' : 'smooth',
+            });
+        });
+    }, [messages, aiLoading, aiMode]);
 
     const refreshCalendar = () => {
         setCalendarRefreshKey((prev) => prev + 1);
@@ -2652,7 +2671,7 @@ function App() {
                                     <div className="ai-chat-shell">
                                         <div className="ai-main-shell chat-mode">
                                             <div className="ai-section ai-chat active">
-                                                <div className="ai-chat-feed">
+                                                <div className="ai-chat-feed" ref={aiChatFeedRef}>
                                                     {messages.map((message, index) => (
                                                         <div
                                                             key={`${message.role}-${index}`}

@@ -448,10 +448,66 @@ function sleep(ms)
     });
 }
 
+function isAssistantDebugEnabled(requested = false)
+{
+    return requested === true || readBooleanEnv('OPENAI_ASSISTANT_DEBUG', false);
+}
+
+function formatAssistantDebugValue(value)
+{
+    if(value === null || value === undefined)
+    {
+        return '';
+    }
+
+    if(typeof value === 'string')
+    {
+        return value;
+    }
+
+    try
+    {
+        return JSON.stringify(value);
+    }
+    catch
+    {
+        return String(value);
+    }
+}
+
+function emitAssistantDebug(handlers, event)
+{
+    handlers?.onDebug?.({
+        timestamp: new Date().toISOString(),
+        ...event,
+    });
+}
+
 function readOptionalEnv(name)
 {
     const value = String(process.env[name] || '').trim();
     return value || '';
+}
+
+function readBooleanEnv(name, fallback = false)
+{
+    const value = readOptionalEnv(name).toLowerCase();
+    if(!value)
+    {
+        return fallback;
+    }
+
+    if(['1', 'true', 'yes', 'on'].includes(value))
+    {
+        return true;
+    }
+
+    if(['0', 'false', 'no', 'off'].includes(value))
+    {
+        return false;
+    }
+
+    return fallback;
 }
 
 function readPositiveIntEnv(name, fallback, options = {})
@@ -502,6 +558,21 @@ function getAssistantMaxToolRounds()
 function getOpenAIMaxRetries()
 {
     return readPositiveIntEnv('OPENAI_MAX_RETRIES', 3, { min: 1, max: 6 });
+}
+
+function shouldValidateAssistantReplies()
+{
+    return readBooleanEnv('OPENAI_VALIDATE_REPLIES', true);
+}
+
+function getConfiguredOpenAIValidatorModel()
+{
+    return readOptionalEnv('OPENAI_VALIDATOR_MODEL') || readOptionalEnv('OPENAI_FALLBACK_MODEL') || 'gpt-4.1-mini';
+}
+
+function getAssistantValidationMaxPasses()
+{
+    return readPositiveIntEnv('OPENAI_VALIDATION_MAX_PASSES', 3, { min: 1, max: 3 });
 }
 
 function isRetryableOpenAIStatus(status)
@@ -575,6 +646,9 @@ function buildOpenAIRequestBody(input, options = {})
         tools = [],
         stream = false,
         reasoningEffort = '',
+        reasoningSummary = '',
+        truncation = '',
+        previousResponseId = '',
     } = options;
 
     const requestBody = {
@@ -597,6 +671,24 @@ function buildOpenAIRequestBody(input, options = {})
         requestBody.reasoning = {
             effort: reasoningEffort,
         };
+    }
+
+    if(reasoningSummary)
+    {
+        requestBody.reasoning = {
+            ...(requestBody.reasoning || {}),
+            summary: reasoningSummary,
+        };
+    }
+
+    if(truncation)
+    {
+        requestBody.truncation = truncation;
+    }
+
+    if(previousResponseId)
+    {
+        requestBody.previous_response_id = previousResponseId;
     }
 
     if(useWebSearch)
@@ -2508,6 +2600,513 @@ function shouldUseAssistantWebSearch(messages = [])
     ].some((phrase) => combinedText.includes(phrase));
 }
 
+function shouldUseAssistantComputerUse(messages = [])
+{
+    const combinedText = messages
+        .map((message) => typeof message?.content === 'string' ? message.content : '')
+        .join(' ')
+        .toLowerCase();
+
+    if(!combinedText)
+    {
+        return false;
+    }
+
+    const explicitRequest = [
+        'use browser',
+        'use the browser',
+        'use virtual computer',
+        'virtual computer',
+        'open a browser',
+        'browse for me',
+    ].some((phrase) => combinedText.includes(phrase));
+
+    const ticketingIntent = [
+        'movie',
+        'movies',
+        'showtime',
+        'showtimes',
+        'theater',
+        'theatre',
+        'cinema',
+        'seat',
+        'seats',
+        'seat map',
+        'ticket',
+        'tickets',
+        'available seats',
+        'amc',
+        'regal',
+        'fandango',
+    ].some((phrase) => combinedText.includes(phrase));
+
+    return explicitRequest || ticketingIntent;
+}
+
+function isAssistantComputerUseEnabled()
+{
+    return readBooleanEnv('OPENAI_COMPUTER_USE_ENABLED', false);
+}
+
+function getConfiguredOpenAIComputerUseModel()
+{
+    return readOptionalEnv('OPENAI_COMPUTER_USE_MODEL') || 'gpt-5.4';
+}
+
+function getAssistantComputerUseMaxSteps()
+{
+    return readPositiveIntEnv('OPENAI_COMPUTER_USE_MAX_STEPS', 12, { min: 1, max: 30 });
+}
+
+function dataUrlForPng(buffer)
+{
+    return `data:image/png;base64,${Buffer.from(buffer).toString('base64')}`;
+}
+
+function normalizeComputerKeyName(key)
+{
+    const normalized = String(key || '').trim();
+    if(!normalized)
+    {
+        return '';
+    }
+
+    const upper = normalized.toUpperCase();
+    const keyMap = {
+        CTRL: 'Control',
+        CONTROL: 'Control',
+        CMD: 'Meta',
+        COMMAND: 'Meta',
+        OPTION: 'Alt',
+        ESC: 'Escape',
+        DEL: 'Delete',
+        BKSP: 'Backspace',
+        PGUP: 'PageUp',
+        PGDN: 'PageDown',
+        SPACE: 'Space',
+        TAB: 'Tab',
+        ENTER: 'Enter',
+        RETURN: 'Enter',
+        UP: 'ArrowUp',
+        DOWN: 'ArrowDown',
+        LEFT: 'ArrowLeft',
+        RIGHT: 'ArrowRight',
+    };
+
+    if(keyMap[upper])
+    {
+        return keyMap[upper];
+    }
+
+    if(/^F\d{1,2}$/.test(upper))
+    {
+        return upper;
+    }
+
+    return normalized.length === 1 ? normalized : normalized[0].toUpperCase() + normalized.slice(1).toLowerCase();
+}
+
+async function executeComputerUseAction(page, action)
+{
+    const actionType = String(action?.type || '').trim();
+    const modifierKeys = Array.isArray(action?.keys)
+        ? action.keys.map((value) => normalizeComputerKeyName(value)).filter(Boolean)
+        : [];
+    const withModifiers = async (callback) =>
+    {
+        for(const key of modifierKeys)
+        {
+            await page.keyboard.down(key);
+        }
+
+        try
+        {
+            await callback();
+        }
+        finally
+        {
+            for(const key of modifierKeys.slice().reverse())
+            {
+                await page.keyboard.up(key).catch(() => {});
+            }
+        }
+    };
+
+    switch(actionType)
+    {
+        case 'click':
+        {
+            const button = action?.button === 'right' ? 'right' : 'left';
+            await withModifiers(() => page.mouse.click(Number(action?.x || 0), Number(action?.y || 0), { button }));
+            return;
+        }
+
+        case 'double_click':
+        {
+            const button = action?.button === 'right' ? 'right' : 'left';
+            await withModifiers(() => page.mouse.dblclick(Number(action?.x || 0), Number(action?.y || 0), { button }));
+            return;
+        }
+
+        case 'scroll':
+            await withModifiers(async () =>
+            {
+                await page.mouse.move(Number(action?.x || 0), Number(action?.y || 0));
+                await page.mouse.wheel(Number(action?.scroll_x || 0), Number(action?.scroll_y || 0));
+            });
+            return;
+
+        case 'keypress':
+        {
+            const keys = Array.isArray(action?.keys) ? action.keys.map((value) => normalizeComputerKeyName(value)).filter(Boolean) : [];
+            if(keys.length === 0)
+            {
+                return;
+            }
+
+            if(keys.length === 1)
+            {
+                await page.keyboard.press(keys[0]);
+                return;
+            }
+
+            for(let index = 0; index < keys.length - 1; index += 1)
+            {
+                await page.keyboard.down(keys[index]);
+            }
+
+            await page.keyboard.press(keys[keys.length - 1]);
+
+            for(let index = keys.length - 2; index >= 0; index -= 1)
+            {
+                await page.keyboard.up(keys[index]);
+            }
+            return;
+        }
+
+        case 'type':
+            await page.keyboard.type(String(action?.text || ''));
+            return;
+
+        case 'wait':
+            await sleep(1500);
+            return;
+
+        case 'move':
+            await withModifiers(() => page.mouse.move(Number(action?.x || 0), Number(action?.y || 0)));
+            return;
+
+        case 'drag':
+        {
+            const pathPoints = Array.isArray(action?.path) ? action.path : [];
+            if(pathPoints.length === 0)
+            {
+                return;
+            }
+
+            await withModifiers(async () =>
+            {
+                await page.mouse.move(Number(pathPoints[0]?.x || 0), Number(pathPoints[0]?.y || 0));
+                await page.mouse.down();
+                for(const point of pathPoints.slice(1))
+                {
+                    await page.mouse.move(Number(point?.x || 0), Number(point?.y || 0));
+                }
+                await page.mouse.up();
+            });
+            return;
+        }
+
+        case 'screenshot':
+            return;
+
+        default:
+            throw new Error(`Unsupported computer action: ${actionType || 'unknown'}`);
+    }
+}
+
+async function captureComputerScreenshot(page, handlers = {})
+{
+    const attempts = [
+        {
+            label: 'primary',
+            prepare: async () =>
+            {
+                await page.waitForLoadState('domcontentloaded', { timeout: 2500 }).catch(() => {});
+                await page.evaluate(() =>
+                {
+                    try
+                    {
+                        const style = document.getElementById('__calendarpp_cua_stabilize__') || document.createElement('style');
+                        style.id = '__calendarpp_cua_stabilize__';
+                        style.textContent = '*{animation:none!important;transition:none!important;caret-color:transparent!important;}';
+                        if(!style.parentNode)
+                        {
+                            document.documentElement.appendChild(style);
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore pages that restrict script execution.
+                    }
+                }).catch(() => {});
+            },
+            options: { type: 'png', animations: 'disabled' },
+        },
+        {
+            label: 'settled',
+            prepare: async () =>
+            {
+                await sleep(400);
+                await page.waitForLoadState('networkidle', { timeout: 2000 }).catch(() => {});
+            },
+            options: { type: 'png', animations: 'disabled' },
+        },
+        {
+            label: 'fallback',
+            prepare: async () =>
+            {
+                await sleep(300);
+            },
+            options: { type: 'png' },
+        },
+    ];
+
+    let lastError = null;
+    for(const attempt of attempts)
+    {
+        try
+        {
+            await attempt.prepare();
+            const image = await page.screenshot(attempt.options);
+            emitAssistantDebug(handlers, {
+                scope: 'browser',
+                message: `Captured screenshot with ${attempt.label} strategy`,
+                url: page.url(),
+                title: await page.title().catch(() => ''),
+            });
+            return dataUrlForPng(image);
+        }
+        catch(error)
+        {
+            lastError = error;
+            emitAssistantDebug(handlers, {
+                scope: 'browser',
+                message: `Screenshot attempt failed (${attempt.label})`,
+                url: page.url(),
+                error: error?.message || String(error || ''),
+            });
+        }
+    }
+
+    throw lastError || new Error('Unable to capture browser screenshot');
+}
+
+async function runComputerUseAssistant(apiKey, messages, context = {})
+{
+    if(!isAssistantComputerUseEnabled())
+    {
+        return null;
+    }
+
+    let playwright;
+    try
+    {
+        ({ chromium: playwright } = require('playwright'));
+    }
+    catch
+    {
+        return null;
+    }
+
+    const handlers = context.handlers || {};
+    const debugEnabled = isAssistantDebugEnabled(context.debug);
+    const displayWidth = 1280;
+    const displayHeight = 900;
+    const maxSteps = getAssistantComputerUseMaxSteps();
+    const toolSpec = {
+        type: 'computer',
+    };
+    const recentConversation = messages
+        .slice(-6)
+        .map((message) => `${message.role === 'assistant' ? 'Assistant' : 'User'}: ${String(message?.content || '').trim()}`)
+        .join('\n');
+    const browserPrompt = `Use the browser to help with the user's request.
+Only interact with public web pages. Do not sign in, purchase tickets, enter payment details, or share personal data.
+If movie seats are requested, only inspect publicly visible availability and stop before checkout.
+Prefer trusted sites and summarize the result briefly with plain links if useful.
+
+Conversation:
+${recentConversation}`;
+
+    let browser;
+    try
+    {
+        handlers.onStatus?.('Opening a browser');
+        emitAssistantDebug(handlers, {
+            scope: 'browser',
+            message: 'Launching Playwright browser',
+        });
+        browser = await playwright.launch({
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        });
+        const page = await browser.newPage({
+            viewport: {
+                width: displayWidth,
+                height: displayHeight,
+            },
+        });
+        if(debugEnabled)
+        {
+            page.on('framenavigated', (frame) =>
+            {
+                if(frame === page.mainFrame())
+                {
+                    emitAssistantDebug(handlers, {
+                        scope: 'browser',
+                        message: `Navigated to ${frame.url()}`,
+                    });
+                }
+            });
+            page.on('requestfailed', (request) =>
+            {
+                emitAssistantDebug(handlers, {
+                    scope: 'browser',
+                    message: `Request failed: ${request.method()} ${request.url()}`,
+                    error: request.failure()?.errorText || '',
+                });
+            });
+            page.on('console', (msg) =>
+            {
+                const consoleText = String(msg.text() || '').trim();
+                if(consoleText)
+                {
+                    emitAssistantDebug(handlers, {
+                        scope: 'browser-console',
+                        message: consoleText.slice(0, 240),
+                    });
+                }
+            });
+        }
+        await page.goto('https://www.google.com', { waitUntil: 'domcontentloaded' });
+        emitAssistantDebug(handlers, {
+            scope: 'browser',
+            message: `Opened initial page ${page.url()}`,
+        });
+
+        let response = await createOpenAIResponse(apiKey, [
+            {
+                role: 'user',
+                content: [
+                    { type: 'input_text', text: browserPrompt },
+                ],
+            },
+        ], {
+                model: getConfiguredOpenAIComputerUseModel(),
+                tools: [toolSpec],
+                reasoningSummary: 'concise',
+                onStatus: handlers.onStatus,
+            });
+
+        for(let step = 0; step < maxSteps; step += 1)
+        {
+            const computerCall = Array.isArray(response?.output)
+                ? response.output.find((item) => item?.type === 'computer_call')
+                : null;
+
+            if(!computerCall)
+            {
+                const reply = extractResponseText(response);
+                emitAssistantDebug(handlers, {
+                    scope: 'browser',
+                    message: reply
+                        ? 'Browser model returned a direct reply without any browser action'
+                        : 'Browser model returned no browser action and no direct reply',
+                    details: Array.isArray(response?.output)
+                        ? response.output.map((item) => item?.type || 'unknown')
+                        : [],
+                });
+                return reply || null;
+            }
+
+            if(Array.isArray(computerCall?.pending_safety_checks) && computerCall.pending_safety_checks.length > 0)
+            {
+                emitAssistantDebug(handlers, {
+                    scope: 'browser',
+                    message: 'Stopping for browser safety checks',
+                    details: computerCall.pending_safety_checks,
+                });
+                return 'I found a page that triggered a browser safety check, so I stopped before taking the action. If you want, ask again with a narrower public-web request and I can try a safer route.';
+            }
+
+            handlers.onStatus?.('Browsing the web');
+            const actions = Array.isArray(computerCall.actions)
+                ? computerCall.actions
+                : (computerCall.action ? [computerCall.action] : []);
+            if(actions.length === 0)
+            {
+                emitAssistantDebug(handlers, {
+                    scope: 'browser',
+                    step: step + 1,
+                    url: page.url(),
+                    message: 'Computer call did not include any actionable browser steps',
+                });
+            }
+            emitAssistantDebug(handlers, {
+                scope: 'browser',
+                step: step + 1,
+                url: page.url(),
+                action: actions,
+                message: `Executing ${actions.length} browser action${actions.length === 1 ? '' : 's'}`,
+            });
+            for(const action of actions)
+            {
+                await executeComputerUseAction(page, action);
+            }
+            await sleep(800);
+            emitAssistantDebug(handlers, {
+                scope: 'browser',
+                step: step + 1,
+                url: page.url(),
+                title: await page.title().catch(() => ''),
+                message: 'Captured browser state after action',
+            });
+
+            response = await createOpenAIResponse(apiKey, [
+                {
+                    type: 'computer_call_output',
+                    call_id: computerCall.call_id,
+                    acknowledged_safety_checks: [],
+                    output: {
+                        type: 'computer_screenshot',
+                        image_url: await captureComputerScreenshot(page, handlers),
+                    },
+                },
+            ], {
+                model: getConfiguredOpenAIComputerUseModel(),
+                tools: [toolSpec],
+                previousResponseId: response.id,
+                onStatus: handlers.onStatus,
+            });
+        }
+
+        emitAssistantDebug(handlers, {
+            scope: 'browser',
+            message: 'Stopped after reaching the browser step limit',
+        });
+        return 'I browsed for a while but did not reach a reliable answer before the step limit, so I stopped instead of guessing.';
+    }
+    finally
+    {
+        emitAssistantDebug(handlers, {
+            scope: 'browser',
+            message: 'Closing Playwright browser',
+        });
+        await browser?.close().catch(() => {});
+    }
+}
+
 function getTaskStartDate(task)
 {
     return task.dueDate || task.startDate || null;
@@ -3671,6 +4270,98 @@ function splitAssistantReplyForStreaming(text)
     return chunks;
 }
 
+async function validateAssistantReply(apiKey, messages, context, draftReply, handlers = {})
+{
+    if(!shouldValidateAssistantReplies())
+    {
+        return normalizeAssistantReply(draftReply);
+    }
+
+    const normalizedDraft = normalizeAssistantReply(draftReply);
+    if(!normalizedDraft)
+    {
+        return '';
+    }
+
+    const recentConversation = messages
+        .slice(-6)
+        .map((message) => `${message.role === 'assistant' ? 'Assistant' : 'User'}: ${String(message?.content || '').trim()}`)
+        .join('\n');
+
+    const maxPasses = getAssistantValidationMaxPasses();
+    let candidateReply = normalizedDraft;
+
+    for(let passIndex = 0; passIndex < maxPasses; passIndex += 1)
+    {
+        handlers.onStatus?.(passIndex === 0 ? 'Validating the reply' : `Revising the reply (${passIndex + 1}/${maxPasses})`);
+
+        let heartbeat = null;
+        try
+        {
+            const validationResponse = await callOpenAI(apiKey, [
+                {
+                    role: 'user',
+                    content: `Review the draft reply and decide whether it should pass as-is or be revised.
+Your job is to enforce all of the following:
+- The reply directly answers the user's actual question.
+- The reply is informative and specific enough to be useful, not vague or generic.
+- The reply is accurate and does not overclaim certainty.
+- The reply is well formatted for chat, with clean markdown bullets/links when helpful.
+- The reply is conversational and concise, usually 1 to 4 short sentences or a very short list.
+- The reply is not needlessly long, repetitive, robotic, or padded with filler.
+- Do not add headings or tables unless the user explicitly asked for them.
+- Preserve meaningful markdown bullets and links. Fix broken markdown if needed.
+- Prefer a warm, natural tone over stiff wording.
+
+If the draft is already strong on all points, return pass unchanged.
+If any part is weak, revise it into the best possible final answer while keeping it concise.
+
+Return valid JSON only in this exact shape:
+{"verdict":"pass"|"revise","reply":"..."}
+
+Conversation:
+${recentConversation}
+
+System guidance:
+${context.systemPrompt}
+
+Draft reply:
+${candidateReply}`,
+                },
+            ], {
+                model: getConfiguredOpenAIValidatorModel(),
+                instructions: 'Return only the JSON object. No markdown fences. No commentary.',
+                reasoningEffort: 'minimal',
+                onStatus: handlers.onStatus,
+            });
+
+            const trimmedResponse = String(validationResponse || '').trim();
+            const jsonMatch = trimmedResponse.match(/\{[\s\S]*\}/);
+            if(!jsonMatch)
+            {
+                return candidateReply;
+            }
+
+            const parsed = JSON.parse(jsonMatch[0]);
+            const verdict = String(parsed?.verdict || '').trim().toLowerCase();
+            const nextReply = normalizeAssistantReply(parsed?.reply || candidateReply) || candidateReply;
+
+            candidateReply = nextReply;
+
+            if(verdict !== 'revise')
+            {
+                return candidateReply;
+            }
+        }
+        catch
+        {
+            return candidateReply;
+        }
+    }
+
+    return candidateReply;
+}
+
 async function runCalendarAssistant(apiKey, db, userId, messages, context)
 {
     const tools = buildCalendarAssistantTools();
@@ -3678,6 +4369,7 @@ async function runCalendarAssistant(apiKey, db, userId, messages, context)
     let calendarChanged = false;
     const toolCallOutputs = new Map();
     const useWebSearch = shouldUseAssistantWebSearch(messages);
+    const useComputerUse = shouldUseAssistantComputerUse(messages);
     const handlers = context.handlers || {};
     const maxToolRounds = getAssistantMaxToolRounds();
 
@@ -3685,7 +4377,7 @@ async function runCalendarAssistant(apiKey, db, userId, messages, context)
     {
         handlers.onStatus?.('Writing your reply');
 
-        if(context.streamFinal)
+        if(context.streamFinal && !shouldValidateAssistantReplies())
         {
             try
             {
@@ -3708,11 +4400,36 @@ async function runCalendarAssistant(apiKey, db, userId, messages, context)
         });
 
         return {
-            reply,
+            reply: await validateAssistantReply(apiKey, messages, context, reply, handlers),
             calendarChanged,
             streamedFinal: false,
         };
     };
+
+    if(useComputerUse)
+    {
+        try
+        {
+            const browserReply = await runComputerUseAssistant(apiKey, messages, { handlers });
+            if(browserReply)
+            {
+                return {
+                    reply: await validateAssistantReply(apiKey, messages, context, browserReply, handlers),
+                    calendarChanged,
+                    streamedFinal: false,
+                };
+            }
+        }
+        catch(error)
+        {
+            emitAssistantDebug(handlers, {
+                scope: 'browser',
+                message: 'Browser flow failed and is falling back to standard search',
+                error: error?.message || String(error || ''),
+            });
+            handlers.onStatus?.('Falling back to standard search');
+        }
+    }
 
     for(let iteration = 0; iteration < maxToolRounds; iteration += 1)
     {
@@ -3739,7 +4456,7 @@ async function runCalendarAssistant(apiKey, db, userId, messages, context)
             {
                 handlers.onStatus?.('Writing your reply');
                 return {
-                    reply,
+                    reply: await validateAssistantReply(apiKey, messages, context, reply, handlers),
                     calendarChanged,
                     streamedFinal: false,
                 };
@@ -5662,7 +6379,17 @@ Help the user manage their schedule, suggest events, answer questions about thei
 
     app.post('/api/chatstream', async (req, res) =>
     {
-        const { userId, jwtToken, messages, latitude, longitude, localNow, timeZone, utcOffsetMinutes } = req.body;
+        const {
+            userId,
+            jwtToken,
+            messages,
+            latitude,
+            longitude,
+            localNow,
+            timeZone,
+            utcOffsetMinutes,
+            debug,
+        } = req.body;
 
         if(!validateJwtOrRespond(token, res, jwtToken)) return;
 
@@ -5780,16 +6507,72 @@ Help the user manage their schedule, suggest events, answer questions about thei
                 ? `Approximate user coordinates: latitude ${latitude}, longitude ${longitude}.`
                 : 'No exact coordinates were provided.';
 
+            const debugEnabled = isAssistantDebugEnabled(debug);
+
             res.status(200);
             res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
             res.setHeader('Cache-Control', 'no-cache, no-transform');
             res.setHeader('Connection', 'keep-alive');
+            res.setHeader('X-Accel-Buffering', 'no');
+            res.setHeader('Content-Encoding', 'identity');
+            res.socket?.setNoDelay?.(true);
+            res.socket?.setKeepAlive?.(true, 1000);
             res.flushHeaders?.();
 
+            let streamClosed = false;
             const writeEvent = (payload) =>
             {
+                if(streamClosed || res.writableEnded || res.destroyed)
+                {
+                    return;
+                }
                 res.write(`${JSON.stringify(payload)}\n`);
                 res.flush?.();
+            };
+            const closeStream = () =>
+            {
+                streamClosed = true;
+                if(heartbeat)
+                {
+                    clearInterval(heartbeat);
+                    heartbeat = null;
+                }
+            };
+            res.on('close', closeStream);
+            res.on('finish', closeStream);
+
+            heartbeat = setInterval(() =>
+            {
+                writeEvent({
+                    type: 'ping',
+                    timestamp: new Date().toISOString(),
+                });
+            }, 2000);
+
+            const writeDebug = (event) =>
+            {
+                if(!debugEnabled)
+                {
+                    return;
+                }
+
+                const message = String(event?.message || '').trim();
+                const suffix = [
+                    event?.url ? `url=${event.url}` : '',
+                    event?.title ? `title=${event.title}` : '',
+                    event?.error ? `error=${event.error}` : '',
+                    event?.action ? `action=${formatAssistantDebugValue(event.action)}` : '',
+                    event?.details ? `details=${formatAssistantDebugValue(event.details)}` : '',
+                ].filter(Boolean).join(' ');
+                const logLine = `[assistant-debug] ${event?.timestamp || new Date().toISOString()} ${String(event?.scope || 'general')} ${message}${suffix ? ` ${suffix}` : ''}`;
+                console.log(logLine);
+                writeEvent({
+                    type: 'debug',
+                    debug: {
+                        ...event,
+                        line: logLine,
+                    },
+                });
             };
 
             const assistantResult = await runCalendarAssistant(
@@ -5808,21 +6591,22 @@ Help the user manage their schedule, suggest events, answer questions about thei
                         {
                             writeEvent({ type: 'status', status });
                         },
+                        onDebug(event)
+                        {
+                            writeDebug(event);
+                        },
                         onDelta(delta)
                         {
                             writeEvent({ type: 'delta', delta });
                         },
                     },
+                    debug: debugEnabled,
                 }
             );
 
             if(!assistantResult.streamedFinal && assistantResult.reply)
             {
-                const replyChunks = splitAssistantReplyForStreaming(assistantResult.reply);
-                for(const chunk of replyChunks)
-                {
-                    writeEvent({ type: 'delta', delta: `${chunk} ` });
-                }
+                writeEvent({ type: 'delta', delta: assistantResult.reply });
             }
 
             writeEvent({
@@ -5831,10 +6615,18 @@ Help the user manage their schedule, suggest events, answer questions about thei
                 calendarChanged: assistantResult.calendarChanged,
             });
 
+            if(heartbeat)
+            {
+                clearInterval(heartbeat);
+            }
             res.end();
         }
         catch(error)
         {
+            if(heartbeat)
+            {
+                clearInterval(heartbeat);
+            }
             if(!res.headersSent)
             {
                 res.status(500).json({ error: error.toString(), jwtToken: '' });
@@ -5852,6 +6644,7 @@ exports.verifyEmailTransporter = verifyEmailTransporter;
 exports.startReminderLoop = startReminderLoop;
 exports.__testables = {
     extractResponseText,
+    normalizeAssistantReply,
     base64ByteLength,
     normalizeAvatarDataUrl,
     normalizeCustomThemePack,
@@ -5864,6 +6657,7 @@ exports.__testables = {
     getConfiguredOpenAIReasoningEffort,
     isRetryableOpenAIStatus,
     isRetryableOpenAINetworkError,
+    shouldUseAssistantComputerUse,
     buildOpenAIRequestVariants,
     buildOpenAIRequestBody,
 };

@@ -34,6 +34,7 @@ class _AIScreenState extends State<AIScreen> {
   final AiService _aiService = AiService();
   final TextEditingController _messageController = TextEditingController();
   final TextEditingController _preferencesController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   late UserSession _session;
   bool _isSending = false;
   bool _isLoadingSuggestions = false;
@@ -59,9 +60,29 @@ class _AIScreenState extends State<AIScreen> {
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _messageController.dispose();
     _preferencesController.dispose();
     super.dispose();
+  }
+
+  void _scrollChatToBottom({bool animated = true}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) {
+        return;
+      }
+
+      final target = _scrollController.position.maxScrollExtent;
+      if (animated) {
+        _scrollController.animateTo(
+          target,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        );
+      } else {
+        _scrollController.jumpTo(target);
+      }
+    });
   }
 
   Future<void> _sendMessage() async {
@@ -82,6 +103,7 @@ class _AIScreenState extends State<AIScreen> {
       );
       _messageController.clear();
     });
+    _scrollChatToBottom(animated: false);
 
     try {
       await for (final event in _aiService.chatStream(
@@ -107,6 +129,7 @@ class _AIScreenState extends State<AIScreen> {
               status: '',
             );
           });
+          _scrollChatToBottom(animated: false);
         } else if (event.type == AiChatStreamEventType.status) {
           setState(() {
             final lastIndex = _messages.length - 1;
@@ -117,6 +140,7 @@ class _AIScreenState extends State<AIScreen> {
               status: event.status,
             );
           });
+          _scrollChatToBottom(animated: false);
         } else if (event.type == AiChatStreamEventType.done &&
             event.session != null) {
           _session = event.session!;
@@ -130,6 +154,7 @@ class _AIScreenState extends State<AIScreen> {
               status: '',
             );
           });
+          _scrollChatToBottom();
           if (event.calendarChanged) {
             await widget.onCalendarChanged();
           }
@@ -314,6 +339,7 @@ class _AIScreenState extends State<AIScreen> {
         children: [
           Expanded(
             child: ListView(
+              controller: _scrollController,
               padding: const EdgeInsets.all(16),
               children: [
                   Card(

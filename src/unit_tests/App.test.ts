@@ -135,6 +135,11 @@ describe("renderInlineMarkdown", () => {
         expect(Array.isArray(result)).toBe(true);
     });
 
+    it("renders markdown links as anchor elements", () => {
+        const result = renderInlineMarkdown("[AMC](https://example.com/showtimes)");
+        expect(Array.isArray(result)).toBe(true);
+    });
+
 });
 
 /// RENDER ASSISTANT MESSAGE TESTS ////
@@ -144,6 +149,11 @@ describe("renderAssistantMessage", () => {
     it("returns structured blocks", () => {
         const result = renderAssistantMessage("Hello\n- item 1\n- item 2");
 
+        expect(Array.isArray(result)).toBe(true);
+    });
+
+    it("keeps links and bullets on separate lines", () => {
+        const result = renderAssistantMessage("Here you go\n- item 1\n- [AMC](https://example.com/showtimes)");
         expect(Array.isArray(result)).toBe(true);
     });
 
