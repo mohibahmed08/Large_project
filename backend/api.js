@@ -2611,6 +2611,19 @@ function buildCalendarTaskSearchText(task)
         .toLowerCase();
 }
 
+function matchesCalendarTaskSearch(task, searchText)
+{
+    const normalizedSearch = String(searchText || '').trim().toLowerCase();
+    if(!normalizedSearch)
+    {
+        return true;
+    }
+
+    const searchTokens = normalizedSearch.split(/\s+/).filter(Boolean);
+    const searchableText = buildCalendarTaskSearchText(task);
+    return searchTokens.every((token) => searchableText.includes(token));
+}
+
 function buildReminderFields(taskLike, reminderInput = {}, fallback = {})
 {
     const startDate = getTaskStartDate(taskLike);
@@ -4900,19 +4913,12 @@ exports.setApp = function(app, client)
                 return;
             }
 
-            const results = await db.collection('tasks').find(
-            {
-                user_id: new ObjectId(userId),
-                $or:
-                [
-                    { title:       { $regex: trimmedSearch + '.*', $options: 'i' } },
-                    { description: { $regex: trimmedSearch + '.*', $options: 'i' } },
-                    { location:    { $regex: trimmedSearch + '.*', $options: 'i' } },
-                    { group:       { $regex: trimmedSearch + '.*', $options: 'i' } },
-                ]
-            })
+            const tasks = await db.collection('tasks')
+                .find({ user_id: new ObjectId(userId) })
                 .sort({ dueDate: 1 })
                 .toArray();
+
+            const results = tasks.filter((task) => matchesCalendarTaskSearch(task, trimmedSearch));
 
             res.status(200).json({
                 results: results.map((task) => normalizeLegacyIcsTaskForResponse(task)),

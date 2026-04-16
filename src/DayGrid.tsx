@@ -25,7 +25,7 @@ function DayGrid({
     today.setHours(0, 0, 0, 0);
 
     //CHECK IF THIS DAY GRID IS ACTIVE (TODAY == DAY OF MONTH)
-    const isToday = dayOfMonth == date.getDate() && year == date.getFullYear() && month == date.getMonth();
+    const isToday = dayOfMonth == today.getDate() && year == today.getFullYear() && month == today.getMonth();
 
     //TARGET DATE FOR DAY INDEX AND WITHIN WEEK
     const targetDate = new Date(year, month, dayOfMonth);
@@ -45,12 +45,8 @@ function DayGrid({
         if (!isToday) {
             return;
         }
-
-    //GENERAL WEATHER FOR THE CURRENT DAY
-    const generalWeather = weather ? weatherCodeToText(getDailyGeneralWeather(weather.hourly.weathercode, dayIndex)) : "";
-    
-    //PASS IN THE CURRENT WEATHER FOR TODAY
-    if(isToday) setCurrentWeather(generalWeather);
+        setCurrentWeather?.(generalWeather);
+    }, [generalWeather, isToday, setCurrentWeather]);
 
     const eventPillClass = (task) => {
         const source = String(task?.source || '').toLowerCase();
