@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@700&display=swap');
 /* ===== Base Reset ===== */
 * {
   box-sizing: border-box;
@@ -6,13 +7,6 @@
 body {
   margin: 0;
   font-family: Arial, sans-serif;
-}
-
-.login-shell {
-  background:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.34), rgba(0, 0, 0, 0.68)),
-    var(--login-bg) center center / cover no-repeat,
-    #050505;
 }
 
 /* ===== Layout ===== */
@@ -290,6 +284,7 @@ input::placeholder {
   width: 90%;
   text-align: center;
   border: 1px solid #374151;
+  color:white;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
 }
 
@@ -309,4 +304,21 @@ input::placeholder {
   display: block;
   width: 100%;
   text-align: left;
+}
+
+.calendar-title {
+  font-family: 'Poppins', sans-serif;
+  font-size: 3rem;
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.calendar-subtitle {
+  font-size: 1rem;          
+  color: #9ca3af;           
+  text-align: center;
+  margin-top: -15px;       
+  margin-bottom: 25px;      
+  font-weight: normal;
 }
