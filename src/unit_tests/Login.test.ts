@@ -1,13 +1,11 @@
 /// RESET PASSWORD TESTS ////
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
-
-global.fetch = vi.fn();
+global.fetch = jest.fn();
 
 describe("reset password", () => {
 
     beforeEach(() => {
-        vi.clearAllMocks();
+        jest.clearAllMocks();
     });
 
     // -------------------------
@@ -21,9 +19,9 @@ describe("reset password", () => {
             json: async () => ({}),
         });
 
-        const setSuccess = vi.fn();
-        const setErrorMsg = vi.fn();
-        const setIsLoading = vi.fn();
+        const setSuccess = jest.fn();
+        const setErrorMsg = jest.fn();
+        const setIsLoading = jest.fn();
 
         await resetPassword({
             token: "abc",
@@ -51,14 +49,14 @@ describe("reset password", () => {
             }),
         });
 
-        const setErrorMsg = vi.fn();
+        const setErrorMsg = jest.fn();
 
         await resetPassword({
             token: "abc",
             newPassword: "newpass",
-            setSuccess: vi.fn(),
+            setSuccess: jest.fn(),
             setErrorMsg,
-            setIsLoading: vi.fn(),
+            setIsLoading: jest.fn(),
         });
 
         expect(setErrorMsg).toHaveBeenCalledWith("Invalid token");
@@ -75,14 +73,14 @@ describe("reset password", () => {
             json: async () => ({}),
         });
 
-        const setErrorMsg = vi.fn();
+        const setErrorMsg = jest.fn();
 
         await resetPassword({
             token: "abc",
             newPassword: "newpass",
-            setSuccess: vi.fn(),
+            setSuccess: jest.fn(),
             setErrorMsg,
-            setIsLoading: vi.fn(),
+            setIsLoading: jest.fn(),
         });
 
         expect(setErrorMsg).toHaveBeenCalledWith(
@@ -98,14 +96,14 @@ describe("reset password", () => {
 
         (fetch as any).mockRejectedValue(new Error("Could not reach server"));
 
-        const setErrorMsg = vi.fn();
+        const setErrorMsg = jest.fn();
 
         await resetPassword({
             token: "abc",
             newPassword: "newpass",
-            setSuccess: vi.fn(),
+            setSuccess: jest.fn(),
             setErrorMsg,
-            setIsLoading: vi.fn(),
+            setIsLoading: jest.fn(),
         });
 
         expect(setErrorMsg).toHaveBeenCalledWith(
@@ -149,12 +147,12 @@ async function resetPassword({
 
 /// AUTH LOGIN / SIGNUP TESTS ////
 
-global.fetch = vi.fn();
+global.fetch = jest.fn();
 
 describe("auth flow (login + signup)", () => {
 
     beforeEach(() => {
-        vi.clearAllMocks();
+        jest.clearAllMocks();
         localStorage.clear();
     });
 
@@ -171,9 +169,9 @@ describe("auth flow (login + signup)", () => {
             }),
         });
 
-        const setIsAuthenticated = vi.fn();
-        const setErrorMsg = vi.fn();
-        const setIsLoading = vi.fn();
+        const setIsAuthenticated = jest.fn();
+        const setErrorMsg = jest.fn();
+        const setIsLoading = jest.fn();
 
         await authFlow({
             view: "login",
@@ -182,7 +180,7 @@ describe("auth flow (login + signup)", () => {
             firstName: "",
             lastName: "",
             setIsAuthenticated,
-            setShowVerifyModal: vi.fn(),
+            setShowVerifyModal: jest.fn(),
             setErrorMsg,
             setIsLoading,
         });
@@ -203,7 +201,7 @@ describe("auth flow (login + signup)", () => {
             }),
         });
 
-        const setErrorMsg = vi.fn();
+        const setErrorMsg = jest.fn();
 
         await authFlow({
             view: "login",
@@ -211,10 +209,10 @@ describe("auth flow (login + signup)", () => {
             password: "wrong",
             firstName: "",
             lastName: "",
-            setIsAuthenticated: vi.fn(),
-            setShowVerifyModal: vi.fn(),
+            setIsAuthenticated: jest.fn(),
+            setShowVerifyModal: jest.fn(),
             setErrorMsg,
-            setIsLoading: vi.fn(),
+            setIsLoading: jest.fn(),
         });
 
         expect(setErrorMsg).toHaveBeenCalledWith("Invalid credentials");
@@ -231,7 +229,7 @@ describe("auth flow (login + signup)", () => {
             json: async () => ({}),
         });
 
-        const setShowVerifyModal = vi.fn();
+        const setShowVerifyModal = jest.fn();
 
         await authFlow({
             view: "signup",
@@ -240,9 +238,9 @@ describe("auth flow (login + signup)", () => {
             email: "test@mail.com",
             password: "pass",
             setShowVerifyModal,
-            setErrorMsg: vi.fn(),
-            setIsLoading: vi.fn(),
-            setIsAuthenticated: vi.fn(),
+            setErrorMsg: jest.fn(),
+            setIsLoading: jest.fn(),
+            setIsAuthenticated: jest.fn(),
         });
 
         expect(setShowVerifyModal).toHaveBeenCalledWith(true);
@@ -261,7 +259,7 @@ describe("auth flow (login + signup)", () => {
             }),
         });
 
-        const setErrorMsg = vi.fn();
+        const setErrorMsg = jest.fn();
 
         await authFlow({
             view: "signup",
@@ -270,9 +268,9 @@ describe("auth flow (login + signup)", () => {
             email: "test@mail.com",
             password: "pass",
             setErrorMsg,
-            setIsLoading: vi.fn(),
-            setIsAuthenticated: vi.fn(),
-            setShowVerifyModal: vi.fn(),
+            setIsLoading: jest.fn(),
+            setIsAuthenticated: jest.fn(),
+            setShowVerifyModal: jest.fn(),
         });
 
         expect(setErrorMsg).toHaveBeenCalledWith("Email already exists");
@@ -283,12 +281,12 @@ describe("auth flow (login + signup)", () => {
 
 /// FORGOT PASSWORD TESTS ////
 
-global.fetch = vi.fn();
+global.fetch = jest.fn();
 
 describe("forgot password", () => {
 
     beforeEach(() => {
-        vi.clearAllMocks();
+        jest.clearAllMocks();
     });
 
     // -------------------------
@@ -302,14 +300,14 @@ describe("forgot password", () => {
             json: async () => ({}),
         });
 
-        const setShowForgotSentModal = vi.fn();
-        const setErrorMsg = vi.fn();
+        const setShowForgotSentModal = jest.fn();
+        const setErrorMsg = jest.fn();
 
         await forgotPassword({
             forgotEmail: "test@mail.com",
             setShowForgotSentModal,
             setErrorMsg,
-            setIsLoading: vi.fn(),
+            setIsLoading: jest.fn(),
         });
 
         expect(setShowForgotSentModal).toHaveBeenCalledWith(true);
@@ -328,13 +326,13 @@ describe("forgot password", () => {
             }),
         });
 
-        const setErrorMsg = vi.fn();
+        const setErrorMsg = jest.fn();
 
         await forgotPassword({
             forgotEmail: "test@mail.com",
-            setShowForgotSentModal: vi.fn(),
+            setShowForgotSentModal: jest.fn(),
             setErrorMsg,
-            setIsLoading: vi.fn(),
+            setIsLoading: jest.fn(),
         });
 
         expect(setErrorMsg).toHaveBeenCalledWith("User not found");
@@ -348,13 +346,13 @@ describe("forgot password", () => {
 
         (fetch as any).mockRejectedValue(new Error("Network down"));
 
-        const setErrorMsg = vi.fn();
+        const setErrorMsg = jest.fn();
 
         await forgotPassword({
             forgotEmail: "test@mail.com",
-            setShowForgotSentModal: vi.fn(),
+            setShowForgotSentModal: jest.fn(),
             setErrorMsg,
-            setIsLoading: vi.fn(),
+            setIsLoading: jest.fn(),
         });
 
         expect(setErrorMsg).toHaveBeenCalledWith("Could not reach the server.");
@@ -446,14 +444,14 @@ const localStorageMock = (() => {
     let store: Record<string, string> = {};
 
     return {
-        getItem: vi.fn((key: string) => store[key] || null),
-        setItem: vi.fn((key: string, value: string) => {
+        getItem: jest.fn((key: string) => store[key] || null),
+        setItem: jest.fn((key: string, value: string) => {
             store[key] = value;
         }),
-        removeItem: vi.fn((key: string) => {
+        removeItem: jest.fn((key: string) => {
             delete store[key];
         }),
-        clear: vi.fn(() => {
+        clear: jest.fn(() => {
             store = {};
         }),
     };
@@ -462,6 +460,6 @@ const localStorageMock = (() => {
 global.localStorage = localStorageMock as any;
 
 beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
     localStorage.clear(); // ✅ works now
 });

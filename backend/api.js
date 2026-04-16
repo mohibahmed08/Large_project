@@ -108,12 +108,15 @@ const SUPPORTED_AVATAR_MIME_TYPES = new Set([
     'image/avif',
     'image/heic',
     'image/heif',
+    'image/bmp',
+    'image/tiff',
 ]);
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const MAX_IMAGE_UPLOAD_BYTES = 6 * 1024 * 1024;
 const MAX_SHARED_THEME_BYTES = 6 * 1024 * 1024;
 const THEME_SHARE_CODE_LENGTH = 6;
 const THEME_SHARE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9_-]{1,38}[a-z0-9])?$/;
+const SUPPORTED_IMAGE_FORMAT_LABEL = 'PNG, JPEG, GIF, WEBP, AVIF, HEIC, HEIF, BMP, or TIFF';
 
 function base64ByteLength(value)
 {
@@ -157,7 +160,7 @@ function normalizeImageDataUrl(value, {
     const base64Payload = match[2].replace(/\s+/g, '');
     if(!SUPPORTED_AVATAR_MIME_TYPES.has(mimeType))
     {
-        throw new Error(`${errorPrefix} must be PNG, JPEG, GIF, WEBP, AVIF, HEIC, or HEIF.`);
+        throw new Error(`${errorPrefix} must be ${SUPPORTED_IMAGE_FORMAT_LABEL}.`);
     }
 
     if(base64ByteLength(base64Payload) > maxBytes)
@@ -168,25 +171,161 @@ function normalizeImageDataUrl(value, {
     return { mimeType, base64Payload };
 }
 
-function getFirebaseStorageBucket()
+function tryInitFirebaseAdmin()
 {
     let admin;
+    try { admin = require('firebase-admin'); }
+    catch { return null; }
+
+    if(admin.apps.length > 0) return admin;
+
+    const explicitServiceAccountPath = String(process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '').trim();
+    const storageBucket = String(process.env.FIREBASE_STORAGE_BUCKET || '').trim();
+    const appConfig = storageBucket ? { storageBucket } : {};
     try
     {
-        admin = require('firebase-admin');
+        if(explicitServiceAccountPath)
+        {
+            const resolvedPath = path.isAbsolute(explicitServiceAccountPath)
+                ? explicitServiceAccountPath
+                : path.resolve(__dirname, explicitServiceAccountPath);
+            const serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
+            admin.initializeApp({ ...appConfig, credential: admin.credential.cert(serviceAccount) });
+        }
+        else
+        {
+            admin.initializeApp({ ...appConfig, credential: admin.credential.applicationDefault() });
+        }
+    }
+    catch { return null; }
+
+    return admin;
+}
+
+function getFirebaseStorageBucket()
+{
+    const admin = tryInitFirebaseAdmin();
+    if(!admin) return null;
+
+    const bucketName = String(process.env.FIREBASE_STORAGE_BUCKET || '').trim();
+    return bucketName ? admin.storage().bucket(bucketName) : admin.storage().bucket();
+}
+
+function buildFirebaseStorageMediaUrl(bucketName, objectPath, downloadToken)
+{
+    const encodedObjectPath = encodeURIComponent(String(objectPath || ''));
+    return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedObjectPath}?alt=media&token=${encodeURIComponent(downloadToken)}`;
+}
+
+async function ensureFirebaseStorageDownloadUrl(bucket, objectPath)
+{
+    const file = bucket.file(objectPath);
+    const [metadata] = await file.getMetadata();
+    const existingToken = String(metadata?.metadata?.firebaseStorageDownloadTokens || '')
+        .split(',')
+        .map((value) => String(value || '').trim())
+        .find(Boolean);
+
+    if(existingToken)
+    {
+        return buildFirebaseStorageMediaUrl(bucket.name, objectPath, existingToken);
+    }
+
+    const downloadToken = crypto.randomUUID();
+    await file.setMetadata({
+        metadata: {
+            ...(metadata?.metadata || {}),
+            firebaseStorageDownloadTokens: downloadToken,
+        },
+    });
+
+    return buildFirebaseStorageMediaUrl(bucket.name, objectPath, downloadToken);
+}
+
+function parseFirebaseStorageUrl(value)
+{
+    const trimmed = String(value || '').trim();
+    if(!trimmed)
+    {
+        return null;
+    }
+
+    try
+    {
+        const parsed = new URL(trimmed);
+        if(parsed.hostname === 'storage.googleapis.com')
+        {
+            const [, bucketName, ...rest] = parsed.pathname.split('/');
+            const objectPath = rest.join('/');
+            if(bucketName && objectPath)
+            {
+                return {
+                    bucketName,
+                    objectPath: decodeURIComponent(objectPath),
+                };
+            }
+        }
+
+        if(parsed.hostname === 'firebasestorage.googleapis.com')
+        {
+            const match = /^\/v0\/b\/([^/]+)\/o\/(.+)$/.exec(parsed.pathname);
+            if(match)
+            {
+                return {
+                    bucketName: decodeURIComponent(match[1]),
+                    objectPath: decodeURIComponent(match[2]),
+                };
+            }
+        }
     }
     catch
     {
         return null;
     }
 
-    if(admin.apps.length === 0)
+    return null;
+}
+
+async function normalizeStorageAssetUrl(value)
+{
+    const parsed = parseFirebaseStorageUrl(value);
+    if(!parsed)
     {
-        return null;
+        return String(value || '');
     }
 
-    const bucketName = String(process.env.FIREBASE_STORAGE_BUCKET || '').trim();
-    return bucketName ? admin.storage().bucket(bucketName) : admin.storage().bucket();
+    try
+    {
+        const bucket = admin.storage().bucket(parsed.bucketName);
+        return await ensureFirebaseStorageDownloadUrl(bucket, parsed.objectPath);
+    }
+    catch
+    {
+        return String(value || '');
+    }
+}
+
+async function normalizeStorageAssetTree(value)
+{
+    if(Array.isArray(value))
+    {
+        return Promise.all(value.map((entry) => normalizeStorageAssetTree(entry)));
+    }
+
+    if(value && typeof value === 'object')
+    {
+        const entries = await Promise.all(
+            Object.entries(value).map(async ([key, nestedValue]) => [key, await normalizeStorageAssetTree(nestedValue)])
+        );
+        return Object.fromEntries(entries);
+    }
+
+    if(typeof value === 'string')
+    {
+        return normalizeStorageAssetUrl(value);
+    }
+
+    return value;
 }
 
 async function uploadBase64ImageToFirebaseStorage({
@@ -217,11 +356,13 @@ async function uploadBase64ImageToFirebaseStorage({
         },
     });
 
+    const downloadUrl = await ensureFirebaseStorageDownloadUrl(bucket, objectPath);
+
     return {
         bucket: bucket.name,
         path: objectPath,
         mimeType: normalized.mimeType,
-        url: `https://storage.googleapis.com/${bucket.name}/${encodeURI(objectPath)}`,
+        url: downloadUrl,
     };
 }
 
@@ -700,54 +841,11 @@ function getFirebaseMessaging()
         return firebaseMessagingInstance;
     }
 
-    let admin;
-    try
+    const admin = tryInitFirebaseAdmin();
+    if(!admin)
     {
-        admin = require('firebase-admin');
-    }
-    catch(error)
-    {
-        pushDebug('Skipping push send because firebase-admin is not installed.', {
-            error: error.message,
-        });
+        pushDebug('Skipping push send because firebase-admin could not be initialized.');
         return null;
-    }
-
-    if(admin.apps.length === 0)
-    {
-        const explicitServiceAccountPath = String(process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '').trim();
-
-        try
-        {
-            if(explicitServiceAccountPath)
-            {
-                const resolvedPath = path.isAbsolute(explicitServiceAccountPath)
-                    ? explicitServiceAccountPath
-                    : path.resolve(__dirname, explicitServiceAccountPath);
-                const serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
-                admin.initializeApp({
-                    credential: admin.credential.cert(serviceAccount),
-                });
-                pushDebug('Initialized Firebase Admin with FIREBASE_SERVICE_ACCOUNT_PATH.', {
-                    path: resolvedPath,
-                });
-            }
-            else
-            {
-                admin.initializeApp({
-                    credential: admin.credential.applicationDefault(),
-                });
-                pushDebug('Initialized Firebase Admin with application default credentials.');
-            }
-        }
-        catch(error)
-        {
-            pushDebug('Skipping push send because Firebase Admin credentials could not be initialized.', {
-                error: error.message,
-                hasExplicitPath: Boolean(explicitServiceAccountPath),
-            });
-            return null;
-        }
     }
 
     firebaseMessagingInstance = admin.messaging();
@@ -1228,6 +1326,25 @@ function normalizeThemeGradient(gradient, fallback = {
     };
 }
 
+function normalizeThemeButtonGradient(gradient)
+{
+    const rawColors = Array.isArray(gradient?.colors) ? gradient.colors : [];
+    const colors = rawColors
+        .map((color) => normalizeHexColorValue(color, ''))
+        .filter(Boolean)
+        .slice(0, 3);
+
+    if(colors.length === 0)
+    {
+        return null;
+    }
+
+    return {
+        angle: Number.isFinite(Number(gradient?.angle)) ? Number(gradient.angle) : 135,
+        colors,
+    };
+}
+
 function normalizeThemeImageMap(images)
 {
     if(!images || typeof images !== 'object')
@@ -1286,7 +1403,10 @@ function normalizeCustomThemePack(input)
         id: String(input?.id || '').trim() || `shared-${Date.now()}`,
         name: String(input?.name || 'Untitled Pack').trim() || 'Untitled Pack',
         description: String(input?.description || '').trim(),
+        coverPhoto: String(input?.coverPhoto || '').trim(),
         btnColor: normalizeHexColorValue(input?.btnColor),
+        btnTextColor: String(input?.btnTextColor || '').trim(),
+        btnGradient: normalizeThemeButtonGradient(input?.btnGradient),
         images,
         galleryImages,
         selectedGalleryImage: String(input?.selectedGalleryImage || '').trim(),
@@ -1355,14 +1475,27 @@ function buildSharedThemeUrls(themeDoc)
     };
 }
 
-function mapCustomThemeDocument(themeDoc, viewerUserId = '')
+async function mapCustomThemeDocument(db, themeDoc, viewerUserId = '')
 {
     const ownerUserId = String(themeDoc?.ownerUserId || '');
     const ownerDisplayName = String(themeDoc?.ownerDisplayName || 'Anonymous').trim() || 'Anonymous';
     const shareUrls = buildSharedThemeUrls(themeDoc);
+    let ownerAvatarUrl = String(themeDoc?.ownerAvatarUrl || '').trim();
+
+    if(!ownerAvatarUrl && ownerUserId && ObjectId.isValid(ownerUserId))
+    {
+        const ownerAccount = await db.collection('users').findOne(
+            { _id: new ObjectId(ownerUserId) },
+            { projection: { avatarUrl: 1 } }
+        );
+        ownerAvatarUrl = String(ownerAccount?.avatarUrl || '').trim();
+    }
+
+    const normalizedTheme = await normalizeStorageAssetTree(themeDoc?.theme || {});
+    const normalizedOwnerAvatarUrl = await normalizeStorageAssetUrl(ownerAvatarUrl);
 
     return {
-        ...(themeDoc?.theme || {}),
+        ...normalizedTheme,
         id: `shared-${themeDoc?._id}`,
         sharedThemeId: String(themeDoc?._id || ''),
         shareCode: String(themeDoc?.shareCode || ''),
@@ -1373,6 +1506,8 @@ function mapCustomThemeDocument(themeDoc, viewerUserId = '')
         authorName: ownerDisplayName,
         authorLabel: `By ${ownerDisplayName}`,
         creatorLabel: `Theme created by ${ownerDisplayName}`,
+        authorAvatarUrl: normalizedOwnerAvatarUrl,
+        creatorAvatarUrl: normalizedOwnerAvatarUrl,
         source: ownerUserId === String(viewerUserId || '') ? 'user' : 'shared',
     };
 }
@@ -1466,6 +1601,7 @@ async function listUserCustomThemes(db, user)
                     theme: 1,
                     ownerUserId: 1,
                     ownerDisplayName: 1,
+                    ownerAvatarUrl: 1,
                     shareCode: 1,
                     shareSlug: 1,
                     updatedAt: 1,
@@ -1479,7 +1615,14 @@ async function listUserCustomThemes(db, user)
     return customThemeIds
         .map((themeId) => themeById.get(String(themeId)))
         .filter(Boolean)
-        .map((themeDoc) => mapCustomThemeDocument(themeDoc, user?._id));
+        .length
+        ? Promise.all(
+            customThemeIds
+                .map((themeId) => themeById.get(String(themeId)))
+                .filter(Boolean)
+                .map((themeDoc) => mapCustomThemeDocument(db, themeDoc, user?._id))
+        )
+        : [];
 }
 
 async function buildSettingsPayload(db, user)
@@ -1497,7 +1640,7 @@ async function buildSettingsPayload(db, user)
         lastName: String(user?.lastName || ''),
         email: String(user?.email || ''),
         pendingEmail: String(user?.pendingEmail || ''),
-        avatarUrl: String(user?.avatarUrl || ''),
+        avatarUrl: await normalizeStorageAssetUrl(user?.avatarUrl),
         reminderDefaults,
         customThemes,
         ...feedUrls,
@@ -1817,20 +1960,34 @@ async function syncCalendarSubscription(db, userId, subscription, options = {})
         if(!entry.summary || !entry.start) continue;
 
         const task = buildTaskFromIcsEntry(userId, subscription._id, entry, options);
+        if(!task.title || !(task.dueDate instanceof Date) || Number.isNaN(task.dueDate.getTime()))
+        {
+            continue;
+        }
         activeExternalIds.push(task.externalEventId);
 
-        const updateResult = await db.collection('tasks').updateOne(
-            {
-                user_id: new ObjectId(userId),
-                subscriptionId: new ObjectId(subscription._id),
-                externalEventId: task.externalEventId,
-            },
-            { $set: task },
-            { upsert: true }
-        );
+        try
+        {
+            const updateResult = await db.collection('tasks').updateOne(
+                {
+                    user_id: new ObjectId(userId),
+                    subscriptionId: new ObjectId(subscription._id),
+                    externalEventId: task.externalEventId,
+                },
+                { $set: task },
+                { upsert: true }
+            );
 
-        if(updateResult.upsertedCount > 0) insertedCount += 1;
-        else if(updateResult.modifiedCount > 0) updatedCount += 1;
+            if(updateResult.upsertedCount > 0) insertedCount += 1;
+            else if(updateResult.modifiedCount > 0) updatedCount += 1;
+        }
+        catch(error)
+        {
+            if(!/validation/i.test(String(error?.message || error)))
+            {
+                throw error;
+            }
+        }
     }
 
     const deleteFilter = {
@@ -4217,7 +4374,7 @@ exports.setApp = function(app, client)
             const userObjectId = safeObjectId(userId, 'userId');
             const owner = await db.collection('users').findOne(
                 { _id: userObjectId },
-                { projection: { firstName: 1, lastName: 1 } }
+                { projection: { firstName: 1, lastName: 1, avatarUrl: 1 } }
             );
 
             if(!owner)
@@ -4270,6 +4427,7 @@ exports.setApp = function(app, client)
                 description: normalizedTheme.description,
                 ownerUserId: userObjectId,
                 ownerDisplayName: buildThemeOwnerDisplayName(owner),
+                ownerAvatarUrl: String(owner?.avatarUrl || '').trim(),
                 shareCode: String(existingTheme?.shareCode || await generateUniqueThemeShareCode(db)),
                 shareSlug: nextShareSlug,
                 updatedAt: now,
@@ -4304,7 +4462,7 @@ exports.setApp = function(app, client)
             const savedTheme = await db.collection('customThemes').findOne({ _id: savedThemeId });
 
             res.status(200).json({
-                theme: mapCustomThemeDocument(savedTheme, userObjectId),
+                theme: await mapCustomThemeDocument(db, savedTheme, userObjectId),
                 error: '',
                 jwtToken: refreshJwtToken(token, jwtToken),
             });
@@ -4312,6 +4470,39 @@ exports.setApp = function(app, client)
         catch(error)
         {
             res.status(500).json({ theme: null, error: error.toString(), jwtToken: '' });
+        }
+    });
+
+    app.post('/api/checkthemeslug', async (req, res) =>
+    {
+        const { userId, jwtToken, slug, excludeThemeId } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        try
+        {
+            const trimmedSlug = String(slug || '').trim().toLowerCase();
+            if(!trimmedSlug || !THEME_SHARE_SLUG_PATTERN.test(trimmedSlug))
+            {
+                return res.json({ available: false, reason: 'invalid' });
+            }
+
+            const query = { shareSlug: trimmedSlug };
+            if(excludeThemeId && /^[a-f0-9]{24}$/i.test(excludeThemeId))
+            {
+                const { ObjectId } = require('mongodb');
+                query._id = { $ne: new ObjectId(excludeThemeId) };
+            }
+
+            const existing = await db.collection('customThemes').findOne(query, { projection: { _id: 1 } });
+            res.json({ available: !existing });
+        }
+        catch(error)
+        {
+            res.status(500).json({ available: false, error: error.message });
         }
     });
 
@@ -4342,7 +4533,7 @@ exports.setApp = function(app, client)
             );
 
             res.status(200).json({
-                theme: mapCustomThemeDocument(themeDoc, userObjectId),
+                theme: await mapCustomThemeDocument(db, themeDoc, userObjectId),
                 error: '',
                 jwtToken: refreshJwtToken(token, jwtToken),
             });
@@ -4783,6 +4974,7 @@ exports.setApp = function(app, client)
             }
 
             const parsed   = ical.sync.parseICS(calendarContent);
+            const importErrors = [];
 
             if(parsedUrl)
             {
@@ -4809,6 +5001,11 @@ exports.setApp = function(app, client)
                     if(!entry.summary || !entry.start) continue;
 
                     const signature = buildIcsTaskSignature(entry, { timeZone, utcOffsetMinutes });
+                    if(!signature.title || !(signature.dueDate instanceof Date) || Number.isNaN(signature.dueDate.getTime()))
+                    {
+                        importErrors.push(`Skipped malformed event: ${String(entry.summary || 'Untitled')}`);
+                        continue;
+                    }
                     duplicateFilters.push({
                         user_id: new ObjectId(userId),
                         source: 'ical',
@@ -4836,7 +5033,7 @@ exports.setApp = function(app, client)
 
                 res.status(200).json({
                     count,
-                    error: '',
+                    error: importErrors.length ? importErrors.join(' ') : '',
                     jwtToken: refreshJwtToken(token, jwtToken),
                 });
                 return;
@@ -4851,6 +5048,11 @@ exports.setApp = function(app, client)
                 if(!entry.summary || !entry.start) continue;
 
                 const signature = buildIcsTaskSignature(entry, { timeZone, utcOffsetMinutes });
+                if(!signature.title || !(signature.dueDate instanceof Date) || Number.isNaN(signature.dueDate.getTime()))
+                {
+                    importErrors.push(`Skipped malformed event: ${String(entry.summary || 'Untitled')}`);
+                    continue;
+                }
                 toInsert.push(
                 {
                     user_id:     new ObjectId(userId),
@@ -4869,13 +5071,13 @@ exports.setApp = function(app, client)
                 const result = await db.collection('tasks').insertMany(toInsert);
                 res.status(200).json({
                     count: result.insertedCount,
-                    error: '',
+                    error: importErrors.length ? importErrors.join(' ') : '',
                     jwtToken: refreshJwtToken(token, jwtToken),
                 });
                 return;
             }
 
-            res.status(200).json({ count: 0, error: '', jwtToken: refreshJwtToken(token, jwtToken) });
+            res.status(200).json({ count: 0, error: importErrors.join(' '), jwtToken: refreshJwtToken(token, jwtToken) });
         }
         catch(error)
         {

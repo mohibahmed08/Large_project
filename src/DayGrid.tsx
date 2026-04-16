@@ -1,17 +1,12 @@
 // @ts-nocheck
-//IMMPORT THE STYLE SHEET
+// Calendar day cell styles.
+import { useEffect } from 'react';
 import './DayGrid.css';
 
-//THIS CLASS WILL BE ONE DAY INSIDE THE CALENDAR GRID
-//I.E. THE BOX THAT IS INTERACTABLE AND SHOWS STUFF
-//WITHIN THE CALENDAR U.I.
-
-//SHOULD BE USED AS AN ARRAY OF DAYS WITHIN THE CALENDAR U.I.
+// Render one day cell inside the monthly calendar grid.
 function DayGrid({
     weather,
     setCurrentWeather,
-    maxFutureWeatherDays,
-    maxPastWeatherDays,
     dayOfMonth,
     year,
     month,
@@ -21,39 +16,34 @@ function DayGrid({
     onSelectTask,
     selectedDate,
 }){
+    // Normalize the current day once so date comparisons stay stable.
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-    //DATE OBJECT FOR DETERMINING THINGS
-    const date = new Date();
+    // Flag the tile when it represents the current local date.
+    const isToday = dayOfMonth === today.getDate() && year === today.getFullYear() && month === today.getMonth();
 
-    //CHECK IF THIS DAY GRID IS ACTIVE (TODAY == DAY OF MONTH)
-    const isToday = dayOfMonth == date.getDate() && year == date.getFullYear() && month == date.getMonth();
-
-    //TARGET DATE FOR DAY INDEX AND WITHIN WEEK
+    // Normalize the rendered date so selection and weather checks use the same boundary.
     const targetDate = new Date(year, month, dayOfMonth);
-    //NORMALIZE THE HOURS
-    targetDate.setHours(0,0,0,0);
+    targetDate.setHours(0, 0, 0, 0);
     const normalizedSelectedDate = selectedDate ? new Date(selectedDate) : null;
     if (normalizedSelectedDate) {
         normalizedSelectedDate.setHours(0, 0, 0, 0);
     }
     const isSelected = normalizedSelectedDate ? targetDate.getTime() === normalizedSelectedDate.getTime() : false;
-    //COMPUTE THE DIFFERENCE IN TIME
-    const diffMs = targetDate - date; 
-    //CONVERT THAT TO DAYS AND DETERMINE DIFFERENCE IN DAYS
-    const diffDays = diffMs / (1000 * 60 * 60 * 24);
-    //TRUE IF TARGET DAY IS 7 DAYS AWAY FROM CURRENT
-    const isWithinWeather = diffDays >= -maxPastWeatherDays - 1 && diffDays <= maxFutureWeatherDays;
-    
-    //COMPUTES THE DAY INDEX
-    const dayIndex = Math.floor(diffDays + 1);
-    //COMPUTES THE START HOUR FOR EACH DAY
-    // const hourIndex = dayIndex * 24; // start of the day in hourly array
 
-    //GENERAL WEATHER FOR THE CURRENT DAY
-    const generalWeather = weather ? weatherCodeToText(getDailyGeneralWeather(weather.hourly.weathercode, dayIndex)) : "";
-    
-    //PASS IN THE CURRENT WEATHER FOR TODAY
-    if(isToday) setCurrentWeather(generalWeather);
+    // Resolve weather directly from the hourly timestamps to avoid off-by-one date bugs.
+    const dailyWeatherCode = weather ? getDailyGeneralWeather(weather.hourly, targetDate) : null;
+    const generalWeather = dailyWeatherCode === null ? '' : weatherCodeToText(dailyWeatherCode);
+    const isWithinWeather = Boolean(generalWeather);
+
+    useEffect(() => {
+        if (!isToday) {
+            return;
+        }
+
+        setCurrentWeather?.(generalWeather);
+    }, [generalWeather, isToday, setCurrentWeather]);
 
     const eventPillClass = (task) => {
         const source = String(task?.source || '').toLowerCase();
@@ -94,19 +84,18 @@ function DayGrid({
 
     const taskDisplayColor = (task) => parseTaskColor(task?.color) || fallbackTaskColor(task);
 
-    //RETURN DOM
     return (
         <>
-            {/* THE DATE BOX ITSELF CONTAINING SUBINFO AND IF ACTIVE (CURRRENT DAY), OTHER MONTH IF SPACER FROM PRIOR/NEXT MONTH BLEEDING OVER TO THIS ONE */}
+            {/* The tile can be active for today, selected, or dimmed when it belongs to an adjacent month. */}
             <div
                 className = {`day-grid-wrapper ${isToday ? "active" : ""} ${isSelected ? "selected" : ""} ${isOtherMonth ? "other-month" : ""}`}
                 onClick={() => onSelectDay?.(targetDate)}
             >
-                {/* TOP LEFT WEATHER OF THE CURRENT DAY */}
+                {/* Show the dominant weather label when the fetched dataset includes this date. */}
                 {isWithinWeather && <span className = "day-grid-weather-header">{generalWeather}</span>}
-                {/* TOP RIGHT DAY NUMBER IN THE BOX */}
+                {/* Day number in the upper-right corner. */}
                 <span className = "day-grid-day-number">{dayOfMonth}</span>
-                {/* SECTION TO HOLD TILED REMINDERS / SUGGESTIONS */}
+                {/* Task pills for the current date. */}
                 <div className = {`day-grid-tile-wrapper`}>
                     {tasks.length > 0 && <ul className = "day-grid-ul">
                         {tasks.map((task) => (
@@ -131,14 +120,13 @@ function DayGrid({
             </div>
         </>
     );
-
 }
 
-//TURNS THE WEATHER CODE TO MEANINGFUL TEXT 
+// Map Open-Meteo weather codes to display labels.
 export function weatherCodeToText(code) {
     switch (code) {
-        case 0: return "Clear sky";               
-        case 1: return "Mostly clear";                 
+        case 0: return "Clear sky";
+        case 1: return "Mostly clear";
         case 2: return "Partly cloudy";
         case 3: return "Overcast";
         case 45: case 48: return "Foggy";
@@ -156,17 +144,31 @@ export function weatherCodeToText(code) {
     }
 }
 
-//GETS THE MOST GENERAL WEATHER FOR THE DAY BASED ON CHOOSING 
-//THE WEATHERCODE THAT IS MOST OCCURING
-export function getDailyGeneralWeather(hourlyWeather, dayIndex) {
-    const start = dayIndex * 24;
-    const dayHours = hourlyWeather.slice(start, start + 24);
+function buildLocalDateKey(dateValue) {
+    return `${dateValue.getFullYear()}-${String(dateValue.getMonth() + 1).padStart(2, '0')}-${String(dateValue.getDate()).padStart(2, '0')}`;
+}
 
-    // Count frequency
+// Support both the current hourly payload shape and the older array/dayIndex test helper shape.
+export function getDailyGeneralWeather(hourlyInput, target) {
+    let dayHours = [];
+
+    if (Array.isArray(hourlyInput) && Number.isInteger(target)) {
+        const start = target * 24;
+        dayHours = hourlyInput.slice(start, start + 24);
+    } else {
+        const hourlyTimes = Array.isArray(hourlyInput?.time) ? hourlyInput.time : [];
+        const hourlyWeather = Array.isArray(hourlyInput?.weathercode) ? hourlyInput.weathercode : [];
+        const targetDateKey = target instanceof Date ? buildLocalDateKey(target) : '';
+        dayHours = hourlyWeather.filter((code, index) => String(hourlyTimes[index] || '').startsWith(targetDateKey));
+    }
+
+    if (dayHours.length === 0) {
+        return null;
+    }
+
     const counts = {};
     dayHours.forEach(code => counts[code] = (counts[code] || 0) + 1);
 
-    // Find most frequent
     let maxCount = 0;
     let generalCode = dayHours[0];
     for (const code in counts) {
@@ -179,5 +181,5 @@ export function getDailyGeneralWeather(hourlyWeather, dayIndex) {
     return generalCode;
 }
 
-//EXPORT TO OTHER JSX CLASSES FOR USABILITY
+// EXPORT TO OTHER JSX CLASSES FOR USABILITY
 export default DayGrid;

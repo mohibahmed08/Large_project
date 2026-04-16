@@ -1,5 +1,4 @@
 //UNIT TEST IMPORT FOR TESTING LOGIC IN DAYGRID
-import { describe, it, expect } from "vitest";
 import { getDailyGeneralWeather, weatherCodeToText } from "../DayGrid";
 
 /// WEATHER CODE RETURN TEST ////
