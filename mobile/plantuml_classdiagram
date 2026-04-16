@@ -1,0 +1,903 @@
+@startuml
+set namespaceSeparator ::
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::firebase_options.dart::DefaultFirebaseOptions" {
+  {static} -String _webApiKey
+  {static} -String _androidApiKey
+  {static} -String _iosApiKey
+  {static} -String _macosApiKey
+  {static} -String _windowsApiKey
+  {static} +dynamic web
+  {static} +dynamic android
+  {static} +dynamic ios
+  {static} +dynamic macos
+  {static} +dynamic windows
+  {static} +dynamic currentPlatform
+  {static} +bool isConfiguredForCurrentPlatform
+  {static} -void _requireApiKey()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::main.dart::MyApp" {
+  +dynamic createState()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::main.dart::_MyAppState" {
+  -dynamic _navigatorKey
+  -dynamic _appLinks
+  -StreamSubscription<Uri>? _linkSubscription
+  -String? _initialResetToken
+  -bool _initialLinkResolved
+  +void initState()
+  -dynamic _initializeServices()
+  +void dispose()
+  -dynamic _resolveInitialLink()
+  -String? _extractResetToken()
+  -void _handleIncomingLink()
+  -String? _extractTaskId()
+  +dynamic build()
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::main.dart::_MyAppState" o-- "dart::async::StreamSubscription<Uri>"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::account_settings.dart::ReminderDefaults" {
+  +bool reminderEnabled
+  +int reminderMinutesBefore
+  +String reminderDelivery
+  +Map<String, dynamic> toJson()
+  +ReminderDefaults copyWith()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::account_settings.dart::AccountSettings" {
+  +String firstName
+  +String lastName
+  +String email
+  +String pendingEmail
+  +String calendarFeedUrl
+  +String calendarFeedWebcalUrl
+  +ReminderDefaults reminderDefaults
+  +AccountSettings copyWith()
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::account_settings.dart::AccountSettings" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::account_settings.dart::ReminderDefaults"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::ai_models.dart::SuggestionItem" {
+  +String title
+  +String description
+  +String suggestedTime
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::task_model.dart::CalendarTask" {
+  +String id
+  +String title
+  +String description
+  +String location
+  +DateTime? startDate
+  +DateTime? endDate
+  +bool isCompleted
+  +String source
+  +String color
+  +String group
+  +bool reminderEnabled
+  +int reminderMinutesBefore
+  +String reminderDelivery
+  {static} -DateTime? _parseDate()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::user_model.dart::UserSession" {
+  +String userId
+  +String firstName
+  +String lastName
+  +String accessToken
+  +UserSession copyWith()
+  {static} -Map<String, dynamic> _decodeJwtPayload()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::ai_screen.dart::AIScreen" {
+  +UserSession initialSession
+  +DateTime selectedDate
+  +dynamic onSessionUpdated
+  +dynamic Function(String, String, String) onCreateTaskFromSuggestion
+  +dynamic Function() onCalendarChanged
+  +bool embedded
+  +dynamic createState()
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::ai_screen.dart::AIScreen" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::user_model.dart::UserSession"
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::ai_screen.dart::AIScreen" o-- "null::dynamic Function(String, String, String)"
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::ai_screen.dart::AIScreen" o-- "null::dynamic Function()"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::ai_screen.dart::_AIScreenState" {
+  -AiService _aiService
+  -dynamic _messageController
+  -dynamic _preferencesController
+  -UserSession _session
+  -bool _isSending
+  -bool _isLoadingSuggestions
+  -bool _isFetchingLocation
+  -double? _latitude
+  -double? _longitude
+  -String? _locationNotice
+  -Set<String> _savedSuggestionKeys
+  -List<_ChatBubbleData> _messages
+  -List<SuggestionItem> _suggestions
+  +void initState()
+  +void dispose()
+  -dynamic _sendMessage()
+  -dynamic _loadSuggestions()
+  -dynamic _saveSuggestion()
+  -String _suggestionKey()
+  -dynamic _refreshLocation()
+  -void _showSnackBar()
+  +dynamic build()
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::ai_screen.dart::_AIScreenState" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::ai_service.dart::AiService"
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::ai_screen.dart::_AIScreenState" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::user_model.dart::UserSession"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::ai_screen.dart::_ChatBubbleData" {
+  +String role
+  +String text
+  +String? status
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::app_bootstrap_screen.dart::AppBootstrapScreen" {
+  +String? initialResetToken
+  +dynamic createState()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::app_bootstrap_screen.dart::_AppBootstrapScreenState" {
+  -BiometricAuthService _biometricAuthService
+  -UserSession? _session
+  -UserSession? _lockedSession
+  -String? _resetToken
+  -String _biometricLabel
+  -String? _unlockMessage
+  -bool _isLoading
+  -bool _isUnlocking
+  -bool _showLoginScreen
+  +void initState()
+  +void didUpdateWidget()
+  -String? _normalizeToken()
+  -dynamic _bootstrap()
+  -dynamic _retryUnlock()
+  -dynamic _usePasswordInstead()
+  -dynamic _finishResetFlow()
+  +dynamic build()
+  -dynamic _buildLoadingState()
+  -dynamic _buildLockedState()
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::app_bootstrap_screen.dart::_AppBootstrapScreenState" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::biometric_auth_service.dart::BiometricAuthService"
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::app_bootstrap_screen.dart::_AppBootstrapScreenState" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::user_model.dart::UserSession"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::calendar_screen.dart::CalendarScreen" {
+  +UserSession initialSession
+  +dynamic createState()
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::calendar_screen.dart::CalendarScreen" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::user_model.dart::UserSession"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::calendar_screen.dart::_CalendarScreenState" {
+  {static} -Duration _liveActivityFutureWindow
+  {static} -Duration _liveActivityMinimumUpcomingWindow
+  -AiService _aiService
+  -CalendarService _calendarService
+  -dynamic _searchController
+  -dynamic _quickTaskController
+  -dynamic _quickAddController
+  -dynamic _monthPageController
+  -UserSession _session
+  -Timer? _liveActivityTimer
+  -StreamSubscription<String>? _appLinkTaskSubscription
+  -StreamSubscription<Map<String, dynamic>>? _notificationOpenSubscription
+  -String? _liveActivityId
+  -String? _liveActivityTaskId
+  -bool _liveActivitySupported
+  -bool _liveActivityReady
+  -DateTime _currentDate
+  -DateTime _displayMonth
+  -DateTime _selectedDate
+  -Map<String, dynamic>? _weatherData
+  -String? _weatherLocationName
+  -List<CalendarTask> _tasks
+  -List<CalendarTask> _visibleTasks
+  -bool _isLoading
+  -bool _iosSideEffectsStarted
+  -int _selectedIndex
+  -_WeatherWidgetMode _weatherWidgetMode
+  -Set<String> _expandedDayTaskIds
+  -List<String> _existingGroups
+  -String _defaultGroupForNewTask
+  -List<CalendarTask> _tasksForSelectedDay
+  -List<CalendarTask> _pendingSelectedTasks
+  -List<CalendarTask> _completedSelectedTasks
+  -List<CalendarTask> _allDaySelectedTasks
+  -List<CalendarTask> _timedSelectedTasks
+  -List<CalendarTask> _todoTasksForSelectedDay
+  -Map<String, dynamic>? _selectedDayWeather
+  -List<Map<String, dynamic>> _selectedDayForecast
+  -List<Map<String, dynamic>> _selectedDayHourlyForecast
+  -String _weatherLocationLabel
+  -void _debugLog()
+  +void initState()
+  +void dispose()
+  -dynamic _handleNotificationOpen()
+  -dynamic _openTaskById()
+  -dynamic _initializeLiveActivityState()
+  -dynamic _startIosSideEffectsIfNeeded()
+  -dynamic _syncLiveActivitySafely()
+  -String _liveActivityTaskType()
+  -DateTime _effectiveEndDate()
+  -Duration _liveActivityUpcomingWindowForTask()
+  -String? _liveActivityDescriptionPreview()
+  -CalendarTask? _liveActivityCandidate()
+  -CalendarTask? _taskById()
+  -dynamic _showTaskDetailsSheet()
+  -dynamic _buildTaskMetaRow()
+  -String _taskDateTimeSummary()
+  -String _taskSourceLabel()
+  -String _reminderSummary()
+  -dynamic _syncLiveActivity()
+  -void _cacheSession()
+  -dynamic _restoreWeatherWidgetMode()
+  -dynamic _setWeatherWidgetMode()
+  -dynamic _loadMonth()
+  -dynamic _setDisplayedMonth()
+  -dynamic _loadWeatherForecast()
+  -dynamic _fetchWeather()
+  -dynamic _openTaskDialog()
+  -dynamic _deleteTask()
+  -dynamic _saveQuickAddFallback()
+  -dynamic _submitQuickAdd()
+  -dynamic _toggleTask()
+  -dynamic _openImportDialog()
+  -dynamic _pickAndImportCalendarFile()
+  -List<String> _extractIcsFilesFromZip()
+  -dynamic _importCalendarContents()
+  -dynamic _openSettings()
+  -dynamic _logout()
+  -void _showSnackBar()
+  -DateTime _dateWithTime()
+  +dynamic ()
+  -dynamic _monthRange()
+  -String _formatDate()
+  -DateTime? _dayComparisonEnd()
+  -bool _taskFallsOnDate()
+  -bool _isAllDayTask()
+  -int _compareDayTasks()
+  -dynamic _taskBaseColor()
+  -dynamic _taskDisplayColor()
+  -dynamic _parseColor()
+  -String _weatherConditionLabel()
+  -String _weatherWidgetMenuLabel()
+  -String _weatherGlyph()
+  -dynamic _buildTaskPreviewRow()
+  -dynamic _buildCalendarTab()
+  -dynamic _buildDayTab()
+  -dynamic _buildCalendarTabRevamp()
+  -dynamic _buildDayTabRevamp()
+  -void _shiftSelectedDay()
+  -void _toggleDayTaskExpanded()
+  -dynamic _buildDayTaskTile()
+  -String _formatHourlyWeatherLabel()
+  -dynamic _buildHourlyWeatherStrip()
+  -dynamic _buildFutureForecastList()
+  -dynamic _buildWeatherWidgetModeButton()
+  -dynamic _buildTodayHeroCard()
+  -dynamic _buildTodayHeroCardV2()
+  -dynamic _buildDayTabPolished()
+  -dynamic _buildTimelineView()
+  -String _formatTime()
+  -dynamic _buildAppBar()
+  +dynamic build()
+  -String _monthName()
+  -String _weekdayName()
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::calendar_screen.dart::_CalendarScreenState" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::ai_service.dart::AiService"
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::calendar_screen.dart::_CalendarScreenState" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::calendar_service.dart::CalendarService"
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::calendar_screen.dart::_CalendarScreenState" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::user_model.dart::UserSession"
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::calendar_screen.dart::_CalendarScreenState" o-- "dart::async::Timer"
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::calendar_screen.dart::_CalendarScreenState" o-- "dart::async::StreamSubscription<String>"
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::calendar_screen.dart::_CalendarScreenState" o-- "dart::async::StreamSubscription<Map<String, dynamic>>"
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::calendar_screen.dart::_CalendarScreenState" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::calendar_screen.dart::_WeatherWidgetMode"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::calendar_screen.dart::_DayActionChip" {
+  +String label
+  +dynamic icon
+  +dynamic onTap
+  +dynamic build()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::calendar_screen.dart::_WeatherRangeBar" {
+  +double startFraction
+  +double widthFraction
+  +dynamic build()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::calendar_screen.dart::_WeatherWidgetMode" {
+  +int index
+  {static} +List<_WeatherWidgetMode> values
+  {static} +_WeatherWidgetMode future
+  {static} +_WeatherWidgetMode futureAndHourly
+  {static} +_WeatherWidgetMode hourly
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::calendar_screen.dart::_WeatherWidgetMode" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::calendar_screen.dart::_WeatherWidgetMode"
+"dart::core::Enum" <|-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::calendar_screen.dart::_WeatherWidgetMode"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::day_detail_screen.dart::DayDetailScreen" {
+  +int day
+  +int month
+  +int year
+  +dynamic build()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::login_screen.dart::LoginScreen" {
+  +dynamic createState()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::login_screen.dart::_LoginScreenState" {
+  -dynamic _formKey
+  -AuthService _authService
+  -BiometricAuthService _biometricAuthService
+  -dynamic _firstNameController
+  -dynamic _lastNameController
+  -dynamic _emailController
+  -dynamic _passwordController
+  -dynamic _confirmPasswordController
+  -bool _isLogin
+  -bool _isLoading
+  -bool _showPassword
+  -bool _biometricAvailable
+  -bool _hasBiometricLoginSession
+  -bool _biometricLoginEnabled
+  -String _biometricLabel
+  -bool _autoBiometricAttempted
+  -bool _showBiometricButton
+  +void initState()
+  -dynamic _checkBiometricAvailability()
+  -dynamic _loginWithBiometrics()
+  +void dispose()
+  -dynamic _submit()
+  -dynamic _handleForgotPassword()
+  -void _openCalendar()
+  -void _showSnackBar()
+  +dynamic build()
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::login_screen.dart::_LoginScreenState" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::auth_service.dart::AuthService"
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::login_screen.dart::_LoginScreenState" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::biometric_auth_service.dart::BiometricAuthService"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::login_screen.dart::_BiometricOnboardingWrapper" {
+  +UserSession session
+  +dynamic createState()
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::login_screen.dart::_BiometricOnboardingWrapper" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::user_model.dart::UserSession"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::login_screen.dart::_BiometricOnboardingWrapperState" {
+  +void initState()
+  +dynamic build()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::login_screen.dart::_BiometricSetupSheet" {
+  +String biometricLabel
+  +UserSession session
+  +dynamic build()
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::login_screen.dart::_BiometricSetupSheet" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::user_model.dart::UserSession"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::login_screen.dart::_PromptBiometricRecoverySheet" {
+  +String biometricLabel
+  +dynamic build()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::login_screen.dart::_AuthTabButton" {
+  +String label
+  +bool isSelected
+  +dynamic onTap
+  +dynamic build()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::login_screen.dart::_PromptBiometricRecoveryAction" {
+  +int index
+  {static} +List<_PromptBiometricRecoveryAction> values
+  {static} +_PromptBiometricRecoveryAction retry
+  {static} +_PromptBiometricRecoveryAction settings
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::login_screen.dart::_PromptBiometricRecoveryAction" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::login_screen.dart::_PromptBiometricRecoveryAction"
+"dart::core::Enum" <|-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::login_screen.dart::_PromptBiometricRecoveryAction"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::register_screen.dart::RegisterScreen" {
+  +dynamic createState()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::register_screen.dart::_RegisterScreenState" {
+  -dynamic _firstNameController
+  -dynamic _lastNameController
+  -dynamic _emailController
+  -dynamic _passwordController
+  -dynamic _confirmPasswordController
+  -bool _isLoading
+  -void _handleRegister()
+  +dynamic build()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::reset_password_screen.dart::ResetPasswordScreen" {
+  +String token
+  +dynamic onDone
+  +dynamic createState()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::reset_password_screen.dart::_ResetPasswordScreenState" {
+  -dynamic _formKey
+  -dynamic _newPasswordController
+  -dynamic _confirmPasswordController
+  -AuthService _authService
+  -bool _showPassword
+  -bool _isLoading
+  -bool _isSuccess
+  -String? _errorMessage
+  +void dispose()
+  -dynamic _submit()
+  +dynamic build()
+  -dynamic _buildSuccessState()
+  -dynamic _buildFormState()
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::reset_password_screen.dart::_ResetPasswordScreenState" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::auth_service.dart::AuthService"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::settings_screen.dart::SettingsScreen" {
+  +UserSession initialSession
+  +dynamic onSessionUpdated
+  +dynamic createState()
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::settings_screen.dart::SettingsScreen" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::user_model.dart::UserSession"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::settings_screen.dart::_SettingsScreenState" {
+  -AccountService _accountService
+  -BiometricAuthService _biometricAuthService
+  {static} -List<String> _reminderDeliveryOptions
+  -dynamic _firstNameController
+  -dynamic _lastNameController
+  -UserSession _session
+  -AccountSettings? _settings
+  -bool _isLoading
+  -bool _isSaving
+  -bool _isRegenerating
+  -bool _reminderEnabled
+  -bool _biometricAvailable
+  -bool _biometricUnlockEnabled
+  -bool _biometricLoginEnabled
+  -String _biometricLabel
+  -String _reminderDelivery
+  -int _reminderMinutesBefore
+  {static} -List<int> _reminderOptions
+  -dynamic _confirmBiometricSetup()
+  +void initState()
+  +void dispose()
+  -dynamic _load()
+  -dynamic _loadBiometricSettings()
+  -dynamic _setBiometricUnlock()
+  -dynamic _setBiometricLogin()
+  -dynamic _save()
+  -dynamic _regenerateFeed()
+  -dynamic _copyToClipboard()
+  -void _showSnackBar()
+  -String _reminderLabel()
+  -String _reminderDeliveryLabel()
+  +dynamic build()
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::settings_screen.dart::_SettingsScreenState" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::account_service.dart::AccountService"
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::settings_screen.dart::_SettingsScreenState" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::biometric_auth_service.dart::BiometricAuthService"
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::settings_screen.dart::_SettingsScreenState" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::user_model.dart::UserSession"
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::settings_screen.dart::_SettingsScreenState" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::account_settings.dart::AccountSettings"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::settings_screen.dart::_BiometricRecoverySheet" {
+  +String biometricLabel
+  +dynamic build()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::settings_screen.dart::_BiometricRecoveryAction" {
+  +int index
+  {static} +List<_BiometricRecoveryAction> values
+  {static} +_BiometricRecoveryAction retry
+  {static} +_BiometricRecoveryAction settings
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::settings_screen.dart::_BiometricRecoveryAction" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::settings_screen.dart::_BiometricRecoveryAction"
+"dart::core::Enum" <|-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::settings_screen.dart::_BiometricRecoveryAction"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::task_editor_screen.dart::TaskEditorResult" {
+  +TaskEditorAction action
+  +String title
+  +String description
+  +String location
+  +String color
+  +String group
+  +DateTime startDate
+  +DateTime endDate
+  +bool reminderEnabled
+  +int reminderMinutesBefore
+  +String reminderDelivery
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::task_editor_screen.dart::TaskEditorResult" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::task_editor_screen.dart::TaskEditorAction"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::task_editor_screen.dart::TaskEditorScreen" {
+  +String initialTitle
+  +String initialDescription
+  +String initialLocation
+  +String initialColor
+  +String initialGroup
+  +List<String> existingGroups
+  +DateTime initialStartDate
+  +DateTime initialEndDate
+  +bool initialReminderEnabled
+  +int initialReminderMinutesBefore
+  +String initialReminderDelivery
+  +bool isEditing
+  +dynamic createState()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::task_editor_screen.dart::_TaskEditorScreenState" {
+  -dynamic _titleController
+  -dynamic _descriptionController
+  -dynamic _locationController
+  -dynamic _groupController
+  -dynamic _customColorController
+  -DateTime _startDate
+  -DateTime _endDate
+  -bool _reminderEnabled
+  -int _reminderMinutesBefore
+  -String _reminderDelivery
+  {static} -List<int> _reminderOptions
+  {static} -List<String> _reminderDeliveryOptions
+  {static} -List<String> _colorOptions
+  -String _selectedColor
+  +void initState()
+  +void dispose()
+  -dynamic _pickDate()
+  -dynamic _pickTime()
+  -void _save()
+  -dynamic _delete()
+  -String _reminderDeliveryLabel()
+  -String _reminderLabel()
+  -String _formatDate()
+  -String _formatTime()
+  -dynamic _chipColor()
+  -String _normalizeColor()
+  +dynamic build()
+  -dynamic _dateTimeButtonStyle()
+  -dynamic _dropdownTextStyle()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::task_editor_screen.dart::_GlassTimePickerSheet" {
+  +DateTime initialValue
+  +dynamic onChanged
+  +dynamic onCancel
+  +dynamic onConfirm
+  +dynamic build()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::task_editor_screen.dart::_GlassDatePickerSheet" {
+  +DateTime initialValue
+  +DateTime minimumDate
+  +DateTime maximumDate
+  +dynamic onChanged
+  +dynamic onCancel
+  +dynamic onConfirm
+  +dynamic build()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::task_editor_screen.dart::TaskEditorAction" {
+  +int index
+  {static} +List<TaskEditorAction> values
+  {static} +TaskEditorAction save
+  {static} +TaskEditorAction delete
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::task_editor_screen.dart::TaskEditorAction" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::task_editor_screen.dart::TaskEditorAction"
+"dart::core::Enum" <|-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::screens::task_editor_screen.dart::TaskEditorAction"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::account_service.dart::AccountSettingsResult" {
+  +AccountSettings settings
+  +UserSession session
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::account_service.dart::AccountSettingsResult" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::account_settings.dart::AccountSettings"
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::account_service.dart::AccountSettingsResult" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::user_model.dart::UserSession"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::account_service.dart::AccountService" {
+  +String baseUrl
+  +dynamic getSettings()
+  +dynamic saveSettings()
+  +dynamic regenerateFeed()
+  -dynamic _post()
+  -Map<String, dynamic> _decodeBody()
+  -UserSession _updatedSession()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::ai_service.dart::AiChatResult" {
+  +String reply
+  +UserSession session
+  +bool calendarChanged
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::ai_service.dart::AiChatResult" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::user_model.dart::UserSession"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::ai_service.dart::AiChatStreamEvent" {
+  +AiChatStreamEventType type
+  +String delta
+  +String status
+  +UserSession? session
+  +String? error
+  +bool calendarChanged
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::ai_service.dart::AiChatStreamEvent" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::ai_service.dart::AiChatStreamEventType"
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::ai_service.dart::AiChatStreamEvent" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::user_model.dart::UserSession"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::ai_service.dart::AiSuggestionResult" {
+  +List<SuggestionItem> suggestions
+  +UserSession session
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::ai_service.dart::AiSuggestionResult" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::user_model.dart::UserSession"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::ai_service.dart::AiService" {
+  +String baseUrl
+  {static} -dynamic _cachedTimeZone
+  -dynamic _timeZone()
+  +dynamic chat()
+  +Stream<AiChatStreamEvent> chatStream()
+  +dynamic suggestEvents()
+  -dynamic _post()
+  -Map<String, dynamic> _decodeBody()
+  -List<SuggestionItem> _parseSuggestions()
+  -List<SuggestionItem> _recoverSuggestionsFromText()
+  -String _extractJsonArray()
+  -UserSession _updatedSession()
+  -String _toOffsetIsoString()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::ai_service.dart::AiChatStreamEventType" {
+  +int index
+  {static} +List<AiChatStreamEventType> values
+  {static} +AiChatStreamEventType delta
+  {static} +AiChatStreamEventType status
+  {static} +AiChatStreamEventType done
+  {static} +AiChatStreamEventType error
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::ai_service.dart::AiChatStreamEventType" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::ai_service.dart::AiChatStreamEventType"
+"dart::core::Enum" <|-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::ai_service.dart::AiChatStreamEventType"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::api_config.dart::ApiConfig" {
+  {static} +String baseUrl
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::app_link_service.dart::AppLinkService" {
+  {static} -StreamController<String> _taskOpenController
+  {static} -String? _pendingTaskId
+  {static} +Stream<String> taskOpens
+  {static} +bool handleTaskId()
+  {static} +String? takePendingTaskId()
+  {static} +void clearPendingTaskId()
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::app_link_service.dart::AppLinkService" o-- "dart::async::StreamController<String>"
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::app_link_service.dart::AppLinkService" o-- "dart::async::Stream<String>"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::auth_service.dart::AuthService" {
+  +String baseUrl
+  +dynamic login()
+  +dynamic signup()
+  +dynamic requestPasswordReset()
+  +dynamic resetPassword()
+  -dynamic _post()
+  -Map<String, dynamic> _decodeBody()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::biometric_auth_service.dart::BiometricStatus" {
+  +bool supported
+  +String label
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::biometric_auth_service.dart::BiometricAuthService" {
+  -dynamic _localAuthentication
+  +dynamic getStatus()
+  +dynamic authenticate()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::calendar_service.dart::CalendarResult" {
+  +List<CalendarTask> tasks
+  +UserSession session
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::calendar_service.dart::CalendarResult" o-- "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::models::user_model.dart::UserSession"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::calendar_service.dart::CalendarService" {
+  +String baseUrl
+  {static} -dynamic _cachedTimeZone
+  -dynamic _timeZone()
+  +dynamic loadCalendar()
+  +dynamic searchCalendar()
+  +dynamic saveTask()
+  +dynamic deleteTask()
+  +dynamic Future()
+  +dynamic ()
+  +dynamic >()
+  +dynamic importCalendar()
+  -dynamic _post()
+  -Map<String, dynamic> _decodeBody()
+  -UserSession _updatedSession()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::live_activity_service.dart::LiveActivityService" {
+  {static} -dynamic _channel
+  {static} +dynamic isSupported()
+  {static} +dynamic startActivity()
+  {static} +dynamic updateActivity()
+  {static} +dynamic endActivity()
+  {static} +dynamic endAllActivities()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::push_notification_service.dart::_NotificationContent" {
+  +String title
+  +String body
+  +String? subtitle
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::push_notification_service.dart::PushDebugSnapshot" {
+  +bool initialized
+  +bool initializationInFlight
+  +bool firebaseReady
+  +String platform
+  +String authorizationStatus
+  +String nativeAuthorizationStatus
+  +String nativeRegistrationState
+  +bool apnsTokenPresent
+  +String apnsTokenPreview
+  +bool fcmTokenPresent
+  +String fcmTokenPreview
+  +String activeStep
+  +String lastCompletedStep
+  +String failingStep
+  +int? lastUploadStatusCode
+  +String? lastUploadPlatform
+  +String? lastUploadResponsePreview
+  +String? lastUploadError
+  +String? lastInitError
+  +List<String> recentEvents
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::push_notification_service.dart::PushNotificationService" {
+  {static} -String _reminderTitle
+  {static} -Duration _messagingTimeout
+  {static} -Duration _tokenRetryDelay
+  {static} -int _maxTokenRegistrationAttempts
+  {static} -dynamic _nativeDebugChannel
+  {static} -dynamic _localNotifications
+  {static} -StreamController<Map<String, dynamic>> _notificationTapController
+  {static} -bool _initialized
+  {static} -bool _firebaseReady
+  {static} -dynamic _initializationFuture
+  {static} -String _activeStep
+  {static} -String _lastCompletedStep
+  {static} -String _failingStep
+  {static} -String _nativeAuthorizationStatus
+  {static} -String _nativeRegistrationState
+  {static} -int? _lastUploadStatusCode
+  {static} -String? _lastUploadPlatform
+  {static} -String? _lastUploadResponsePreview
+  {static} -String? _lastUploadError
+  {static} -String? _lastInitError
+  {static} -List<String> _recentEvents
+  {static} +Stream<Map<String, dynamic>> notificationOpens
+  {static} +dynamic init()
+  {static} -dynamic _performInitialization()
+  {static} +dynamic requestPermission()
+  {static} +dynamic registerDeviceToken()
+  {static} -dynamic _uploadDeviceToken()
+  {static} +dynamic getDebugSnapshot()
+  {static} -String _tokenPreview()
+  {static} -String _truncate()
+  {static} -dynamic _withTimeout()
+  {static} -dynamic _withTimeoutNullable()
+  {static} -dynamic _refreshNativeStatus()
+  {static} -dynamic _debugRegisterForRemoteNotifications()
+  {static} -void _startStep()
+  {static} -void _completeStep()
+  {static} -void _failStep()
+  {static} -void _log()
+  {static} -dynamic _showLocalNotification()
+  {static} -_NotificationContent? _buildNotificationContent()
+  {static} -String? _extractTaskId()
+  {static} -String? _buildTimingText()
+  {static} -String _buildReminderBody()
+  {static} -String? _buildScheduleLine()
+  {static} -DateTime? _parseDateTime()
+  {static} -int? _parseInt()
+  {static} -String? _firstNonEmptyString()
+  {static} -String? _joinParts()
+  {static} -String _formatTime()
+  {static} -void _onNotificationTap()
+  {static} -void _emitNotificationPayload()
+  {static} +dynamic removeDeviceToken()
+}
+
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::push_notification_service.dart::PushNotificationService" o-- "dart::async::StreamController<Map<String, dynamic>>"
+"file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::push_notification_service.dart::PushNotificationService" o-- "dart::async::Stream<Map<String, dynamic>>"
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::session_storage.dart::SessionStorage" {
+  {static} -String _jwtTokenKey
+  {static} -String _biometricUnlockEnabledKey
+  {static} -String _biometricLoginEnabledKey
+  {static} -String _biometricLoginTokenKey
+  {static} -String _liveActivityIdKey
+  {static} -String _liveActivityTaskIdKey
+  {static} -String _weatherWidgetModeKey
+  {static} +dynamic saveSession()
+  {static} +dynamic readToken()
+  {static} +dynamic setBiometricUnlockEnabled()
+  {static} +dynamic isBiometricUnlockEnabled()
+  {static} +dynamic setBiometricLoginEnabled()
+  {static} +dynamic isBiometricLoginEnabled()
+  {static} +dynamic saveBiometricLoginSession()
+  {static} +dynamic readBiometricLoginToken()
+  {static} +dynamic clearBiometricLoginSession()
+  {static} +dynamic setWeatherWidgetMode()
+  {static} +dynamic readWeatherWidgetMode()
+  {static} +dynamic clearSession()
+  {static} +dynamic clear()
+  {static} +dynamic saveLiveActivity()
+  {static} +dynamic Future()
+  +dynamic ()
+  +dynamic >()
+  +dynamic readLiveActivity()
+  {static} +dynamic clearLiveActivity()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::services::widget_sync_service.dart::WidgetSyncService" {
+  {static} -dynamic _channel
+  {static} +dynamic updateTasks()
+  {static} +dynamic clear()
+  {static} -String _taskType()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::theme::app_theme.dart::AppTheme" {
+  {static} +dynamic background
+  {static} +dynamic surface
+  {static} +dynamic surfaceAlt
+  {static} +dynamic border
+  {static} +dynamic accent
+  {static} +dynamic accentStrong
+  {static} +dynamic textPrimary
+  {static} +dynamic textMuted
+  {static} +dynamic success
+  {static} +dynamic danger
+  {static} +dynamic build()
+}
+
+class "file:::::::home::boggy::Desktop::large_proj::Large_project::mobile::lib::widgets::day_grid.dart::DayGrid" {
+  +int day
+  +bool isToday
+  +bool isSelected
+  +List<CalendarTask> tasks
+  +Map<String, dynamic>? weatherData
+  +dynamic onDayTap
+  +int taskCount
+  -dynamic _taskBaseColor()
+  -dynamic _groupMajorityColor()
+  -dynamic _taskDisplayColor()
+  +dynamic build()
+}
+
+
+@enduml
