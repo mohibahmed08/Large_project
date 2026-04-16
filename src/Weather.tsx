@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { DEFAULT_WEATHER_LOCATION, requestWeatherLocation } from './weatherLocation.js';
 
 // Fetch weather data for the visible calendar range.
-function Weather({ setWeather, desiredDate, additionalDays, priorDays }) {
+function Weather({ setWeather, startDate: rangeStart, endDate: rangeEnd }) {
 
     // Start with the fallback location so the calendar can render immediately.
     const [coords, setCoords] = useState(() => ({
@@ -11,12 +11,8 @@ function Weather({ setWeather, desiredDate, additionalDays, priorDays }) {
         longitude: DEFAULT_WEATHER_LOCATION.longitude,
     }));
 
-    // Build the first requested day from the month range and any earlier days we want to include.
-    const firstDay = desiredDate ? new Date(desiredDate) : new Date();
-    firstDay.setDate(firstDay.getDate() - priorDays);
-
-    // Convert the range to the format expected by Open-Meteo.
-    const { startDate, endDate } = getDateRange(firstDay, priorDays + additionalDays);
+    // Convert the requested range to the format expected by Open-Meteo.
+    const { startDate, endDate } = getDateRange(rangeStart, rangeEnd);
 
     // Refresh the coordinates once the browser location request resolves.
     useEffect(() => {
@@ -60,37 +56,46 @@ function Weather({ setWeather, desiredDate, additionalDays, priorDays }) {
 
 /**
  * Returns start and end date strings for Open-Meteo API
- * @param {Date} date - starting date (optional, defaults to today)
- * @param {number} totalDays - number of days to include (optional, defaults to 0)
+ * @param {Date} startInput - starting date (optional, defaults to today)
+ * @param {Date|number} endInput - ending date or number of days to include
  * @returns {Object} { startDate: 'YYYY-MM-DD', endDate: 'YYYY-MM-DD' }
  */
-export function getDateRange(date, totalDays = 0) {
-    // Use today if no date is provided
-    const targetDate = date instanceof Date ? date : new Date();
+export function getDateRange(startInput: any, endInput: any = 0) {
+    const targetDate = startInput instanceof Date && !Number.isNaN(startInput.getTime())
+        ? new Date(startInput)
+        : new Date();
+    targetDate.setHours(0, 0, 0, 0);
 
-    // Format start date
-    const yyyy = targetDate.getFullYear();
-    const mm = String(targetDate.getMonth() + 1).padStart(2, '0');
-    const dd = String(targetDate.getDate()).padStart(2, '0');
-    const startDate = `${yyyy}-${mm}-${dd}`;
+    const formatDate = (date) => {
+        const yyyy = date.getFullYear();
+        const mm = String(date.getMonth() + 1).padStart(2, '0');
+        const dd = String(date.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    };
 
-    // Calculate end date
-    const endDateObj = new Date(targetDate); // copy date
-    endDateObj.setDate(endDateObj.getDate() + totalDays); // automatically handles month/year rollover
+    const startDate = formatDate(targetDate);
 
-    // Can go a max of two weeks out
+    let endDateObj;
+    if (typeof endInput === 'number') {
+        endDateObj = new Date(targetDate);
+        endDateObj.setDate(endDateObj.getDate() + endInput);
+    } else if (endInput instanceof Date && !Number.isNaN(endInput.getTime())) {
+        endDateObj = new Date(endInput);
+    } else {
+        endDateObj = new Date(targetDate);
+    }
+    endDateObj.setHours(0, 0, 0, 0);
+
+    // Clamp forecasts to at most two weeks ahead of today.
     const maxDate = new Date();
+    maxDate.setHours(0, 0, 0, 0);
     maxDate.setDate(maxDate.getDate() + 14);
 
-    // Max endDate to maxDate
     if (endDateObj > maxDate) {
         endDateObj.setTime(maxDate.getTime());
     }
 
-    const endY = endDateObj.getFullYear();
-    const endM = String(endDateObj.getMonth() + 1).padStart(2, '0');
-    const endD = String(endDateObj.getDate()).padStart(2, '0');
-    const endDate = `${endY}-${endM}-${endD}`;
+    const endDate = formatDate(endDateObj);
 
     return { startDate, endDate };
 }

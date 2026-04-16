@@ -332,7 +332,7 @@ export function dayWeatherRange() {
     start.setHours(0, 0, 0, 0);
     start.setDate(start.getDate() - 7);
     const end = new Date(start);
-    end.setDate(end.getDate() + 22);
+    end.setDate(end.getDate() + 21);
     return {
         startDate: start.toISOString().slice(0, 10),
         endDate: end.toISOString().slice(0, 10),
@@ -395,7 +395,6 @@ function Calendar({
     const [currentMonthIndex, setCurrentMonthIndex] = useState(0);
     const containerRef = useRef(null);
     const loadingMoreRef = useRef(false);
-    const MAX_RENDERED_MONTHS = 12;
     const weatherStripRef = useRef(null);
     const weatherCacheRef = useRef(new Map());
     const weatherCoordsRef = useRef(null);
@@ -464,12 +463,11 @@ function Calendar({
                     const shouldLoadMore =
                         entry.intersectionRatio >= 0.92 &&
                         isLastRenderedMonth &&
-                        !loadingMoreRef.current &&
-                        renderedMonths < MAX_RENDERED_MONTHS;
+                        !loadingMoreRef.current;
 
                     if (shouldLoadMore) {
                         loadingMoreRef.current = true;
-                        setRenderedMonths((prev) => Math.min(prev + 1, MAX_RENDERED_MONTHS));
+                        setRenderedMonths((prev) => prev + 1);
                     }
                 });
             },
