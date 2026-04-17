@@ -7,10 +7,7 @@ import '../models/user_model.dart';
 import 'api_config.dart';
 
 class AccountSettingsResult {
-  AccountSettingsResult({
-    required this.settings,
-    required this.session,
-  });
+  AccountSettingsResult({required this.settings, required this.session});
 
   final AccountSettings settings;
   final UserSession session;
@@ -24,11 +21,7 @@ class AccountService {
   Future<AccountSettingsResult> getSettings({
     required UserSession session,
   }) async {
-    final json = await _post(
-      'getaccountsettings',
-      session,
-      {},
-    );
+    final json = await _post('getaccountsettings', session, {});
     return AccountSettingsResult(
       settings: AccountSettings.fromJson(
         (json['settings'] as Map?)?.cast<String, dynamic>() ?? const {},
@@ -46,22 +39,18 @@ class AccountService {
     required String reminderDelivery,
     String? avatarUrl,
   }) async {
-    final json = await _post(
-      'saveaccountsettings',
+    final json = await _post('saveaccountsettings', session, {
+      'firstName': firstName,
+      'lastName': lastName,
+      'reminderEnabled': reminderEnabled,
+      'reminderMinutesBefore': reminderMinutesBefore,
+      'reminderDelivery': reminderDelivery,
+      ...?avatarUrl == null ? null : {'avatarUrl': avatarUrl},
+    });
+    final nextSession = _updatedSession(
       session,
-      {
-        'firstName': firstName,
-        'lastName': lastName,
-        'reminderEnabled': reminderEnabled,
-        'reminderMinutesBefore': reminderMinutesBefore,
-        'reminderDelivery': reminderDelivery,
-        ...?avatarUrl == null ? null : {'avatarUrl': avatarUrl},
-      },
-    );
-    final nextSession = _updatedSession(session, json).copyWith(
-      firstName: firstName,
-      lastName: lastName,
-    );
+      json,
+    ).copyWith(firstName: firstName, lastName: lastName);
     return AccountSettingsResult(
       settings: AccountSettings.fromJson(
         (json['settings'] as Map?)?.cast<String, dynamic>() ?? const {},
@@ -70,27 +59,26 @@ class AccountService {
     );
   }
 
-  Future<({
-    UserSession session,
-    String imageUrl,
-    String storagePath,
-    String bucket,
-    String mimeType,
-  })> uploadImage({
+  Future<
+    ({
+      UserSession session,
+      String imageUrl,
+      String storagePath,
+      String bucket,
+      String mimeType,
+    })
+  >
+  uploadImage({
     required UserSession session,
     required String imageDataUrl,
     required String purpose,
     required String fileName,
   }) async {
-    final json = await _post(
-      'uploadimage',
-      session,
-      {
-        'imageDataUrl': imageDataUrl,
-        'purpose': purpose,
-        'fileName': fileName,
-      },
-    );
+    final json = await _post('uploadimage', session, {
+      'imageDataUrl': imageDataUrl,
+      'purpose': purpose,
+      'fileName': fileName,
+    });
     return (
       session: _updatedSession(session, json),
       imageUrl: (json['imageUrl'] ?? '').toString(),
@@ -121,13 +109,14 @@ class AccountService {
     });
     return (
       session: _updatedSession(session, json),
-      message: (json['message'] ?? 'Verification sent to the new email address.').toString(),
+      message:
+          (json['message'] ?? 'Verification sent to the new email address.')
+              .toString(),
     );
   }
 
-  Future<({UserSession session, String icsContent, String filename})> exportCalendar({
-    required UserSession session,
-  }) async {
+  Future<({UserSession session, String icsContent, String filename})>
+  exportCalendar({required UserSession session}) async {
     final json = await _post('exportcalendar', session, {});
     return (
       session: _updatedSession(session, json),
@@ -167,7 +156,10 @@ class AccountService {
 
     final trimmed = body.trimLeft();
     if (trimmed.startsWith('<!DOCTYPE html') || trimmed.startsWith('<html')) {
-      return const {'error': 'Upload failed. The server returned HTML instead of JSON.'};
+      return const {
+        'error':
+            'Upload failed. The server returned HTML instead of JSON, which usually means the upload was too large or the request hit the wrong endpoint.',
+      };
     }
 
     final decoded = jsonDecode(body);

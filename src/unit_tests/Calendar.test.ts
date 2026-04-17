@@ -1,5 +1,4 @@
 //UNIT TEST IMPORT FOR TESTING LOGIC IN DAYGRID
-import { describe, it, expect, vi } from "vitest";
 import { formatTimeValue, normalizeItemType, formatTaskTime, taskGroupLabel, parseTaskColor, getWeatherImg, weatherCodeToLabel, weatherGlyph, dayWeatherRange } from "../Calendar";
 
 /// FORMAT TIME VALUE TESTS ////
@@ -248,17 +247,17 @@ describe("getWeatherImg", () => {
     // -------------------------
 
     it("returns ClearSky image during day for Clear sky", () => {
-        vi.spyOn(Date.prototype, "getHours").mockReturnValue(12); // day
+        jest.spyOn(Date.prototype, "getHours").mockReturnValue(12); // day
         expect(getWeatherImg("Clear sky")).toBe(ClearSky);
     });
 
     it("returns NightClear image at night for Clear sky", () => {
-        vi.spyOn(Date.prototype, "getHours").mockReturnValue(2); // night
+        jest.spyOn(Date.prototype, "getHours").mockReturnValue(2); // night
         expect(getWeatherImg("Clear sky")).toBe(NightClear);
     });
 
     it("returns SunsetSunriseClearSky during sunrise/sunset", () => {
-        vi.spyOn(Date.prototype, "getHours").mockReturnValue(7); // sunrise
+        jest.spyOn(Date.prototype, "getHours").mockReturnValue(7); // sunrise
         expect(getWeatherImg("Clear sky")).toBe(SunsetSunriseClearSky);
     });
 
@@ -267,17 +266,17 @@ describe("getWeatherImg", () => {
     // -------------------------
 
     it("returns Cloudy image during day for Overcast", () => {
-        vi.spyOn(Date.prototype, "getHours").mockReturnValue(12);
+        jest.spyOn(Date.prototype, "getHours").mockReturnValue(12);
         expect(getWeatherImg("Overcast")).toBe(Cloudy);
     });
 
     it("returns NightCloudy at night for Overcast", () => {
-        vi.spyOn(Date.prototype, "getHours").mockReturnValue(2);
+        jest.spyOn(Date.prototype, "getHours").mockReturnValue(2);
         expect(getWeatherImg("Overcast")).toBe(NightCloudy);
     });
 
     it("returns SunsetSunriseCloudy during sunrise/sunset", () => {
-        vi.spyOn(Date.prototype, "getHours").mockReturnValue(19);
+        jest.spyOn(Date.prototype, "getHours").mockReturnValue(19);
         expect(getWeatherImg("Overcast")).toBe(SunsetSunriseCloudy);
     });
 
@@ -286,17 +285,17 @@ describe("getWeatherImg", () => {
     // -------------------------
 
     it("returns PartlyCloudy image during day", () => {
-        vi.spyOn(Date.prototype, "getHours").mockReturnValue(12);
+        jest.spyOn(Date.prototype, "getHours").mockReturnValue(12);
         expect(getWeatherImg("Partly cloudy")).toBe(PartlyCloudy);
     });
 
     it("returns NightPartlyCloudy at night", () => {
-        vi.spyOn(Date.prototype, "getHours").mockReturnValue(3);
+        jest.spyOn(Date.prototype, "getHours").mockReturnValue(3);
         expect(getWeatherImg("Partly cloudy")).toBe(NightPartlyCloudy);
     });
 
     it("returns SunsetSunrisePartlyCloudy during sunrise/sunset", () => {
-        vi.spyOn(Date.prototype, "getHours").mockReturnValue(18);
+        jest.spyOn(Date.prototype, "getHours").mockReturnValue(18);
         expect(getWeatherImg("Partly cloudy")).toBe(SunsetSunrisePartlyCloudy);
     });
 
@@ -305,12 +304,12 @@ describe("getWeatherImg", () => {
     // -------------------------
 
     it("returns null for unknown weather", () => {
-        vi.spyOn(Date.prototype, "getHours").mockReturnValue(12);
+        jest.spyOn(Date.prototype, "getHours").mockReturnValue(12);
         expect(getWeatherImg("Random Weather")).toBeNull();
     });
 
     it("returns null for empty input", () => {
-        vi.spyOn(Date.prototype, "getHours").mockReturnValue(12);
+        jest.spyOn(Date.prototype, "getHours").mockReturnValue(12);
         expect(getWeatherImg("")).toBeNull();
     });
 

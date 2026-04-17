@@ -20,12 +20,12 @@ function DayGrid({
     onSelectTask,
     selectedDate,
 }){
-
-    //DATE OBJECT FOR DETERMINING THINGS
-    const date = new Date();
+    // Normalize the current day once so date comparisons stay stable.
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
     //CHECK IF THIS DAY GRID IS ACTIVE (TODAY == DAY OF MONTH)
-    const isToday = dayOfMonth == date.getDate() && year == date.getFullYear() && month == date.getMonth();
+    const isToday = dayOfMonth == today.getDate() && year == today.getFullYear() && month == today.getMonth();
 
     //TARGET DATE FOR DAY INDEX AND WITHIN WEEK
     const targetDate = new Date(year, month, dayOfMonth);
@@ -35,23 +35,18 @@ function DayGrid({
         normalizedSelectedDate.setHours(0, 0, 0, 0);
     }
     const isSelected = normalizedSelectedDate ? targetDate.getTime() === normalizedSelectedDate.getTime() : false;
-    //COMPUTE THE DIFFERENCE IN TIME
-    const diffMs = targetDate - date; 
-    //CONVERT THAT TO DAYS AND DETERMINE DIFFERENCE IN DAYS
-    const diffDays = diffMs / (1000 * 60 * 60 * 24);
-    //TRUE IF TARGET DAY IS 7 DAYS AWAY FROM CURRENT
-    const isWithinWeather = diffDays >= -maxPastWeatherDays - 1 && diffDays <= maxFutureWeatherDays;
-    
-    //COMPUTES THE DAY INDEX
-    const dayIndex = Math.floor(diffDays + 1);
-    //COMPUTES THE START HOUR FOR EACH DAY
-    // const hourIndex = dayIndex * 24; // start of the day in hourly array
 
-    //GENERAL WEATHER FOR THE CURRENT DAY
-    const generalWeather = weather ? weatherCodeToText(getDailyGeneralWeather(weather.hourly.weathercode, dayIndex)) : "";
-    
-    //PASS IN THE CURRENT WEATHER FOR TODAY
-    if(isToday) setCurrentWeather(generalWeather);
+    // Resolve weather directly from the hourly timestamps to avoid off-by-one date bugs.
+    const dailyWeatherCode = weather ? getDailyGeneralWeather(weather.hourly, targetDate) : null;
+    const generalWeather = dailyWeatherCode === null ? '' : weatherCodeToText(dailyWeatherCode);
+    const isWithinWeather = Boolean(generalWeather);
+
+    useEffect(() => {
+        if (!isToday) {
+            return;
+        }
+        setCurrentWeather?.(generalWeather);
+    }, [generalWeather, isToday, setCurrentWeather]);
 
     const eventPillClass = (task) => {
         const source = String(task?.source || '').toLowerCase();
@@ -128,14 +123,13 @@ function DayGrid({
             </div>
         </>
     );
-
 }
 
-//TURNS THE WEATHER CODE TO MEANINGFUL TEXT 
+// Map Open-Meteo weather codes to display labels.
 export function weatherCodeToText(code) {
     switch (code) {
-        case 0: return "Clear sky";               
-        case 1: return "Mostly clear";                 
+        case 0: return "Clear sky";
+        case 1: return "Mostly clear";
         case 2: return "Partly cloudy";
         case 3: return "Overcast";
         case 45: case 48: return "Foggy";
@@ -153,11 +147,46 @@ export function weatherCodeToText(code) {
     }
 }
 
-//GETS THE MOST GENERAL WEATHER FOR THE DAY BASED ON CHOOSING 
-//THE WEATHERCODE THAT IS MOST OCCURING
-export function getDailyGeneralWeather(hourlyWeather, dayIndex) {
-    const start = dayIndex * 24;
-    const dayHours = hourlyWeather.slice(start, start + 24);
+function buildLocalDateKey(dateValue) {
+    return `${dateValue.getFullYear()}-${String(dateValue.getMonth() + 1).padStart(2, '0')}-${String(dateValue.getDate()).padStart(2, '0')}`;
+}
+
+function buildDateKeyFromTimeValue(timeValue) {
+    const normalized = String(timeValue || '').trim();
+    if (!normalized) {
+        return '';
+    }
+
+    const directMatch = normalized.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (directMatch) {
+        return directMatch[1];
+    }
+
+    const parsed = new Date(normalized);
+    if (Number.isNaN(parsed.getTime())) {
+        return '';
+    }
+
+    return buildLocalDateKey(parsed);
+}
+
+// Support both the current hourly payload shape and the older array/dayIndex test helper shape.
+export function getDailyGeneralWeather(hourlyInput, target) {
+    let dayHours = [];
+
+    if (Array.isArray(hourlyInput) && Number.isInteger(target)) {
+        const start = target * 24;
+        dayHours = hourlyInput.slice(start, start + 24);
+    } else {
+        const hourlyTimes = Array.isArray(hourlyInput?.time) ? hourlyInput.time : [];
+        const hourlyWeather = Array.isArray(hourlyInput?.weathercode) ? hourlyInput.weathercode : [];
+        const targetDateKey = target instanceof Date ? buildLocalDateKey(target) : '';
+        dayHours = hourlyWeather.filter((code, index) => buildDateKeyFromTimeValue(hourlyTimes[index]) === targetDateKey);
+    }
+
+    if (dayHours.length === 0) {
+        return null;
+    }
 
     // Count frequency
     const counts = {};
@@ -176,5 +205,5 @@ export function getDailyGeneralWeather(hourlyWeather, dayIndex) {
     return generalCode;
 }
 
-//EXPORT TO OTHER JSX CLASSES FOR USABILITY
+// EXPORT TO OTHER JSX CLASSES FOR USABILITY
 export default DayGrid;

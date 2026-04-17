@@ -45,117 +45,112 @@ enum WeatherThemeKind { clear, cloudy, rain, snow, storm, fog }
 
 extension WeatherThemeKindX on WeatherThemeKind {
   String get label => switch (this) {
-        WeatherThemeKind.clear => 'Clear',
-        WeatherThemeKind.cloudy => 'Cloudy',
-        WeatherThemeKind.rain => 'Rain',
-        WeatherThemeKind.snow => 'Snow',
-        WeatherThemeKind.storm => 'Storm',
-        WeatherThemeKind.fog => 'Fog',
-      };
+    WeatherThemeKind.clear => 'Clear',
+    WeatherThemeKind.cloudy => 'Cloudy',
+    WeatherThemeKind.rain => 'Rain',
+    WeatherThemeKind.snow => 'Snow',
+    WeatherThemeKind.storm => 'Storm',
+    WeatherThemeKind.fog => 'Fog',
+  };
 }
 
 extension ThemeBackgroundModeX on ThemeBackgroundMode {
   String get storageKey => switch (this) {
-        ThemeBackgroundMode.gradient => 'gradient',
-        ThemeBackgroundMode.universal => 'universal',
-        ThemeBackgroundMode.perScene => 'perScene',
-        ThemeBackgroundMode.none => 'none',
-        ThemeBackgroundMode.weatherPackage => 'weatherPackage',
-        ThemeBackgroundMode.customImage => 'customImage',
-      };
+    ThemeBackgroundMode.gradient => 'gradient',
+    ThemeBackgroundMode.universal => 'universal',
+    ThemeBackgroundMode.perScene => 'perScene',
+    ThemeBackgroundMode.none => 'none',
+    ThemeBackgroundMode.weatherPackage => 'weatherPackage',
+    ThemeBackgroundMode.customImage => 'customImage',
+  };
 
   String get label => switch (this) {
-        ThemeBackgroundMode.gradient => 'Gradient',
-        ThemeBackgroundMode.universal => 'Universal image',
-        ThemeBackgroundMode.perScene => 'Per-scene images',
-        ThemeBackgroundMode.none => 'No image',
-        ThemeBackgroundMode.weatherPackage => 'Weather package',
-        ThemeBackgroundMode.customImage => 'Custom image',
-      };
+    ThemeBackgroundMode.gradient => 'Gradient',
+    ThemeBackgroundMode.universal => 'Universal image',
+    ThemeBackgroundMode.perScene => 'Per-scene images',
+    ThemeBackgroundMode.none => 'No image',
+    ThemeBackgroundMode.weatherPackage => 'Weather package',
+    ThemeBackgroundMode.customImage => 'Custom image',
+  };
 }
 
 extension ThemeImageFitX on ThemeImageFit {
   String get storageKey => switch (this) {
-        ThemeImageFit.cover => 'cover',
-        ThemeImageFit.contain => 'contain',
-        ThemeImageFit.center => 'center',
-      };
+    ThemeImageFit.cover => 'cover',
+    ThemeImageFit.contain => 'contain',
+    ThemeImageFit.center => 'center',
+  };
 
   String get label => switch (this) {
-        ThemeImageFit.cover => 'Cover (fill & crop)',
-        ThemeImageFit.contain => 'Contain (show full image)',
-        ThemeImageFit.center => 'Center (no scaling)',
-      };
+    ThemeImageFit.cover => 'Cover (fill & crop)',
+    ThemeImageFit.contain => 'Contain (show full image)',
+    ThemeImageFit.center => 'Center (no scaling)',
+  };
 
   BoxFit get boxFit => switch (this) {
-        ThemeImageFit.cover => BoxFit.cover,
-        ThemeImageFit.contain => BoxFit.contain,
-        ThemeImageFit.center => BoxFit.none,
-      };
+    ThemeImageFit.cover => BoxFit.cover,
+    ThemeImageFit.contain => BoxFit.contain,
+    ThemeImageFit.center => BoxFit.none,
+  };
 }
 
 extension ThemeSceneSlotX on ThemeSceneSlot {
   String get key => switch (this) {
-        ThemeSceneSlot.clearDay => 'clearDay',
-        ThemeSceneSlot.clearSunrise => 'clearSunrise',
-        ThemeSceneSlot.clearNight => 'clearNight',
-        ThemeSceneSlot.cloudyDay => 'cloudyDay',
-        ThemeSceneSlot.cloudySunrise => 'cloudySunrise',
-        ThemeSceneSlot.cloudyNight => 'cloudyNight',
-        ThemeSceneSlot.partlyCloudyDay => 'partlyCloudyDay',
-        ThemeSceneSlot.partlyCloudySunrise => 'partlyCloudySunrise',
-        ThemeSceneSlot.partlyCloudyNight => 'partlyCloudyNight',
-      };
+    ThemeSceneSlot.clearDay => 'clearDay',
+    ThemeSceneSlot.clearSunrise => 'clearSunrise',
+    ThemeSceneSlot.clearNight => 'clearNight',
+    ThemeSceneSlot.cloudyDay => 'cloudyDay',
+    ThemeSceneSlot.cloudySunrise => 'cloudySunrise',
+    ThemeSceneSlot.cloudyNight => 'cloudyNight',
+    ThemeSceneSlot.partlyCloudyDay => 'partlyCloudyDay',
+    ThemeSceneSlot.partlyCloudySunrise => 'partlyCloudySunrise',
+    ThemeSceneSlot.partlyCloudyNight => 'partlyCloudyNight',
+  };
 
   String get label => switch (this) {
-        ThemeSceneSlot.clearDay => 'Clear Day',
-        ThemeSceneSlot.clearSunrise => 'Sunrise / Sunset (Clear)',
-        ThemeSceneSlot.clearNight => 'Clear Night',
-        ThemeSceneSlot.cloudyDay => 'Cloudy Day',
-        ThemeSceneSlot.cloudySunrise => 'Sunrise / Sunset (Cloudy)',
-        ThemeSceneSlot.cloudyNight => 'Cloudy Night',
-        ThemeSceneSlot.partlyCloudyDay => 'Partly Cloudy Day',
-        ThemeSceneSlot.partlyCloudySunrise =>
-          'Partly Cloudy Sunrise / Sunset',
-        ThemeSceneSlot.partlyCloudyNight => 'Partly Cloudy Night',
-      };
+    ThemeSceneSlot.clearDay => 'Clear Day',
+    ThemeSceneSlot.clearSunrise => 'Sunrise / Sunset (Clear)',
+    ThemeSceneSlot.clearNight => 'Clear Night',
+    ThemeSceneSlot.cloudyDay => 'Cloudy Day',
+    ThemeSceneSlot.cloudySunrise => 'Sunrise / Sunset (Cloudy)',
+    ThemeSceneSlot.cloudyNight => 'Cloudy Night',
+    ThemeSceneSlot.partlyCloudyDay => 'Partly Cloudy Day',
+    ThemeSceneSlot.partlyCloudySunrise => 'Partly Cloudy Sunrise / Sunset',
+    ThemeSceneSlot.partlyCloudyNight => 'Partly Cloudy Night',
+  };
 }
 
 @immutable
 class ThemeGradient {
-  const ThemeGradient({
-    required this.angle,
-    required this.colors,
-  });
+  const ThemeGradient({required this.angle, required this.colors});
 
   final double angle;
   final List<Color> colors;
 
   static const fallback = ThemeGradient(
     angle: 135,
-    colors: [
-      Color(0xFF0F172A),
-      Color(0xFF2563EB),
-      Color(0xFF7DD3FC),
-    ],
+    colors: [Color(0xFF0F172A), Color(0xFF2563EB), Color(0xFF7DD3FC)],
   );
 
   factory ThemeGradient.fromJson(Map<String, dynamic>? json) {
-    final rawColors = (json?['colors'] as List?)
+    final rawColors =
+        (json?['colors'] as List?)
             ?.map((value) => _normalizeColor(value))
             .whereType<Color>()
             .toList() ??
         fallback.colors;
     return ThemeGradient(
       angle: (json?['angle'] as num?)?.toDouble() ?? fallback.angle,
-      colors: rawColors.length >= 2 ? rawColors.take(3).toList() : fallback.colors,
+      colors: rawColors.length >= 2
+          ? rawColors.take(3).toList()
+          : fallback.colors,
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'angle': angle,
-        'colors': colors.map(_colorToHex).toList(),
-      };
+    'angle': angle,
+    'colors': colors.map(_colorToHex).toList(),
+  };
 }
 
 @immutable
@@ -224,23 +219,24 @@ class MobileTheme {
     Color? accentColor,
     String? backgroundImagePath,
     BoxFit? backgroundFit,
-  })  : id = id ?? presetId ?? 'theme-pack',
-        name = name ?? 'Untitled Pack',
-        description = description ?? '',
-        btnColor = btnColor ?? accentColor ?? const Color(0xFF60A5FA),
-        gradient = gradient ?? ThemeGradient.fallback,
-        backgroundMode = backgroundMode ??
-            ((backgroundImagePath?.trim().isNotEmpty ?? false)
-                ? ThemeBackgroundMode.customImage
-                : ThemeBackgroundMode.none),
-        source = source ?? 'user',
-        images = images.isNotEmpty
-            ? images
-            : ((backgroundImagePath?.trim().isNotEmpty ?? false)
-                ? {'universal': backgroundImagePath!.trim()}
-                : const {}),
-        imageFit = imageFit ?? _themeImageFitForBoxFit(backgroundFit),
-        packId = packId ?? backgroundPackageId ?? presetId;
+  }) : id = id ?? presetId ?? 'theme-pack',
+       name = name ?? 'Untitled Pack',
+       description = description ?? '',
+       btnColor = btnColor ?? accentColor ?? const Color(0xFF60A5FA),
+       gradient = gradient ?? ThemeGradient.fallback,
+       backgroundMode =
+           backgroundMode ??
+           ((backgroundImagePath?.trim().isNotEmpty ?? false)
+               ? ThemeBackgroundMode.customImage
+               : ThemeBackgroundMode.none),
+       source = source ?? 'user',
+       images = images.isNotEmpty
+           ? images
+           : ((backgroundImagePath?.trim().isNotEmpty ?? false)
+                 ? {'universal': backgroundImagePath!.trim()}
+                 : const {}),
+       imageFit = imageFit ?? _themeImageFitForBoxFit(backgroundFit),
+       packId = packId ?? backgroundPackageId ?? presetId;
 
   final String id;
   final String name;
@@ -273,13 +269,9 @@ class MobileTheme {
     btnColor: Color(0xFF60A5FA),
     gradient: ThemeGradient(
       angle: 180,
-      colors: [
-        Color(0xFF08111F),
-        Color(0xFF10203A),
-        Color(0xFF163761),
-      ],
+      colors: [Color(0xFF08111F), Color(0xFF10203A), Color(0xFF163761)],
     ),
-    backgroundMode: ThemeBackgroundMode.gradient,
+    backgroundMode: ThemeBackgroundMode.none,
     source: 'mobile-default',
   );
 
@@ -341,31 +333,31 @@ class MobileTheme {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'description': description,
-        'btnColor': _colorToHex(btnColor),
-        'images': images,
-        'galleryImages': galleryImages,
-        if (selectedGalleryImage != null)
-          'selectedGalleryImage': selectedGalleryImage,
-        'imageFit': imageFit.storageKey,
-        'backgroundMode': backgroundMode.storageKey,
-        'gradient': gradient.toJson(),
-        if (preview != null) 'preview': preview,
-        if (previewImage != null) 'previewImage': previewImage,
-        if (packId != null) 'packId': packId,
-        'source': source,
-        if (sharedThemeId != null) 'sharedThemeId': sharedThemeId,
-        if (shareCode != null) 'shareCode': shareCode,
-        if (shareSlug != null) 'shareSlug': shareSlug,
-        if (shareKey != null) 'shareKey': shareKey,
-        if (shareUrl != null) 'shareUrl': shareUrl,
-        if (isOwnedTheme != null) 'isOwnedTheme': isOwnedTheme,
-        if (authorName != null) 'authorName': authorName,
-        if (authorLabel != null) 'authorLabel': authorLabel,
-        if (creatorLabel != null) 'creatorLabel': creatorLabel,
-      };
+    'id': id,
+    'name': name,
+    'description': description,
+    'btnColor': _colorToHex(btnColor),
+    'images': images,
+    'galleryImages': galleryImages,
+    if (selectedGalleryImage != null)
+      'selectedGalleryImage': selectedGalleryImage,
+    'imageFit': imageFit.storageKey,
+    'backgroundMode': backgroundMode.storageKey,
+    'gradient': gradient.toJson(),
+    if (preview != null) 'preview': preview,
+    if (previewImage != null) 'previewImage': previewImage,
+    if (packId != null) 'packId': packId,
+    'source': source,
+    if (sharedThemeId != null) 'sharedThemeId': sharedThemeId,
+    if (shareCode != null) 'shareCode': shareCode,
+    if (shareSlug != null) 'shareSlug': shareSlug,
+    if (shareKey != null) 'shareKey': shareKey,
+    if (shareUrl != null) 'shareUrl': shareUrl,
+    if (isOwnedTheme != null) 'isOwnedTheme': isOwnedTheme,
+    if (authorName != null) 'authorName': authorName,
+    if (authorLabel != null) 'authorLabel': authorLabel,
+    if (creatorLabel != null) 'creatorLabel': creatorLabel,
+  };
 
   MobileTheme copyWith({
     String? id,
@@ -419,22 +411,23 @@ class MobileTheme {
           : (selectedGalleryImage ?? this.selectedGalleryImage),
       imageFit: imageFit ?? this.imageFit,
       preview: clearPreview ? null : (preview ?? this.preview),
-      previewImage:
-          clearPreviewImage ? null : (previewImage ?? this.previewImage),
+      previewImage: clearPreviewImage
+          ? null
+          : (previewImage ?? this.previewImage),
       packId: clearPackId ? null : (packId ?? this.packId),
-      sharedThemeId:
-          clearSharedThemeId ? null : (sharedThemeId ?? this.sharedThemeId),
+      sharedThemeId: clearSharedThemeId
+          ? null
+          : (sharedThemeId ?? this.sharedThemeId),
       shareCode: clearShareCode ? null : (shareCode ?? this.shareCode),
       shareSlug: clearShareSlug ? null : (shareSlug ?? this.shareSlug),
       shareKey: clearShareKey ? null : (shareKey ?? this.shareKey),
       shareUrl: clearShareUrl ? null : (shareUrl ?? this.shareUrl),
       isOwnedTheme: isOwnedTheme ?? this.isOwnedTheme,
-      authorName:
-          clearAuthorName ? null : (authorName ?? this.authorName),
-      authorLabel:
-          clearAuthorLabel ? null : (authorLabel ?? this.authorLabel),
-      creatorLabel:
-          clearCreatorLabel ? null : (creatorLabel ?? this.creatorLabel),
+      authorName: clearAuthorName ? null : (authorName ?? this.authorName),
+      authorLabel: clearAuthorLabel ? null : (authorLabel ?? this.authorLabel),
+      creatorLabel: clearCreatorLabel
+          ? null
+          : (creatorLabel ?? this.creatorLabel),
     );
   }
 
@@ -446,8 +439,8 @@ class MobileTheme {
 
   String get identity =>
       sharedThemeId != null && sharedThemeId!.trim().isNotEmpty
-          ? 'shared:${sharedThemeId!.trim()}'
-          : 'local:$id';
+      ? 'shared:${sharedThemeId!.trim()}'
+      : 'local:$id';
 
   String get presetId => packId ?? id;
   String get backgroundPackageId => packId ?? id;
@@ -459,10 +452,7 @@ class MobileTheme {
 }
 
 class ThemeSyncResult {
-  ThemeSyncResult({
-    required this.theme,
-    required this.session,
-  });
+  ThemeSyncResult({required this.theme, required this.session});
 
   final MobileTheme theme;
   final UserSession session;
@@ -473,97 +463,46 @@ const kThemeSceneSlots = ThemeSceneSlot.values;
 final kPresetThemes = <MobileTheme>[
   MobileTheme.fromSeed(
     ThemePackSeed(
-      id: 'default',
-      packId: 'default',
-      name: 'Mountain',
-      description: 'The original weather-reactive default theme.',
+      id: 'default-weather-pack',
+      packId: 'default-weather-pack',
+      name: 'Weather Photo Pack',
+      description: 'The original weather-reactive photo pack from desktop.',
       btnColor: const Color(0xFF60A5FA),
-      gradient: const ThemeGradient(
-        angle: 135,
-        colors: [Color(0xFF1E3A5F), Color(0xFF3B82F6), Color(0xFF7DD3FC)],
+      gradient: ThemeGradient(
+        angle: 180,
+        colors: [Color(0xFF0F172A), Color(0xFF1D4ED8), Color(0xFF7DD3FC)],
       ),
       backgroundMode: ThemeBackgroundMode.perScene,
-      images: _fallbackSceneImages(),
-      source: 'preset',
-    ),
-  ),
-  MobileTheme.fromSeed(
-    ThemePackSeed(
-      id: 'aurora',
-      packId: 'aurora',
-      name: 'Aurora',
-      description: 'Electric twilight over high ridges.',
-      btnColor: const Color(0xFFA855F7),
-      gradient: const ThemeGradient(
-        angle: 135,
-        colors: [Color(0xFF0D0221), Color(0xFF5A0D82), Color(0xFF1A6B8A)],
-      ),
-      backgroundMode: ThemeBackgroundMode.perScene,
-      images: _fallbackSceneImages(),
-      source: 'preset',
-    ),
-  ),
-  MobileTheme.fromSeed(
-    ThemePackSeed(
-      id: 'forest',
-      packId: 'forest',
-      name: 'Forest',
-      description: 'Cedar silhouettes, mist, and rain.',
-      btnColor: const Color(0xFF22C55E),
-      gradient: const ThemeGradient(
-        angle: 135,
-        colors: [Color(0xFF0F2A0F), Color(0xFF2D6A2D), Color(0xFF1A3A1A)],
-      ),
-      backgroundMode: ThemeBackgroundMode.perScene,
-      images: _fallbackSceneImages(),
-      source: 'preset',
-    ),
-  ),
-  MobileTheme.fromSeed(
-    ThemePackSeed(
-      id: 'desert',
-      packId: 'desert',
-      name: 'Desert Dusk',
-      description: 'Wind-cut dunes in changing light.',
-      btnColor: const Color(0xFFF97316),
-      gradient: const ThemeGradient(
-        angle: 135,
-        colors: [Color(0xFF7C2D12), Color(0xFFEA580C), Color(0xFFFBBF24)],
-      ),
-      backgroundMode: ThemeBackgroundMode.perScene,
-      images: _fallbackSceneImages(),
-      source: 'preset',
-    ),
-  ),
-  MobileTheme.fromSeed(
-    ThemePackSeed(
-      id: 'ocean',
-      packId: 'ocean',
-      name: 'Ocean',
-      description: 'Open water horizons and sea haze.',
-      btnColor: const Color(0xFF06B6D4),
-      gradient: const ThemeGradient(
-        angle: 135,
-        colors: [Color(0xFF0C1A40), Color(0xFF0E4D6E), Color(0xFF0EA5E9)],
-      ),
-      backgroundMode: ThemeBackgroundMode.perScene,
-      images: _fallbackSceneImages(),
-      source: 'preset',
-    ),
-  ),
-  MobileTheme.fromSeed(
-    ThemePackSeed(
-      id: 'midnight',
-      packId: 'midnight',
-      name: 'Midnight',
-      description: 'Steel blue night air over dark peaks.',
-      btnColor: const Color(0xFF94A3B8),
-      gradient: const ThemeGradient(
-        angle: 135,
-        colors: [Color(0xFF0A0A0A), Color(0xFF1C1C2E), Color(0xFF2D2D44)],
-      ),
-      backgroundMode: ThemeBackgroundMode.perScene,
-      images: _fallbackSceneImages(),
+      images: {
+        ThemeSceneSlot.clearDay.key: 'assets/theme_fallbacks/ClearSky.jpg',
+        ThemeSceneSlot.clearSunrise.key:
+            'assets/theme_fallbacks/SunsetSunriseClearSky.png',
+        ThemeSceneSlot.clearNight.key: 'assets/theme_fallbacks/NightClear.jpg',
+        ThemeSceneSlot.cloudyDay.key: 'assets/theme_fallbacks/Cloudy.jpg',
+        ThemeSceneSlot.cloudySunrise.key:
+            'assets/theme_fallbacks/SunsetSunriseCloudy.jpg',
+        ThemeSceneSlot.cloudyNight.key:
+            'assets/theme_fallbacks/NightCloudy.jpg',
+        ThemeSceneSlot.partlyCloudyDay.key:
+            'assets/theme_fallbacks/PartlyCloudy.jpg',
+        ThemeSceneSlot.partlyCloudySunrise.key:
+            'assets/theme_fallbacks/SunsetSunrisePartlyCloudy.jpg',
+        ThemeSceneSlot.partlyCloudyNight.key:
+            'assets/theme_fallbacks/NightPartlyCloudy.jpg',
+      },
+      galleryImages: [
+        'assets/theme_fallbacks/ClearSky.jpg',
+        'assets/theme_fallbacks/PartlyCloudy.jpg',
+        'assets/theme_fallbacks/Cloudy.jpg',
+        'assets/theme_fallbacks/SunsetSunriseClearSky.png',
+        'assets/theme_fallbacks/SunsetSunrisePartlyCloudy.jpg',
+        'assets/theme_fallbacks/SunsetSunriseCloudy.jpg',
+        'assets/theme_fallbacks/NightClear.jpg',
+        'assets/theme_fallbacks/NightPartlyCloudy.jpg',
+        'assets/theme_fallbacks/NightCloudy.jpg',
+      ],
+      preview: 'assets/theme_fallbacks/ClearSky.jpg',
+      previewImage: 'assets/theme_fallbacks/ClearSky.jpg',
       source: 'preset',
     ),
   ),
@@ -601,7 +540,8 @@ final kFeaturedThemes = <MobileTheme>[
     id: 'beach-featured',
     packId: 'beach',
     name: 'Beach Photo Pack',
-    description: 'Weather-based shoreline scenes with surf, haze, and horizon glow.',
+    description:
+        'Weather-based shoreline scenes with surf, haze, and horizon glow.',
     btnColor: const Color(0xFF38BDF8),
     coverExtension: 'jpg',
     sceneExtension: 'jpg',
@@ -638,8 +578,11 @@ class ThemeService extends ChangeNotifier {
 
   MobileTheme get current => _current;
   List<MobileTheme> get savedThemePacks => List.unmodifiable(_savedThemePacks);
-  List<MobileTheme> get builtInThemePacks =>
-      [MobileTheme.defaultTheme, ...kPresetThemes, ...kFeaturedThemes];
+  List<MobileTheme> get builtInThemePacks => [
+    MobileTheme.defaultTheme,
+    ...kPresetThemes,
+    ...kFeaturedThemes,
+  ];
   int? get activeWeatherCode => _activeWeatherCode;
   DateTime get activeWeatherDate => _activeWeatherDate;
   ThemeSceneSlot get activeSceneSlot =>
@@ -677,10 +620,11 @@ class ThemeService extends ChangeNotifier {
       if (rawPacks != null && rawPacks.isNotEmpty) {
         final decoded = jsonDecode(rawPacks);
         if (decoded is List) {
-          _savedThemePacks = decoded
+          final loadedPacks = decoded
               .whereType<Map>()
               .map((item) => MobileTheme.fromJson(item.cast<String, dynamic>()))
               .toList();
+          _savedThemePacks = _mergeThemePacks(const [], loadedPacks);
         }
       }
     } catch (_) {
@@ -708,7 +652,10 @@ class ThemeService extends ChangeNotifier {
   }
 
   Future<MobileTheme> upsertLocalThemePack(MobileTheme theme) async {
-    final normalized = sanitizeThemePack(theme, fallback: MobileTheme.defaultTheme);
+    final normalized = sanitizeThemePack(
+      theme,
+      fallback: MobileTheme.defaultTheme,
+    );
     _savedThemePacks = _mergeThemePacks(_savedThemePacks, [normalized]);
     await _persistSavedThemePacks();
     notifyListeners();
@@ -735,19 +682,18 @@ class ThemeService extends ChangeNotifier {
   }
 
   MobileTheme presetById(String id) {
-    return [...kPresetThemes, ...kFeaturedThemes].firstWhere(
+    return [
+      MobileTheme.defaultTheme,
+      ...kPresetThemes,
+      ...kFeaturedThemes,
+    ].firstWhere(
       (theme) => theme.id == id || theme.packId == id,
       orElse: () => MobileTheme.defaultTheme,
     );
   }
 
   Future<void> applyAccentColor(Color color) async {
-    await applyThemePack(
-      _current.copyWith(
-        btnColor: color,
-        source: 'user',
-      ),
-    );
+    await applyThemePack(_current.copyWith(btnColor: color, source: 'user'));
   }
 
   Future<void> applyPreset(MobileTheme preset) => applyThemePack(preset);
@@ -764,15 +710,7 @@ class ThemeService extends ChangeNotifier {
   }
 
   Future<void> applyBackgroundMode(ThemeBackgroundMode mode) async {
-    ThemeBackgroundMode normalized = mode;
-    if (mode == ThemeBackgroundMode.none) {
-      normalized = ThemeBackgroundMode.gradient;
-    } else if (mode == ThemeBackgroundMode.weatherPackage) {
-      normalized = ThemeBackgroundMode.perScene;
-    } else if (mode == ThemeBackgroundMode.customImage) {
-      normalized = ThemeBackgroundMode.universal;
-    }
-    await applyThemePack(_current.copyWith(backgroundMode: normalized));
+    await applyThemePack(_current.copyWith(backgroundMode: mode));
   }
 
   Future<void> setStoredBackgroundImage(String? path, BoxFit fit) async {
@@ -780,7 +718,8 @@ class ThemeService extends ChangeNotifier {
     if (normalized.isEmpty) {
       await applyThemePack(
         _current.copyWith(
-          images: Map<String, String>.from(_current.images)..remove('universal'),
+          images: Map<String, String>.from(_current.images)
+            ..remove('universal'),
         ),
       );
       return;
@@ -789,10 +728,7 @@ class ThemeService extends ChangeNotifier {
       _current.copyWith(
         backgroundMode: ThemeBackgroundMode.universal,
         imageFit: _themeImageFitForBoxFit(fit),
-        images: {
-          ..._current.images,
-          'universal': normalized,
-        },
+        images: {..._current.images, 'universal': normalized},
       ),
     );
   }
@@ -849,7 +785,10 @@ class ThemeService extends ChangeNotifier {
     String? shareSlug,
   }) async {
     final json = await _post(session, 'upsertcustomtheme', {
-      'theme': sanitizeThemePack(theme, fallback: MobileTheme.defaultTheme).toJson(),
+      'theme': sanitizeThemePack(
+        theme,
+        fallback: MobileTheme.defaultTheme,
+      ).toJson(),
       if ((shareSlug ?? '').trim().isNotEmpty) 'shareSlug': shareSlug!.trim(),
     });
     final synced = sanitizeThemePack(
@@ -864,6 +803,19 @@ class ThemeService extends ChangeNotifier {
       theme: synced,
       session: _updatedSession(session, json),
     );
+  }
+
+  Future<bool> checkShareSlugAvailability(
+    UserSession session,
+    String slug, {
+    String? excludeThemeId,
+  }) async {
+    final json = await _post(session, 'checkthemeslug', {
+      'slug': slug.trim(),
+      if ((excludeThemeId ?? '').trim().isNotEmpty)
+        'excludeThemeId': excludeThemeId!.trim(),
+    });
+    return json['available'] == true;
   }
 
   Future<ThemeSyncResult> importSharedTheme(
@@ -933,8 +885,10 @@ class ThemeService extends ChangeNotifier {
     return const AssetImage(_kLoginBackgroundAsset);
   }
 
+  String displayImageUrl(String? path) => path?.trim() ?? '';
+
   ImageProvider<Object>? imageProviderForPath(String? path) {
-    final normalizedPath = path?.trim() ?? '';
+    final normalizedPath = _normalizeBundledAssetPath(path?.trim() ?? '');
     if (normalizedPath.isEmpty) {
       return null;
     }
@@ -1014,7 +968,8 @@ class ThemeService extends ChangeNotifier {
     ThemeSceneSlot? sceneSlot,
     WeatherThemeKind? previewWeatherKind,
   }) {
-    final normalizedSlot = sceneSlot ??
+    final normalizedSlot =
+        sceneSlot ??
         switch (previewWeatherKind) {
           WeatherThemeKind.clear => ThemeSceneSlot.clearDay,
           WeatherThemeKind.cloudy => ThemeSceneSlot.cloudyDay,
@@ -1046,8 +1001,7 @@ class ThemeService extends ChangeNotifier {
       >= 71 && <= 86 ||
       95 ||
       96 ||
-      99 =>
-        'cloudy',
+      99 => 'cloudy',
       _ => 'cloudy',
     };
 
@@ -1095,9 +1049,8 @@ class ThemeService extends ChangeNotifier {
   }) {
     final mergedImages = {
       ...fallback.images,
-      ...input.images.map(
-        (key, value) => MapEntry(key.trim(), value.trim()),
-      )..removeWhere((key, value) => key.isEmpty || value.isEmpty),
+      ...input.images.map((key, value) => MapEntry(key.trim(), value.trim()))
+        ..removeWhere((key, value) => key.isEmpty || value.isEmpty),
     };
     final galleryImages = input.galleryImages
         .map((value) => value.trim())
@@ -1129,7 +1082,9 @@ class ThemeService extends ChangeNotifier {
       preview: _trimOrNull(input.preview),
       previewImage: _trimOrNull(input.previewImage),
       packId: _trimOrNull(input.packId),
-      source: input.source.trim().isEmpty ? fallback.source : input.source.trim(),
+      source: input.source.trim().isEmpty
+          ? fallback.source
+          : input.source.trim(),
       sharedThemeId: _trimOrNull(input.sharedThemeId),
       shareCode: _trimOrNull(input.shareCode),
       shareSlug: _trimOrNull(input.shareSlug),
@@ -1167,7 +1122,13 @@ class ThemeService extends ChangeNotifier {
     }
     try {
       final uri = Uri.parse(trimmed);
-      return uri.queryParameters['theme']?.trim() ?? '';
+      final sharedValue = uri.queryParameters['theme']?.trim() ?? '';
+      if (sharedValue.isNotEmpty) {
+        return sharedValue;
+      }
+      return (uri.scheme.isEmpty && uri.host.isEmpty && uri.path.isNotEmpty)
+          ? uri.path.trim()
+          : trimmed;
     } catch (_) {
       return trimmed;
     }
@@ -1192,8 +1153,9 @@ class ThemeService extends ChangeNotifier {
 
   Future<void> _refreshResolvedImageMetrics({bool notify = true}) async {
     _resolvedBackgroundPath = resolveEffectiveBackgroundPath();
-    _resolvedImageLuminance =
-        await _estimateImageLuminance(_resolvedBackgroundPath);
+    _resolvedImageLuminance = await _estimateImageLuminance(
+      _resolvedBackgroundPath,
+    );
     final luminance = _resolvedImageLuminance;
     _backgroundOverlayOpacity = switch (luminance) {
       null => 0.48,
@@ -1261,7 +1223,9 @@ class ThemeService extends ChangeNotifier {
         targetHeight: 24,
       );
       final frame = await codec.getNextFrame();
-      final data = await frame.image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      final data = await frame.image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
       if (data == null) {
         return null;
       }
@@ -1300,7 +1264,9 @@ class ThemeService extends ChangeNotifier {
     Map<String, dynamic> json,
   ) {
     final refreshed = json['jwtToken']?.toString() ?? '';
-    return refreshed.isEmpty ? session : session.copyWith(accessToken: refreshed);
+    return refreshed.isEmpty
+        ? session
+        : session.copyWith(accessToken: refreshed);
   }
 }
 
@@ -1429,15 +1395,47 @@ bool _looksLikeNetworkUrl(String value) {
       uri.host.isNotEmpty;
 }
 
+String _normalizeBundledAssetPath(String value) {
+  final normalized = value.trim().replaceAll('\\', '/');
+  if (!normalized.startsWith('assets/')) {
+    return normalized;
+  }
+  return normalized.replaceFirst(RegExp(r'^(assets/)+'), 'assets/');
+}
+
 List<MobileTheme> _mergeThemePacks(
   List<MobileTheme> first,
   List<MobileTheme> second,
 ) {
   final merged = <String, MobileTheme>{};
   for (final theme in [...first, ...second]) {
-    merged[theme.identity] = theme;
+    merged[_themePackMergeKey(theme)] = theme;
   }
   return merged.values.toList();
+}
+
+String _themePackMergeKey(MobileTheme theme) {
+  final sharedThemeId = theme.sharedThemeId?.trim() ?? '';
+  if (sharedThemeId.isNotEmpty) {
+    return 'shared:$sharedThemeId';
+  }
+
+  final shareSlug = theme.shareSlug?.trim().toLowerCase() ?? '';
+  if (shareSlug.isNotEmpty) {
+    return 'slug:$shareSlug';
+  }
+
+  final shareCode = theme.shareCode?.trim().toUpperCase() ?? '';
+  if (shareCode.isNotEmpty) {
+    return 'code:$shareCode';
+  }
+
+  final shareValue = ThemeService.extractSharedThemeValue(theme.shareUrl);
+  if (shareValue.isNotEmpty) {
+    return 'share:${shareValue.toLowerCase()}';
+  }
+
+  return theme.identity;
 }
 
 MobileTheme _buildFeaturedTheme({
@@ -1449,8 +1447,7 @@ MobileTheme _buildFeaturedTheme({
   required String coverExtension,
   required String sceneExtension,
 }) {
-  final coverImage =
-      'assets/theme_featured/$packId/cover.$coverExtension';
+  final coverImage = 'assets/theme_featured/$packId/cover.$coverExtension';
   return MobileTheme.fromSeed(
     ThemePackSeed(
       id: id,

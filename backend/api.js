@@ -97,7 +97,27 @@ function extractResponseText(responseBody)
         }
     }
 
-    return textParts.join('\n').trim();
+    return normalizeAssistantReply(textParts.join('\n'));
+}
+
+function normalizeAssistantReply(value)
+{
+    const source = String(value || '')
+        .replace(/\r\n?/g, '\n')
+        .trim();
+
+    if(!source)
+    {
+        return '';
+    }
+
+    return source
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .replace(/([^\n])\s+(\d+\.\s+)/g, '$1\n$2')
+        .replace(/([^\n])\s+([*-]\s+)/g, '$1\n$2')
+        .replace(/([^\n])\s+(•\s+)/g, '$1\n$2')
+        .trim();
 }
 
 const SUPPORTED_AVATAR_MIME_TYPES = new Set([
@@ -108,12 +128,15 @@ const SUPPORTED_AVATAR_MIME_TYPES = new Set([
     'image/avif',
     'image/heic',
     'image/heif',
+    'image/bmp',
+    'image/tiff',
 ]);
-const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
-const MAX_IMAGE_UPLOAD_BYTES = 6 * 1024 * 1024;
+const MAX_AVATAR_BYTES = 12 * 1024 * 1024;
+const MAX_IMAGE_UPLOAD_BYTES = 12 * 1024 * 1024;
 const MAX_SHARED_THEME_BYTES = 6 * 1024 * 1024;
 const THEME_SHARE_CODE_LENGTH = 6;
 const THEME_SHARE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9_-]{1,38}[a-z0-9])?$/;
+const SUPPORTED_IMAGE_FORMAT_LABEL = 'PNG, JPEG, GIF, WEBP, AVIF, HEIC, HEIF, BMP, or TIFF';
 
 function base64ByteLength(value)
 {
@@ -157,7 +180,7 @@ function normalizeImageDataUrl(value, {
     const base64Payload = match[2].replace(/\s+/g, '');
     if(!SUPPORTED_AVATAR_MIME_TYPES.has(mimeType))
     {
-        throw new Error(`${errorPrefix} must be PNG, JPEG, GIF, WEBP, AVIF, HEIC, or HEIF.`);
+        throw new Error(`${errorPrefix} must be ${SUPPORTED_IMAGE_FORMAT_LABEL}.`);
     }
 
     if(base64ByteLength(base64Payload) > maxBytes)
@@ -168,25 +191,215 @@ function normalizeImageDataUrl(value, {
     return { mimeType, base64Payload };
 }
 
-function getFirebaseStorageBucket()
+function tryInitFirebaseAdmin()
 {
     let admin;
+    try { admin = require('firebase-admin'); }
+    catch { return null; }
+
+    if(admin.apps.length > 0) return admin;
+
+    const explicitServiceAccountPath = String(process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '').trim();
+    const storageBucket = String(process.env.FIREBASE_STORAGE_BUCKET || '').trim();
+    const appConfig = storageBucket ? { storageBucket } : {};
     try
     {
-        admin = require('firebase-admin');
+        if(explicitServiceAccountPath)
+        {
+            const resolvedPath = path.isAbsolute(explicitServiceAccountPath)
+                ? explicitServiceAccountPath
+                : path.resolve(__dirname, explicitServiceAccountPath);
+            const serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
+            admin.initializeApp({ ...appConfig, credential: admin.credential.cert(serviceAccount) });
+        }
+        else
+        {
+            admin.initializeApp({ ...appConfig, credential: admin.credential.applicationDefault() });
+        }
+    }
+    catch { return null; }
+
+    return admin;
+}
+
+function getFirebaseStorageBucket()
+{
+    const admin = tryInitFirebaseAdmin();
+    if(!admin) return null;
+
+    const bucketName = String(process.env.FIREBASE_STORAGE_BUCKET || '').trim();
+    return bucketName ? admin.storage().bucket(bucketName) : admin.storage().bucket();
+}
+
+function buildFirebaseStorageMediaUrl(bucketName, objectPath, downloadToken)
+{
+    const encodedObjectPath = encodeURIComponent(String(objectPath || ''));
+    return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedObjectPath}?alt=media&token=${encodeURIComponent(downloadToken)}`;
+}
+
+async function ensureFirebaseStorageDownloadUrl(bucket, objectPath)
+{
+    const file = bucket.file(objectPath);
+    const [metadata] = await file.getMetadata();
+    const existingToken = String(metadata?.metadata?.firebaseStorageDownloadTokens || '')
+        .split(',')
+        .map((value) => String(value || '').trim())
+        .find(Boolean);
+
+    if(existingToken)
+    {
+        return buildFirebaseStorageMediaUrl(bucket.name, objectPath, existingToken);
+    }
+
+    const downloadToken = crypto.randomUUID();
+    await file.setMetadata({
+        metadata: {
+            ...(metadata?.metadata || {}),
+            firebaseStorageDownloadTokens: downloadToken,
+        },
+    });
+
+    return buildFirebaseStorageMediaUrl(bucket.name, objectPath, downloadToken);
+}
+
+function parseFirebaseStorageUrl(value)
+{
+    const trimmed = String(value || '').trim();
+    if(!trimmed)
+    {
+        return null;
+    }
+
+    try
+    {
+        const parsed = new URL(trimmed);
+        if(parsed.hostname === 'storage.googleapis.com')
+        {
+            const [, bucketName, ...rest] = parsed.pathname.split('/');
+            const objectPath = rest.join('/');
+            if(bucketName && objectPath)
+            {
+                return {
+                    bucketName,
+                    objectPath: decodeURIComponent(objectPath),
+                };
+            }
+        }
+
+        if(parsed.hostname === 'firebasestorage.googleapis.com')
+        {
+            const match = /^\/v0\/b\/([^/]+)\/o\/(.+)$/.exec(parsed.pathname);
+            if(match)
+            {
+                return {
+                    bucketName: decodeURIComponent(match[1]),
+                    objectPath: decodeURIComponent(match[2]),
+                };
+            }
+        }
     }
     catch
     {
         return null;
     }
 
-    if(admin.apps.length === 0)
+    return null;
+}
+
+function unwrapStorageAssetProxyUrl(value)
+{
+    const trimmed = String(value || '').trim();
+    if(!trimmed)
     {
-        return null;
+        return '';
     }
 
-    const bucketName = String(process.env.FIREBASE_STORAGE_BUCKET || '').trim();
-    return bucketName ? admin.storage().bucket(bucketName) : admin.storage().bucket();
+    try
+    {
+        const parsed = new URL(trimmed);
+        if(!/\/api\/storageasset$/i.test(parsed.pathname))
+        {
+            return trimmed;
+        }
+
+        const nestedUrl = String(parsed.searchParams.get('url') || '').trim();
+        return nestedUrl || trimmed;
+    }
+    catch
+    {
+        return trimmed;
+    }
+}
+
+function isAllowedStorageAssetUrl(value)
+{
+    const trimmed = unwrapStorageAssetProxyUrl(value);
+    if(!trimmed)
+    {
+        return false;
+    }
+
+    try
+    {
+        const parsed = new URL(trimmed);
+        return parsed.protocol === 'https:' &&
+            (
+                parsed.hostname === 'firebasestorage.googleapis.com' ||
+                parsed.hostname === 'storage.googleapis.com'
+            );
+    }
+    catch
+    {
+        return false;
+    }
+}
+
+async function normalizeStorageAssetUrl(value)
+{
+    const normalizedInput = unwrapStorageAssetProxyUrl(value);
+    const parsed = parseFirebaseStorageUrl(normalizedInput);
+    if(!parsed)
+    {
+        return normalizedInput;
+    }
+
+    try
+    {
+        const admin = tryInitFirebaseAdmin();
+        if(!admin)
+        {
+            return normalizedInput;
+        }
+        const bucket = admin.storage().bucket(parsed.bucketName);
+        return await ensureFirebaseStorageDownloadUrl(bucket, parsed.objectPath);
+    }
+    catch
+    {
+        return normalizedInput;
+    }
+}
+
+async function normalizeStorageAssetTree(value)
+{
+    if(Array.isArray(value))
+    {
+        return Promise.all(value.map((entry) => normalizeStorageAssetTree(entry)));
+    }
+
+    if(value && typeof value === 'object')
+    {
+        const entries = await Promise.all(
+            Object.entries(value).map(async ([key, nestedValue]) => [key, await normalizeStorageAssetTree(nestedValue)])
+        );
+        return Object.fromEntries(entries);
+    }
+
+    if(typeof value === 'string')
+    {
+        return normalizeStorageAssetUrl(value);
+    }
+
+    return value;
 }
 
 async function uploadBase64ImageToFirebaseStorage({
@@ -217,11 +430,13 @@ async function uploadBase64ImageToFirebaseStorage({
         },
     });
 
+    const downloadUrl = await ensureFirebaseStorageDownloadUrl(bucket, objectPath);
+
     return {
         bucket: bucket.name,
         path: objectPath,
         mimeType: normalized.mimeType,
-        url: `https://storage.googleapis.com/${bucket.name}/${encodeURI(objectPath)}`,
+        url: downloadUrl,
     };
 }
 
@@ -233,10 +448,66 @@ function sleep(ms)
     });
 }
 
+function isAssistantDebugEnabled(requested = false)
+{
+    return requested === true || readBooleanEnv('OPENAI_ASSISTANT_DEBUG', false);
+}
+
+function formatAssistantDebugValue(value)
+{
+    if(value === null || value === undefined)
+    {
+        return '';
+    }
+
+    if(typeof value === 'string')
+    {
+        return value;
+    }
+
+    try
+    {
+        return JSON.stringify(value);
+    }
+    catch
+    {
+        return String(value);
+    }
+}
+
+function emitAssistantDebug(handlers, event)
+{
+    handlers?.onDebug?.({
+        timestamp: new Date().toISOString(),
+        ...event,
+    });
+}
+
 function readOptionalEnv(name)
 {
     const value = String(process.env[name] || '').trim();
     return value || '';
+}
+
+function readBooleanEnv(name, fallback = false)
+{
+    const value = readOptionalEnv(name).toLowerCase();
+    if(!value)
+    {
+        return fallback;
+    }
+
+    if(['1', 'true', 'yes', 'on'].includes(value))
+    {
+        return true;
+    }
+
+    if(['0', 'false', 'no', 'off'].includes(value))
+    {
+        return false;
+    }
+
+    return fallback;
 }
 
 function readPositiveIntEnv(name, fallback, options = {})
@@ -287,6 +558,21 @@ function getAssistantMaxToolRounds()
 function getOpenAIMaxRetries()
 {
     return readPositiveIntEnv('OPENAI_MAX_RETRIES', 3, { min: 1, max: 6 });
+}
+
+function shouldValidateAssistantReplies()
+{
+    return readBooleanEnv('OPENAI_VALIDATE_REPLIES', true);
+}
+
+function getConfiguredOpenAIValidatorModel()
+{
+    return readOptionalEnv('OPENAI_VALIDATOR_MODEL') || readOptionalEnv('OPENAI_FALLBACK_MODEL') || 'gpt-4.1-mini';
+}
+
+function getAssistantValidationMaxPasses()
+{
+    return readPositiveIntEnv('OPENAI_VALIDATION_MAX_PASSES', 2, { min: 1, max: 3 });
 }
 
 function isRetryableOpenAIStatus(status)
@@ -360,6 +646,9 @@ function buildOpenAIRequestBody(input, options = {})
         tools = [],
         stream = false,
         reasoningEffort = '',
+        reasoningSummary = '',
+        truncation = '',
+        previousResponseId = '',
     } = options;
 
     const requestBody = {
@@ -382,6 +671,24 @@ function buildOpenAIRequestBody(input, options = {})
         requestBody.reasoning = {
             effort: reasoningEffort,
         };
+    }
+
+    if(reasoningSummary)
+    {
+        requestBody.reasoning = {
+            ...(requestBody.reasoning || {}),
+            summary: reasoningSummary,
+        };
+    }
+
+    if(truncation)
+    {
+        requestBody.truncation = truncation;
+    }
+
+    if(previousResponseId)
+    {
+        requestBody.previous_response_id = previousResponseId;
     }
 
     if(useWebSearch)
@@ -474,6 +781,52 @@ async function createOpenAIResponse(apiKey, input, options = {})
     }
 
     throw lastError || new Error('OpenAI request failed');
+}
+
+async function braveWebSearch(query, options = {})
+{
+    const apiKey = process.env.BRAVE_SEARCH_API_KEY || '';
+    if(!apiKey)
+    {
+        return { results: [], error: 'BRAVE_SEARCH_API_KEY not set' };
+    }
+
+    const count = Math.min(Math.max(Number(options.count) || 5, 1), 10);
+    const url = new URL('https://api.search.brave.com/res/v1/web/search');
+    url.searchParams.set('q', String(query || '').trim());
+    url.searchParams.set('count', String(count));
+    url.searchParams.set('safesearch', 'moderate');
+
+    try
+    {
+        const response = await fetch(url.toString(), {
+            headers: {
+                'Accept': 'application/json',
+                'Accept-Encoding': 'gzip',
+                'X-Subscription-Token': apiKey,
+            },
+        });
+
+        if(!response.ok)
+        {
+            return { results: [], error: `Brave Search HTTP ${response.status}` };
+        }
+
+        const body = await response.json();
+        const webResults = Array.isArray(body?.web?.results) ? body.web.results : [];
+
+        return {
+            results: webResults.slice(0, count).map((item) => ({
+                title: String(item?.title || '').trim(),
+                url: String(item?.url || '').trim(),
+                description: String(item?.description || '').trim(),
+            })),
+        };
+    }
+    catch(error)
+    {
+        return { results: [], error: error?.message || String(error) };
+    }
 }
 
 // OpenAI Responses API call with optional web search.
@@ -700,54 +1053,11 @@ function getFirebaseMessaging()
         return firebaseMessagingInstance;
     }
 
-    let admin;
-    try
+    const admin = tryInitFirebaseAdmin();
+    if(!admin)
     {
-        admin = require('firebase-admin');
-    }
-    catch(error)
-    {
-        pushDebug('Skipping push send because firebase-admin is not installed.', {
-            error: error.message,
-        });
+        pushDebug('Skipping push send because firebase-admin could not be initialized.');
         return null;
-    }
-
-    if(admin.apps.length === 0)
-    {
-        const explicitServiceAccountPath = String(process.env.FIREBASE_SERVICE_ACCOUNT_PATH || '').trim();
-
-        try
-        {
-            if(explicitServiceAccountPath)
-            {
-                const resolvedPath = path.isAbsolute(explicitServiceAccountPath)
-                    ? explicitServiceAccountPath
-                    : path.resolve(__dirname, explicitServiceAccountPath);
-                const serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
-                admin.initializeApp({
-                    credential: admin.credential.cert(serviceAccount),
-                });
-                pushDebug('Initialized Firebase Admin with FIREBASE_SERVICE_ACCOUNT_PATH.', {
-                    path: resolvedPath,
-                });
-            }
-            else
-            {
-                admin.initializeApp({
-                    credential: admin.credential.applicationDefault(),
-                });
-                pushDebug('Initialized Firebase Admin with application default credentials.');
-            }
-        }
-        catch(error)
-        {
-            pushDebug('Skipping push send because Firebase Admin credentials could not be initialized.', {
-                error: error.message,
-                hasExplicitPath: Boolean(explicitServiceAccountPath),
-            });
-            return null;
-        }
     }
 
     firebaseMessagingInstance = admin.messaging();
@@ -1228,6 +1538,25 @@ function normalizeThemeGradient(gradient, fallback = {
     };
 }
 
+function normalizeThemeButtonGradient(gradient)
+{
+    const rawColors = Array.isArray(gradient?.colors) ? gradient.colors : [];
+    const colors = rawColors
+        .map((color) => normalizeHexColorValue(color, ''))
+        .filter(Boolean)
+        .slice(0, 3);
+
+    if(colors.length === 0)
+    {
+        return null;
+    }
+
+    return {
+        angle: Number.isFinite(Number(gradient?.angle)) ? Number(gradient.angle) : 135,
+        colors,
+    };
+}
+
 function normalizeThemeImageMap(images)
 {
     if(!images || typeof images !== 'object')
@@ -1252,19 +1581,19 @@ function normalizeThemeGalleryImages(images)
 function inferThemeBackgroundMode(theme)
 {
     const mode = String(theme?.backgroundMode || '').trim();
-    if(['gradient', 'universal', 'perScene'].includes(mode))
+    if(['gradient', 'universal', 'perScene', 'none', 'weatherPackage', 'customImage'].includes(mode))
     {
         return mode;
-    }
-
-    if(theme?.gradient?.colors?.length >= 2)
-    {
-        return 'gradient';
     }
 
     if(theme?.images?.universal || theme?.galleryImages?.length)
     {
         return 'universal';
+    }
+
+    if(theme?.gradient?.colors?.length >= 2)
+    {
+        return 'gradient';
     }
 
     return 'perScene';
@@ -1286,7 +1615,10 @@ function normalizeCustomThemePack(input)
         id: String(input?.id || '').trim() || `shared-${Date.now()}`,
         name: String(input?.name || 'Untitled Pack').trim() || 'Untitled Pack',
         description: String(input?.description || '').trim(),
+        coverPhoto: String(input?.coverPhoto || '').trim(),
         btnColor: normalizeHexColorValue(input?.btnColor),
+        btnTextColor: String(input?.btnTextColor || '').trim(),
+        btnGradient: normalizeThemeButtonGradient(input?.btnGradient),
         images,
         galleryImages,
         selectedGalleryImage: String(input?.selectedGalleryImage || '').trim(),
@@ -1355,14 +1687,27 @@ function buildSharedThemeUrls(themeDoc)
     };
 }
 
-function mapCustomThemeDocument(themeDoc, viewerUserId = '')
+async function mapCustomThemeDocument(db, themeDoc, viewerUserId = '')
 {
     const ownerUserId = String(themeDoc?.ownerUserId || '');
     const ownerDisplayName = String(themeDoc?.ownerDisplayName || 'Anonymous').trim() || 'Anonymous';
     const shareUrls = buildSharedThemeUrls(themeDoc);
+    let ownerAvatarUrl = String(themeDoc?.ownerAvatarUrl || '').trim();
+
+    if(!ownerAvatarUrl && ownerUserId && ObjectId.isValid(ownerUserId))
+    {
+        const ownerAccount = await db.collection('users').findOne(
+            { _id: new ObjectId(ownerUserId) },
+            { projection: { avatarUrl: 1 } }
+        );
+        ownerAvatarUrl = String(ownerAccount?.avatarUrl || '').trim();
+    }
+
+    const normalizedTheme = await normalizeStorageAssetTree(themeDoc?.theme || {});
+    const normalizedOwnerAvatarUrl = await normalizeStorageAssetUrl(ownerAvatarUrl);
 
     return {
-        ...(themeDoc?.theme || {}),
+        ...normalizedTheme,
         id: `shared-${themeDoc?._id}`,
         sharedThemeId: String(themeDoc?._id || ''),
         shareCode: String(themeDoc?.shareCode || ''),
@@ -1373,6 +1718,8 @@ function mapCustomThemeDocument(themeDoc, viewerUserId = '')
         authorName: ownerDisplayName,
         authorLabel: `By ${ownerDisplayName}`,
         creatorLabel: `Theme created by ${ownerDisplayName}`,
+        authorAvatarUrl: normalizedOwnerAvatarUrl,
+        creatorAvatarUrl: normalizedOwnerAvatarUrl,
         source: ownerUserId === String(viewerUserId || '') ? 'user' : 'shared',
     };
 }
@@ -1428,12 +1775,22 @@ function buildThemeLookupQuery(shareValue)
         throw new Error('Theme code or link is required.');
     }
 
-    if(/^[a-f0-9]{6}$/i.test(lookupKey))
+    const normalizedSlug = normalizeThemeShareSlug(lookupKey);
+    const normalizedCode = /^[a-f0-9]{6}$/i.test(lookupKey)
+        ? lookupKey.toUpperCase()
+        : '';
+
+    if(normalizedCode)
     {
-        return { shareCode: lookupKey.toUpperCase() };
+        return {
+            $or: [
+                { shareSlug: normalizedSlug },
+                { shareCode: normalizedCode },
+            ],
+        };
     }
 
-    return { shareSlug: normalizeThemeShareSlug(lookupKey) };
+    return { shareSlug: normalizedSlug };
 }
 
 async function listUserCustomThemes(db, user)
@@ -1466,6 +1823,7 @@ async function listUserCustomThemes(db, user)
                     theme: 1,
                     ownerUserId: 1,
                     ownerDisplayName: 1,
+                    ownerAvatarUrl: 1,
                     shareCode: 1,
                     shareSlug: 1,
                     updatedAt: 1,
@@ -1479,7 +1837,14 @@ async function listUserCustomThemes(db, user)
     return customThemeIds
         .map((themeId) => themeById.get(String(themeId)))
         .filter(Boolean)
-        .map((themeDoc) => mapCustomThemeDocument(themeDoc, user?._id));
+        .length
+        ? Promise.all(
+            customThemeIds
+                .map((themeId) => themeById.get(String(themeId)))
+                .filter(Boolean)
+                .map((themeDoc) => mapCustomThemeDocument(db, themeDoc, user?._id))
+        )
+        : [];
 }
 
 async function buildSettingsPayload(db, user)
@@ -1497,7 +1862,7 @@ async function buildSettingsPayload(db, user)
         lastName: String(user?.lastName || ''),
         email: String(user?.email || ''),
         pendingEmail: String(user?.pendingEmail || ''),
-        avatarUrl: String(user?.avatarUrl || ''),
+        avatarUrl: await normalizeStorageAssetUrl(user?.avatarUrl),
         reminderDefaults,
         customThemes,
         ...feedUrls,
@@ -1817,20 +2182,34 @@ async function syncCalendarSubscription(db, userId, subscription, options = {})
         if(!entry.summary || !entry.start) continue;
 
         const task = buildTaskFromIcsEntry(userId, subscription._id, entry, options);
+        if(!task.title || !(task.dueDate instanceof Date) || Number.isNaN(task.dueDate.getTime()))
+        {
+            continue;
+        }
         activeExternalIds.push(task.externalEventId);
 
-        const updateResult = await db.collection('tasks').updateOne(
-            {
-                user_id: new ObjectId(userId),
-                subscriptionId: new ObjectId(subscription._id),
-                externalEventId: task.externalEventId,
-            },
-            { $set: task },
-            { upsert: true }
-        );
+        try
+        {
+            const updateResult = await db.collection('tasks').updateOne(
+                {
+                    user_id: new ObjectId(userId),
+                    subscriptionId: new ObjectId(subscription._id),
+                    externalEventId: task.externalEventId,
+                },
+                { $set: task },
+                { upsert: true }
+            );
 
-        if(updateResult.upsertedCount > 0) insertedCount += 1;
-        else if(updateResult.modifiedCount > 0) updatedCount += 1;
+            if(updateResult.upsertedCount > 0) insertedCount += 1;
+            else if(updateResult.modifiedCount > 0) updatedCount += 1;
+        }
+        catch(error)
+        {
+            if(!/validation/i.test(String(error?.message || error)))
+            {
+                throw error;
+            }
+        }
     }
 
     const deleteFilter = {
@@ -2226,6 +2605,7 @@ function buildRecurringTaskDocuments(userId, args, options = {})
 
 function shouldUseAssistantWebSearch(messages = [])
 {
+    return false;
     const combinedText = messages
         .map((message) => typeof message?.content === 'string' ? message.content : '')
         .join(' ')
@@ -2265,6 +2645,665 @@ function shouldUseAssistantWebSearch(messages = [])
         'campus',
         'local',
     ].some((phrase) => combinedText.includes(phrase));
+}
+
+function shouldUseAssistantComputerUse(messages = [])
+{
+    const combinedText = messages
+        .map((message) => typeof message?.content === 'string' ? message.content : '')
+        .join(' ')
+        .toLowerCase();
+
+    if(!combinedText)
+    {
+        return false;
+    }
+
+    const explicitRequest = [
+        'use browser',
+        'use the browser',
+        'use virtual computer',
+        'virtual computer',
+        'open a browser',
+        'browse for me',
+    ].some((phrase) => combinedText.includes(phrase));
+
+    const ticketingIntent = [
+        'movie',
+        'movies',
+        'showtime',
+        'showtimes',
+        'theater',
+        'theatre',
+        'cinema',
+        'seat',
+        'seats',
+        'seat map',
+        'ticket',
+        'tickets',
+        'available seats',
+        'amc',
+        'regal',
+        'fandango',
+    ].some((phrase) => combinedText.includes(phrase));
+
+    return explicitRequest || ticketingIntent;
+}
+
+function isAssistantComputerUseEnabled()
+{
+    return readBooleanEnv('OPENAI_COMPUTER_USE_ENABLED', false);
+}
+
+function getConfiguredOpenAIComputerUseModel()
+{
+    return readOptionalEnv('OPENAI_COMPUTER_USE_MODEL') || 'gpt-5.4';
+}
+
+function getAssistantComputerUseMaxSteps()
+{
+    return readPositiveIntEnv('OPENAI_COMPUTER_USE_MAX_STEPS', 12, { min: 1, max: 30 });
+}
+
+function getAssistantComputerUseCdpUrl()
+{
+    const configuredUrl = readOptionalEnv('OPENAI_COMPUTER_USE_CDP_URL')
+        || readOptionalEnv('BROWSERBASE_CDP_URL');
+    if(configuredUrl)
+    {
+        return configuredUrl;
+    }
+
+    const browserbaseApiKey = readOptionalEnv('BROWSERBASE_API_KEY');
+    const browserbaseProjectId = readOptionalEnv('BROWSERBASE_PROJECT_ID');
+    if(browserbaseApiKey && browserbaseProjectId)
+    {
+        return `wss://connect.browserbase.com?apiKey=${encodeURIComponent(browserbaseApiKey)}&projectId=${encodeURIComponent(browserbaseProjectId)}`;
+    }
+
+    return null;
+}
+
+function extractMentionedUrls(messages = [])
+{
+    const urls = [];
+    const pattern = /https?:\/\/[^\s)]+/gi;
+
+    for(const message of messages)
+    {
+        const content = typeof message?.content === 'string' ? message.content : '';
+        const matches = content.match(pattern) || [];
+        for(const match of matches)
+        {
+            urls.push(match);
+        }
+    }
+
+    return urls;
+}
+
+function buildPreferredBrowserStartUrl(messages = [])
+{
+    const combinedText = messages
+        .map((message) => typeof message?.content === 'string' ? message.content : '')
+        .join(' ')
+        .toLowerCase();
+
+    const mentionedUrl = extractMentionedUrls(messages).find(Boolean);
+    if(mentionedUrl)
+    {
+        return mentionedUrl;
+    }
+
+    const mentionsDisneySprings = combinedText.includes('amc disney springs') || combinedText.includes('disney springs');
+    const mentionsDsMovie = /\bds\b/.test(combinedText) && (combinedText.includes('movie') || combinedText.includes('hoppers') || combinedText.includes('seat'));
+
+    if(mentionsDisneySprings || mentionsDsMovie)
+    {
+        return 'https://www.amctheatres.com/movie-theatres/orlando/amc-dine-in-disney-springs-24';
+    }
+
+    if(combinedText.includes('amc'))
+    {
+        return 'https://www.amctheatres.com/';
+    }
+
+    if(combinedText.includes('fandango'))
+    {
+        return 'https://www.fandango.com/';
+    }
+
+    if(combinedText.includes('regal'))
+    {
+        return 'https://www.regmovies.com/';
+    }
+
+    if(combinedText.includes('opentable') || /\breserv(e|ation)\b/.test(combinedText))
+    {
+        return 'https://www.opentable.com/';
+    }
+
+    if(combinedText.includes('resy'))
+    {
+        return 'https://resy.com/';
+    }
+
+    if(combinedText.includes('yelp') || combinedText.includes('restaurant') || combinedText.includes('dinner'))
+    {
+        return 'https://www.yelp.com/';
+    }
+
+    if(combinedText.includes('map') || combinedText.includes('directions') || combinedText.includes('nearby'))
+    {
+        return 'https://www.google.com/maps';
+    }
+
+        return 'about:blank';
+    }
+
+async function detectBrowserBlocker(page)
+{
+    const currentUrl = String(page.url() || '');
+    const lowerUrl = currentUrl.toLowerCase();
+    const title = String(await page.title().catch(() => '') || '');
+    const lowerTitle = title.toLowerCase();
+    const bodyText = String(await page.locator('body').textContent().catch(() => '') || '')
+        .slice(0, 4000)
+        .toLowerCase();
+
+    if(lowerUrl.includes('google.com/sorry'))
+    {
+        return 'Google presented a CAPTCHA or anti-bot challenge before I could continue.';
+    }
+
+    if(lowerTitle.includes('captcha') || bodyText.includes('captcha') || bodyText.includes('i am not a robot'))
+    {
+        return 'The site presented a CAPTCHA or anti-bot challenge before I could continue.';
+    }
+
+    if(bodyText.includes('verify you are human') || bodyText.includes('press and hold') || bodyText.includes('unusual traffic'))
+    {
+        return 'The site asked for human verification before I could continue.';
+    }
+
+    return '';
+}
+
+function dataUrlForPng(buffer)
+{
+    return `data:image/png;base64,${Buffer.from(buffer).toString('base64')}`;
+}
+
+function normalizeComputerKeyName(key)
+{
+    const normalized = String(key || '').trim();
+    if(!normalized)
+    {
+        return '';
+    }
+
+    const upper = normalized.toUpperCase();
+    const keyMap = {
+        CTRL: 'Control',
+        CONTROL: 'Control',
+        CMD: 'Meta',
+        COMMAND: 'Meta',
+        OPTION: 'Alt',
+        ESC: 'Escape',
+        DEL: 'Delete',
+        BKSP: 'Backspace',
+        PGUP: 'PageUp',
+        PGDN: 'PageDown',
+        SPACE: 'Space',
+        TAB: 'Tab',
+        ENTER: 'Enter',
+        RETURN: 'Enter',
+        UP: 'ArrowUp',
+        DOWN: 'ArrowDown',
+        LEFT: 'ArrowLeft',
+        RIGHT: 'ArrowRight',
+    };
+
+    if(keyMap[upper])
+    {
+        return keyMap[upper];
+    }
+
+    if(/^F\d{1,2}$/.test(upper))
+    {
+        return upper;
+    }
+
+    return normalized.length === 1 ? normalized : normalized[0].toUpperCase() + normalized.slice(1).toLowerCase();
+}
+
+async function executeComputerUseAction(page, action)
+{
+    const actionType = String(action?.type || '').trim();
+    const modifierKeys = Array.isArray(action?.keys)
+        ? action.keys.map((value) => normalizeComputerKeyName(value)).filter(Boolean)
+        : [];
+    const withModifiers = async (callback) =>
+    {
+        for(const key of modifierKeys)
+        {
+            await page.keyboard.down(key);
+        }
+
+        try
+        {
+            await callback();
+        }
+        finally
+        {
+            for(const key of modifierKeys.slice().reverse())
+            {
+                await page.keyboard.up(key).catch(() => {});
+            }
+        }
+    };
+
+    switch(actionType)
+    {
+        case 'click':
+        {
+            const button = action?.button === 'right' ? 'right' : 'left';
+            await withModifiers(() => page.mouse.click(Number(action?.x || 0), Number(action?.y || 0), { button }));
+            return;
+        }
+
+        case 'double_click':
+        {
+            const button = action?.button === 'right' ? 'right' : 'left';
+            await withModifiers(() => page.mouse.dblclick(Number(action?.x || 0), Number(action?.y || 0), { button }));
+            return;
+        }
+
+        case 'scroll':
+            await withModifiers(async () =>
+            {
+                await page.mouse.move(Number(action?.x || 0), Number(action?.y || 0));
+                await page.mouse.wheel(Number(action?.scroll_x || 0), Number(action?.scroll_y || 0));
+            });
+            return;
+
+        case 'keypress':
+        {
+            const keys = Array.isArray(action?.keys) ? action.keys.map((value) => normalizeComputerKeyName(value)).filter(Boolean) : [];
+            if(keys.length === 0)
+            {
+                return;
+            }
+
+            if(keys.length === 1)
+            {
+                await page.keyboard.press(keys[0]);
+                return;
+            }
+
+            for(let index = 0; index < keys.length - 1; index += 1)
+            {
+                await page.keyboard.down(keys[index]);
+            }
+
+            await page.keyboard.press(keys[keys.length - 1]);
+
+            for(let index = keys.length - 2; index >= 0; index -= 1)
+            {
+                await page.keyboard.up(keys[index]);
+            }
+            return;
+        }
+
+        case 'type':
+            await page.keyboard.type(String(action?.text || ''));
+            return;
+
+        case 'wait':
+            await sleep(1500);
+            return;
+
+        case 'move':
+            await withModifiers(() => page.mouse.move(Number(action?.x || 0), Number(action?.y || 0)));
+            return;
+
+        case 'drag':
+        {
+            const pathPoints = Array.isArray(action?.path) ? action.path : [];
+            if(pathPoints.length === 0)
+            {
+                return;
+            }
+
+            await withModifiers(async () =>
+            {
+                await page.mouse.move(Number(pathPoints[0]?.x || 0), Number(pathPoints[0]?.y || 0));
+                await page.mouse.down();
+                for(const point of pathPoints.slice(1))
+                {
+                    await page.mouse.move(Number(point?.x || 0), Number(point?.y || 0));
+                }
+                await page.mouse.up();
+            });
+            return;
+        }
+
+        case 'screenshot':
+            return;
+
+        default:
+            throw new Error(`Unsupported computer action: ${actionType || 'unknown'}`);
+    }
+}
+
+async function captureComputerScreenshot(page, handlers = {})
+{
+    const attempts = [
+        {
+            label: 'primary',
+            prepare: async () =>
+            {
+                await page.waitForLoadState('domcontentloaded', { timeout: 2500 }).catch(() => {});
+                await page.evaluate(() =>
+                {
+                    try
+                    {
+                        const style = document.getElementById('__calendarpp_cua_stabilize__') || document.createElement('style');
+                        style.id = '__calendarpp_cua_stabilize__';
+                        style.textContent = '*{animation:none!important;transition:none!important;caret-color:transparent!important;}';
+                        if(!style.parentNode)
+                        {
+                            document.documentElement.appendChild(style);
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore pages that restrict script execution.
+                    }
+                }).catch(() => {});
+            },
+            options: { type: 'png', animations: 'disabled' },
+        },
+        {
+            label: 'settled',
+            prepare: async () =>
+            {
+                await sleep(400);
+                await page.waitForLoadState('networkidle', { timeout: 2000 }).catch(() => {});
+            },
+            options: { type: 'png', animations: 'disabled' },
+        },
+        {
+            label: 'fallback',
+            prepare: async () =>
+            {
+                await sleep(300);
+            },
+            options: { type: 'png' },
+        },
+    ];
+
+    let lastError = null;
+    for(const attempt of attempts)
+    {
+        try
+        {
+            await attempt.prepare();
+            const image = await page.screenshot(attempt.options);
+            emitAssistantDebug(handlers, {
+                scope: 'browser',
+                message: `Captured screenshot with ${attempt.label} strategy`,
+                url: page.url(),
+                title: await page.title().catch(() => ''),
+            });
+            return dataUrlForPng(image);
+        }
+        catch(error)
+        {
+            lastError = error;
+            emitAssistantDebug(handlers, {
+                scope: 'browser',
+                message: `Screenshot attempt failed (${attempt.label})`,
+                url: page.url(),
+                error: error?.message || String(error || ''),
+            });
+        }
+    }
+
+    throw lastError || new Error('Unable to capture browser screenshot');
+}
+
+async function runComputerUseAssistant(apiKey, messages, context = {})
+{
+    if(!isAssistantComputerUseEnabled())
+    {
+        return null;
+    }
+
+    let playwright;
+    try
+    {
+        ({ chromium: playwright } = require('playwright'));
+    }
+    catch
+    {
+        return null;
+    }
+
+    const handlers = context.handlers || {};
+    const debugEnabled = isAssistantDebugEnabled(context.debug);
+    const displayWidth = 1280;
+    const displayHeight = 900;
+    const maxSteps = getAssistantComputerUseMaxSteps();
+    const cdpUrl = getAssistantComputerUseCdpUrl();
+    const startUrl = buildPreferredBrowserStartUrl(messages);
+    const toolSpec = {
+        type: 'computer',
+    };
+    const recentConversation = messages
+        .slice(-6)
+        .map((message) => `${message.role === 'assistant' ? 'Assistant' : 'User'}: ${String(message?.content || '').trim()}`)
+        .join('\n');
+    const browserPrompt = `Use the browser to help with the user's request.
+Only interact with public web pages. Do not sign in, purchase tickets, enter payment details, or share personal data.
+If movie seats are requested, only inspect publicly visible availability and stop before checkout.
+Prefer trusted sites and summarize the result briefly with plain links if useful.
+Prefer direct navigation to official or user-mentioned sites before using any search engine.
+If the site or business is already identifiable from the conversation, go straight there first.
+If you hit a CAPTCHA, anti-bot page, or human-verification challenge, stop immediately and say so clearly.
+For dinner, reservations, or restaurants: go directly to OpenTable, Resy, Yelp, or the restaurant's own site. Do not use Google Search.
+For showtimes: go directly to AMC, Regal, or Fandango. Do not use Google Search.
+For general lookups: call the web_search tool instead of navigating a browser to a search engine.
+If you need a search engine in the browser, use DuckDuckGo (https://duckduckgo.com/). Never use google.com/search.
+
+Conversation:
+${recentConversation}`;
+
+    let browser;
+    try
+    {
+        handlers.onStatus?.('Opening a browser');
+        if(!cdpUrl)
+        {
+            throw new Error('Computer-use requires Browserbase. Set BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID (or OPENAI_COMPUTER_USE_CDP_URL / BROWSERBASE_CDP_URL) in the environment.');
+        }
+        emitAssistantDebug(handlers, {
+            scope: 'browser',
+            message: 'Connecting to Browserbase over CDP',
+        });
+        browser = await playwright.connectOverCDP(cdpUrl);
+        emitAssistantDebug(handlers, {
+            scope: 'browser',
+            message: 'Browser ready via Browserbase',
+        });
+
+        const browserContext = browser.contexts()[0] || await browser.newContext();
+        const page = await browserContext.newPage();
+        await page.setViewportSize({
+            width: displayWidth,
+            height: displayHeight,
+        }).catch(() => {});
+
+        if(debugEnabled)
+        {
+            page.on('framenavigated', (frame) =>
+            {
+                if(frame === page.mainFrame())
+                {
+                    emitAssistantDebug(handlers, {
+                        scope: 'browser',
+                        message: `Navigated to ${frame.url()}`,
+                    });
+                }
+            });
+            page.on('requestfailed', (request) =>
+            {
+                emitAssistantDebug(handlers, {
+                    scope: 'browser',
+                    message: `Request failed: ${request.method()} ${request.url()}`,
+                    error: request.failure()?.errorText || '',
+                });
+            });
+            page.on('console', (msg) =>
+            {
+                const consoleText = String(msg.text() || '').trim();
+                if(consoleText)
+                {
+                    emitAssistantDebug(handlers, {
+                        scope: 'browser-console',
+                        message: consoleText.slice(0, 240),
+                    });
+                }
+            });
+        }
+        await page.goto(startUrl, { waitUntil: 'domcontentloaded' });
+        emitAssistantDebug(handlers, {
+            scope: 'browser',
+            message: `Opened initial page ${page.url()}`,
+        });
+
+        let response = await createOpenAIResponse(apiKey, [
+            {
+                role: 'user',
+                content: [
+                    { type: 'input_text', text: browserPrompt },
+                ],
+            },
+        ], {
+                model: getConfiguredOpenAIComputerUseModel(),
+                tools: [toolSpec],
+                reasoningSummary: 'concise',
+                onStatus: handlers.onStatus,
+            });
+
+        for(let step = 0; step < maxSteps; step += 1)
+        {
+            const computerCall = Array.isArray(response?.output)
+                ? response.output.find((item) => item?.type === 'computer_call')
+                : null;
+
+            if(!computerCall)
+            {
+                const reply = extractResponseText(response);
+                emitAssistantDebug(handlers, {
+                    scope: 'browser',
+                    message: reply
+                        ? 'Browser model returned a direct reply without any browser action'
+                        : 'Browser model returned no browser action and no direct reply',
+                    details: Array.isArray(response?.output)
+                        ? response.output.map((item) => item?.type || 'unknown')
+                        : [],
+                });
+                return reply || null;
+            }
+
+            if(Array.isArray(computerCall?.pending_safety_checks) && computerCall.pending_safety_checks.length > 0)
+            {
+                emitAssistantDebug(handlers, {
+                    scope: 'browser',
+                    message: 'Stopping for browser safety checks',
+                    details: computerCall.pending_safety_checks,
+                });
+                return 'I found a page that triggered a browser safety check, so I stopped before taking the action. If you want, ask again with a narrower public-web request and I can try a safer route.';
+            }
+
+            handlers.onStatus?.('Browsing the web');
+            const actions = Array.isArray(computerCall.actions)
+                ? computerCall.actions
+                : (computerCall.action ? [computerCall.action] : []);
+            if(actions.length === 0)
+            {
+                emitAssistantDebug(handlers, {
+                    scope: 'browser',
+                    step: step + 1,
+                    url: page.url(),
+                    message: 'Computer call did not include any actionable browser steps',
+                });
+            }
+            emitAssistantDebug(handlers, {
+                scope: 'browser',
+                step: step + 1,
+                url: page.url(),
+                action: actions,
+                message: `Executing ${actions.length} browser action${actions.length === 1 ? '' : 's'}`,
+            });
+            for(const action of actions)
+            {
+                await executeComputerUseAction(page, action);
+            }
+            await sleep(800);
+            emitAssistantDebug(handlers, {
+                scope: 'browser',
+                step: step + 1,
+                url: page.url(),
+                title: await page.title().catch(() => ''),
+                message: 'Captured browser state after action',
+            });
+
+            const blocker = await detectBrowserBlocker(page);
+            if(blocker)
+            {
+                emitAssistantDebug(handlers, {
+                    scope: 'browser',
+                    step: step + 1,
+                    url: page.url(),
+                    message: blocker,
+                });
+                return `${blocker} I stopped instead of guessing. If you want, open the page yourself and I can continue once the challenge is cleared.`;
+            }
+
+            response = await createOpenAIResponse(apiKey, [
+                {
+                    type: 'computer_call_output',
+                    call_id: computerCall.call_id,
+                    acknowledged_safety_checks: [],
+                    output: {
+                        type: 'computer_screenshot',
+                        image_url: await captureComputerScreenshot(page, handlers),
+                    },
+                },
+            ], {
+                model: getConfiguredOpenAIComputerUseModel(),
+                tools: [toolSpec],
+                previousResponseId: response.id,
+                onStatus: handlers.onStatus,
+            });
+        }
+
+        emitAssistantDebug(handlers, {
+            scope: 'browser',
+            message: 'Stopped after reaching the browser step limit',
+        });
+        return 'I browsed for a while but did not reach a reliable answer before the step limit, so I stopped instead of guessing.';
+    }
+    finally
+    {
+        emitAssistantDebug(handlers, {
+            scope: 'browser',
+            message: 'Closing browser session',
+        });
+        await browser?.close().catch(() => {});
+    }
 }
 
 function getTaskStartDate(task)
@@ -3039,6 +4078,19 @@ function buildCalendarAssistantTools()
                 additionalProperties: false,
             },
         },
+        {
+            type: 'function',
+            name: 'web_search',
+            description: 'Search the public web for current information (restaurant hours, showtimes, reservation availability, local recommendations, general facts). Use this instead of opening a browser for searches. Prefer this for any query that would normally go to Google.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: { type: 'string', description: 'Natural language search query.' },
+                    count: { type: 'integer', description: 'Number of results to return (1-10, default 5).' },
+                },
+                required: ['query'],
+            },
+        },
     ];
 }
 
@@ -3048,6 +4100,13 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
     const args = JSON.parse(toolCall.arguments || '{}');
     const utcOffsetMinutes = options.utcOffsetMinutes;
     const timeZone = options.timeZone;
+
+    if(toolName === 'web_search')
+    {
+        const { query, count } = args || {};
+        const searchResult = await braveWebSearch(query, { count });
+        return JSON.stringify(searchResult);
+    }
 
     if(toolName === 'search_calendar_tasks')
     {
@@ -3381,6 +4440,8 @@ function describeAssistantTool(toolName)
             return 'Removing a calendar item';
         case 'bulk_delete_calendar_tasks':
             return 'Removing multiple calendar items';
+        case 'web_search':
+            return 'Searching the web';
         default:
             return 'Working on your request';
     }
@@ -3388,7 +4449,7 @@ function describeAssistantTool(toolName)
 
 function splitAssistantReplyForStreaming(text)
 {
-    const source = String(text || '').trim();
+    const source = normalizeAssistantReply(text);
     if(!source) return [];
 
     const sentenceParts = source.match(/[^.!?\n]+(?:[.!?]+|$)|[^\n]+/g) || [source];
@@ -3430,6 +4491,192 @@ function splitAssistantReplyForStreaming(text)
     return chunks;
 }
 
+function hasUnresolvedProgressLanguage(text)
+{
+    const normalized = String(text || '').toLowerCase();
+    if(!normalized)
+    {
+        return false;
+    }
+
+    return [
+        "i'm checking",
+        'im checking',
+        "i'll check",
+        'i will check',
+        'let me check',
+        'one moment',
+        'please wait',
+        'shortly',
+        'in a moment',
+    ].some((phrase) => normalized.includes(phrase));
+}
+
+function sanitizeSeatAvailabilityClaims(messages = [], reply = '')
+{
+    const normalizedReply = normalizeAssistantReply(reply);
+    const lowerReply = normalizedReply.toLowerCase();
+    const conversationText = messages
+        .map((message) => String(message?.content || '').toLowerCase())
+        .join(' ');
+    const looksLikeSeatRequest = [
+        'seat',
+        'ticket',
+        'movie',
+        'theater',
+        'amc',
+        'regal',
+        'fandango',
+        'hoppers',
+    ].some((keyword) => conversationText.includes(keyword));
+
+    if(!looksLikeSeatRequest)
+    {
+        return normalizedReply;
+    }
+
+    const hasHardClaim = [
+        'booked',
+        'reserved',
+        'purchased',
+        'seats are available',
+        'found two seats',
+        'i found seats',
+    ].some((phrase) => lowerReply.includes(phrase));
+    const urls = (normalizedReply.match(/https?:\/\/[^\s)]+/gi) || []);
+    const allowedTicketDomains = ['amctheatres.com', 'fandango.com', 'regmovies.com'];
+    const hasTrustedSourceUrl = urls.some((rawUrl) =>
+    {
+        try
+        {
+            const hostname = new URL(rawUrl).hostname.toLowerCase();
+            return allowedTicketDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+        }
+        catch
+        {
+            return false;
+        }
+    });
+    const hasBlockerLanguage = [
+        'captcha',
+        'could not verify',
+        'couldn\'t verify',
+        'human verification',
+        'could not confirm',
+        'couldn\'t confirm',
+    ].some((phrase) => lowerReply.includes(phrase));
+
+    if(hasHardClaim && !hasTrustedSourceUrl && !hasBlockerLanguage)
+    {
+        return 'I could not verify live seat availability safely in this turn, so I do not want to guess. Please open the official theater page and I can help you choose seats from what you see.';
+    }
+
+    return normalizedReply;
+}
+
+async function validateAssistantReply(apiKey, messages, context, draftReply, handlers = {})
+{
+    if(!shouldValidateAssistantReplies())
+    {
+        return normalizeAssistantReply(draftReply);
+    }
+
+    const normalizedDraft = normalizeAssistantReply(draftReply);
+    if(!normalizedDraft)
+    {
+        return '';
+    }
+
+    const recentConversation = messages
+        .slice(-6)
+        .map((message) => `${message.role === 'assistant' ? 'Assistant' : 'User'}: ${String(message?.content || '').trim()}`)
+        .join('\n');
+
+    const maxPasses = getAssistantValidationMaxPasses();
+    let candidateReply = normalizedDraft;
+
+    for(let passIndex = 0; passIndex < maxPasses; passIndex += 1)
+    {
+        handlers.onStatus?.(passIndex === 0 ? 'Validating the reply' : `Revising the reply (${passIndex + 1}/${maxPasses})`);
+
+        let heartbeat = null;
+        try
+        {
+            const validationResponse = await callOpenAI(apiKey, [
+                {
+                    role: 'user',
+                    content: `Review the draft reply and decide whether it should pass as-is or be revised.
+Your job is to enforce all of the following:
+- The reply directly answers the user's actual question.
+- The reply is informative and specific enough to be useful, not vague or generic.
+- The reply is accurate and does not overclaim certainty.
+- The reply is well formatted for chat, with clean markdown bullets/links when helpful.
+- The reply is conversational and concise, usually 1 to 4 short sentences or a very short list.
+- The reply is not needlessly long, repetitive, robotic, or padded with filler.
+- The reply must be final for this turn, not a promise of future work. Reject replies like "I'm checking", "one moment", or "shortly".
+- Do not add headings or tables unless the user explicitly asked for them.
+- Preserve meaningful markdown bullets and links. Fix broken markdown if needed.
+- Prefer a warm, natural tone over stiff wording.
+
+If the draft is already strong on all points, return pass unchanged.
+If any part is weak, revise it into the best possible final answer while keeping it concise.
+
+Return valid JSON only in this exact shape:
+{"verdict":"pass"|"revise","reply":"..."}
+
+Conversation:
+${recentConversation}
+
+System guidance:
+${context.systemPrompt}
+
+Draft reply:
+${candidateReply}`,
+                },
+            ], {
+                model: getConfiguredOpenAIValidatorModel(),
+                instructions: 'Return only the JSON object. No markdown fences. No commentary.',
+                reasoningEffort: 'minimal',
+                onStatus: handlers.onStatus,
+            });
+
+            const trimmedResponse = String(validationResponse || '').trim();
+            const jsonMatch = trimmedResponse.match(/\{[\s\S]*\}/);
+            if(!jsonMatch)
+            {
+                return candidateReply;
+            }
+
+            const parsed = JSON.parse(jsonMatch[0]);
+            const verdict = String(parsed?.verdict || '').trim().toLowerCase();
+            const nextReply = normalizeAssistantReply(parsed?.reply || candidateReply) || candidateReply;
+
+            candidateReply = sanitizeSeatAvailabilityClaims(messages, nextReply);
+
+            if(verdict !== 'revise' && !hasUnresolvedProgressLanguage(candidateReply))
+            {
+                return candidateReply;
+            }
+
+            if(nextReply === candidateReply && passIndex > 0)
+            {
+                return candidateReply;
+            }
+        }
+        catch
+        {
+            return sanitizeSeatAvailabilityClaims(messages, candidateReply);
+        }
+    }
+
+    if(hasUnresolvedProgressLanguage(candidateReply))
+    {
+        return 'I could not verify that cleanly in one pass, so I do not want to guess. If you want, I can try again or you can open the official site directly and I can help from there.';
+    }
+
+    return sanitizeSeatAvailabilityClaims(messages, candidateReply);
+}
+
 async function runCalendarAssistant(apiKey, db, userId, messages, context)
 {
     const tools = buildCalendarAssistantTools();
@@ -3437,6 +4684,7 @@ async function runCalendarAssistant(apiKey, db, userId, messages, context)
     let calendarChanged = false;
     const toolCallOutputs = new Map();
     const useWebSearch = shouldUseAssistantWebSearch(messages);
+    const useComputerUse = shouldUseAssistantComputerUse(messages);
     const handlers = context.handlers || {};
     const maxToolRounds = getAssistantMaxToolRounds();
 
@@ -3444,7 +4692,7 @@ async function runCalendarAssistant(apiKey, db, userId, messages, context)
     {
         handlers.onStatus?.('Writing your reply');
 
-        if(context.streamFinal)
+        if(context.streamFinal && !shouldValidateAssistantReplies())
         {
             try
             {
@@ -3467,11 +4715,36 @@ async function runCalendarAssistant(apiKey, db, userId, messages, context)
         });
 
         return {
-            reply,
+            reply: await validateAssistantReply(apiKey, messages, context, reply, handlers),
             calendarChanged,
             streamedFinal: false,
         };
     };
+
+    if(useComputerUse)
+    {
+        try
+        {
+            const browserReply = await runComputerUseAssistant(apiKey, messages, { handlers });
+            if(browserReply)
+            {
+                return {
+                    reply: await validateAssistantReply(apiKey, messages, context, browserReply, handlers),
+                    calendarChanged,
+                    streamedFinal: false,
+                };
+            }
+        }
+        catch(error)
+        {
+            emitAssistantDebug(handlers, {
+                scope: 'browser',
+                message: 'Browser flow failed and is falling back to standard search',
+                error: error?.message || String(error || ''),
+            });
+            handlers.onStatus?.('Falling back to standard search');
+        }
+    }
 
     for(let iteration = 0; iteration < maxToolRounds; iteration += 1)
     {
@@ -3498,7 +4771,7 @@ async function runCalendarAssistant(apiKey, db, userId, messages, context)
             {
                 handlers.onStatus?.('Writing your reply');
                 return {
-                    reply,
+                    reply: await validateAssistantReply(apiKey, messages, context, reply, handlers),
                     calendarChanged,
                     streamedFinal: false,
                 };
@@ -4114,6 +5387,69 @@ exports.setApp = function(app, client)
         }
     });
 
+    app.get('/api/storageasset', async (req, res) =>
+    {
+        try
+        {
+            const rawUrl = String(req.query.url || '').trim();
+            if(!rawUrl)
+            {
+                res.status(400).json({ error: 'Missing asset url.' });
+                return;
+            }
+
+            if(!isAllowedStorageAssetUrl(rawUrl))
+            {
+                res.status(400).json({ error: 'Unsupported asset url.' });
+                return;
+            }
+
+            const normalizedUrl = await normalizeStorageAssetUrl(rawUrl);
+            if(!isAllowedStorageAssetUrl(normalizedUrl))
+            {
+                res.status(400).json({ error: 'Unsupported normalized asset url.' });
+                return;
+            }
+
+            https.get(normalizedUrl, (upstream) =>
+            {
+                if((upstream.statusCode || 500) >= 400)
+                {
+                    res.status(upstream.statusCode || 502).json({ error: 'Could not fetch storage asset.' });
+                    upstream.resume();
+                    return;
+                }
+
+                const contentType = String(upstream.headers['content-type'] || '').trim();
+                if(contentType)
+                {
+                    res.setHeader('Content-Type', contentType);
+                }
+
+                const cacheControl = String(upstream.headers['cache-control'] || 'public, max-age=3600').trim();
+                if(cacheControl)
+                {
+                    res.setHeader('Cache-Control', cacheControl);
+                }
+
+                const contentLength = String(upstream.headers['content-length'] || '').trim();
+                if(contentLength)
+                {
+                    res.setHeader('Content-Length', contentLength);
+                }
+
+                upstream.pipe(res);
+            }).on('error', (error) =>
+            {
+                res.status(502).json({ error: error.message || 'Could not fetch storage asset.' });
+            });
+        }
+        catch(error)
+        {
+            res.status(500).json({ error: error.message || 'Could not fetch storage asset.' });
+        }
+    });
+
     app.post('/api/saveaccountsettings', async (req, res) =>
     {
         const {
@@ -4217,7 +5553,7 @@ exports.setApp = function(app, client)
             const userObjectId = safeObjectId(userId, 'userId');
             const owner = await db.collection('users').findOne(
                 { _id: userObjectId },
-                { projection: { firstName: 1, lastName: 1 } }
+                { projection: { firstName: 1, lastName: 1, avatarUrl: 1 } }
             );
 
             if(!owner)
@@ -4270,6 +5606,7 @@ exports.setApp = function(app, client)
                 description: normalizedTheme.description,
                 ownerUserId: userObjectId,
                 ownerDisplayName: buildThemeOwnerDisplayName(owner),
+                ownerAvatarUrl: String(owner?.avatarUrl || '').trim(),
                 shareCode: String(existingTheme?.shareCode || await generateUniqueThemeShareCode(db)),
                 shareSlug: nextShareSlug,
                 updatedAt: now,
@@ -4304,7 +5641,7 @@ exports.setApp = function(app, client)
             const savedTheme = await db.collection('customThemes').findOne({ _id: savedThemeId });
 
             res.status(200).json({
-                theme: mapCustomThemeDocument(savedTheme, userObjectId),
+                theme: await mapCustomThemeDocument(db, savedTheme, userObjectId),
                 error: '',
                 jwtToken: refreshJwtToken(token, jwtToken),
             });
@@ -4312,6 +5649,40 @@ exports.setApp = function(app, client)
         catch(error)
         {
             res.status(500).json({ theme: null, error: error.toString(), jwtToken: '' });
+        }
+    });
+
+    app.post('/api/checkthemeslug', async (req, res) =>
+    {
+        const { userId, jwtToken, slug, excludeThemeId } = req.body;
+
+        if(!validateJwtOrRespond(token, res, jwtToken))
+        {
+            return;
+        }
+
+        try
+        {
+            const db = getDatabase(client);
+            const trimmedSlug = String(slug || '').trim().toLowerCase();
+            if(!trimmedSlug || !THEME_SHARE_SLUG_PATTERN.test(trimmedSlug))
+            {
+                return res.json({ available: false, reason: 'invalid' });
+            }
+
+            const query = { shareSlug: trimmedSlug };
+            if(excludeThemeId && /^[a-f0-9]{24}$/i.test(excludeThemeId))
+            {
+                const { ObjectId } = require('mongodb');
+                query._id = { $ne: new ObjectId(excludeThemeId) };
+            }
+
+            const existing = await db.collection('customThemes').findOne(query, { projection: { _id: 1 } });
+            res.json({ available: !existing });
+        }
+        catch(error)
+        {
+            res.status(500).json({ available: false, error: error.message });
         }
     });
 
@@ -4342,7 +5713,7 @@ exports.setApp = function(app, client)
             );
 
             res.status(200).json({
-                theme: mapCustomThemeDocument(themeDoc, userObjectId),
+                theme: await mapCustomThemeDocument(db, themeDoc, userObjectId),
                 error: '',
                 jwtToken: refreshJwtToken(token, jwtToken),
             });
@@ -4783,6 +6154,7 @@ exports.setApp = function(app, client)
             }
 
             const parsed   = ical.sync.parseICS(calendarContent);
+            const importErrors = [];
 
             if(parsedUrl)
             {
@@ -4809,6 +6181,11 @@ exports.setApp = function(app, client)
                     if(!entry.summary || !entry.start) continue;
 
                     const signature = buildIcsTaskSignature(entry, { timeZone, utcOffsetMinutes });
+                    if(!signature.title || !(signature.dueDate instanceof Date) || Number.isNaN(signature.dueDate.getTime()))
+                    {
+                        importErrors.push(`Skipped malformed event: ${String(entry.summary || 'Untitled')}`);
+                        continue;
+                    }
                     duplicateFilters.push({
                         user_id: new ObjectId(userId),
                         source: 'ical',
@@ -4836,7 +6213,7 @@ exports.setApp = function(app, client)
 
                 res.status(200).json({
                     count,
-                    error: '',
+                    error: importErrors.length ? importErrors.join(' ') : '',
                     jwtToken: refreshJwtToken(token, jwtToken),
                 });
                 return;
@@ -4851,6 +6228,11 @@ exports.setApp = function(app, client)
                 if(!entry.summary || !entry.start) continue;
 
                 const signature = buildIcsTaskSignature(entry, { timeZone, utcOffsetMinutes });
+                if(!signature.title || !(signature.dueDate instanceof Date) || Number.isNaN(signature.dueDate.getTime()))
+                {
+                    importErrors.push(`Skipped malformed event: ${String(entry.summary || 'Untitled')}`);
+                    continue;
+                }
                 toInsert.push(
                 {
                     user_id:     new ObjectId(userId),
@@ -4869,13 +6251,13 @@ exports.setApp = function(app, client)
                 const result = await db.collection('tasks').insertMany(toInsert);
                 res.status(200).json({
                     count: result.insertedCount,
-                    error: '',
+                    error: importErrors.length ? importErrors.join(' ') : '',
                     jwtToken: refreshJwtToken(token, jwtToken),
                 });
                 return;
             }
 
-            res.status(200).json({ count: 0, error: '', jwtToken: refreshJwtToken(token, jwtToken) });
+            res.status(200).json({ count: 0, error: importErrors.join(' '), jwtToken: refreshJwtToken(token, jwtToken) });
         }
         catch(error)
         {
@@ -5312,7 +6694,17 @@ Help the user manage their schedule, suggest events, answer questions about thei
 
     app.post('/api/chatstream', async (req, res) =>
     {
-        const { userId, jwtToken, messages, latitude, longitude, localNow, timeZone, utcOffsetMinutes } = req.body;
+        const {
+            userId,
+            jwtToken,
+            messages,
+            latitude,
+            longitude,
+            localNow,
+            timeZone,
+            utcOffsetMinutes,
+            debug,
+        } = req.body;
 
         if(!validateJwtOrRespond(token, res, jwtToken)) return;
 
@@ -5430,16 +6822,72 @@ Help the user manage their schedule, suggest events, answer questions about thei
                 ? `Approximate user coordinates: latitude ${latitude}, longitude ${longitude}.`
                 : 'No exact coordinates were provided.';
 
+            const debugEnabled = isAssistantDebugEnabled(debug);
+
             res.status(200);
             res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
             res.setHeader('Cache-Control', 'no-cache, no-transform');
             res.setHeader('Connection', 'keep-alive');
+            res.setHeader('X-Accel-Buffering', 'no');
+            res.setHeader('Content-Encoding', 'identity');
+            res.socket?.setNoDelay?.(true);
+            res.socket?.setKeepAlive?.(true, 1000);
             res.flushHeaders?.();
 
+            let streamClosed = false;
             const writeEvent = (payload) =>
             {
+                if(streamClosed || res.writableEnded || res.destroyed)
+                {
+                    return;
+                }
                 res.write(`${JSON.stringify(payload)}\n`);
                 res.flush?.();
+            };
+            const closeStream = () =>
+            {
+                streamClosed = true;
+                if(heartbeat)
+                {
+                    clearInterval(heartbeat);
+                    heartbeat = null;
+                }
+            };
+            res.on('close', closeStream);
+            res.on('finish', closeStream);
+
+            heartbeat = setInterval(() =>
+            {
+                writeEvent({
+                    type: 'ping',
+                    timestamp: new Date().toISOString(),
+                });
+            }, 2000);
+
+            const writeDebug = (event) =>
+            {
+                if(!debugEnabled)
+                {
+                    return;
+                }
+
+                const message = String(event?.message || '').trim();
+                const suffix = [
+                    event?.url ? `url=${event.url}` : '',
+                    event?.title ? `title=${event.title}` : '',
+                    event?.error ? `error=${event.error}` : '',
+                    event?.action ? `action=${formatAssistantDebugValue(event.action)}` : '',
+                    event?.details ? `details=${formatAssistantDebugValue(event.details)}` : '',
+                ].filter(Boolean).join(' ');
+                const logLine = `[assistant-debug] ${event?.timestamp || new Date().toISOString()} ${String(event?.scope || 'general')} ${message}${suffix ? ` ${suffix}` : ''}`;
+                console.log(logLine);
+                writeEvent({
+                    type: 'debug',
+                    debug: {
+                        ...event,
+                        line: logLine,
+                    },
+                });
             };
 
             const assistantResult = await runCalendarAssistant(
@@ -5458,21 +6906,22 @@ Help the user manage their schedule, suggest events, answer questions about thei
                         {
                             writeEvent({ type: 'status', status });
                         },
+                        onDebug(event)
+                        {
+                            writeDebug(event);
+                        },
                         onDelta(delta)
                         {
                             writeEvent({ type: 'delta', delta });
                         },
                     },
+                    debug: debugEnabled,
                 }
             );
 
             if(!assistantResult.streamedFinal && assistantResult.reply)
             {
-                const replyChunks = splitAssistantReplyForStreaming(assistantResult.reply);
-                for(const chunk of replyChunks)
-                {
-                    writeEvent({ type: 'delta', delta: `${chunk} ` });
-                }
+                writeEvent({ type: 'delta', delta: assistantResult.reply });
             }
 
             writeEvent({
@@ -5481,10 +6930,18 @@ Help the user manage their schedule, suggest events, answer questions about thei
                 calendarChanged: assistantResult.calendarChanged,
             });
 
+            if(heartbeat)
+            {
+                clearInterval(heartbeat);
+            }
             res.end();
         }
         catch(error)
         {
+            if(heartbeat)
+            {
+                clearInterval(heartbeat);
+            }
             if(!res.headersSent)
             {
                 res.status(500).json({ error: error.toString(), jwtToken: '' });
@@ -5502,17 +6959,20 @@ exports.verifyEmailTransporter = verifyEmailTransporter;
 exports.startReminderLoop = startReminderLoop;
 exports.__testables = {
     extractResponseText,
+    normalizeAssistantReply,
     base64ByteLength,
     normalizeAvatarDataUrl,
     normalizeCustomThemePack,
     normalizeThemeShareSlug,
     extractThemeShareLookupKey,
+    buildThemeLookupQuery,
     buildSharedThemeUrls,
     readPositiveIntEnv,
     getConfiguredOpenAIModel,
     getConfiguredOpenAIReasoningEffort,
     isRetryableOpenAIStatus,
     isRetryableOpenAINetworkError,
+    shouldUseAssistantComputerUse,
     buildOpenAIRequestVariants,
     buildOpenAIRequestBody,
 };

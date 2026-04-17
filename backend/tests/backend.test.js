@@ -75,7 +75,7 @@ const tests = [
           __testables.normalizeAvatarDataUrl(
             'data:image/svg+xml;base64,aGVsbG8=',
           ),
-        /Profile picture must be PNG, JPEG, GIF, WEBP, AVIF, HEIC, or HEIF\./,
+        /Profile picture must be PNG, JPEG, GIF, WEBP, AVIF, HEIC, HEIF, BMP, or TIFF\./,
       );
     },
   },
@@ -102,6 +102,35 @@ const tests = [
     },
   },
   {
+    name: 'normalizeCustomThemePack preserves mobile custom image and none background modes',
+    run() {
+      const customImageTheme = __testables.normalizeCustomThemePack({
+        name: 'Photo Theme',
+        backgroundMode: 'customImage',
+        images: {
+          universal: 'https://example.com/photo.jpg',
+        },
+        gradient: {
+          angle: 180,
+          colors: ['#08111f', '#10203a', '#163761'],
+        },
+      });
+
+      const noImageTheme = __testables.normalizeCustomThemePack({
+        name: 'No Image Theme',
+        backgroundMode: 'none',
+        gradient: {
+          angle: 180,
+          colors: ['#08111f', '#10203a', '#163761'],
+        },
+      });
+
+      assert.equal(customImageTheme.backgroundMode, 'customImage');
+      assert.equal(customImageTheme.images.universal, 'https://example.com/photo.jpg');
+      assert.equal(noImageTheme.backgroundMode, 'none');
+    },
+  },
+  {
     name: 'theme share helpers parse links, validate slugs, and build share URLs',
     run() {
       assert.equal(
@@ -118,6 +147,16 @@ const tests = [
           shareCode: 'A1B2C3',
         }).shareUrl,
         'https://calendarplusplus.xyz/?theme=mountain_theme',
+      );
+
+      assert.deepEqual(
+        __testables.buildThemeLookupQuery('abc123'),
+        {
+          $or: [
+            { shareSlug: 'abc123' },
+            { shareCode: 'ABC123' },
+          ],
+        },
       );
     },
   },
@@ -141,6 +180,17 @@ const tests = [
     },
   },
   {
+    name: 'normalizeAssistantReply preserves markdown structure for lists and links',
+    run() {
+      const result = __testables.normalizeAssistantReply(
+        'Here you go - first item - second item [AMC](https://example.com/showtimes)',
+      );
+
+      assert.equal(result.includes('\n- first item\n- second item'), true);
+      assert.equal(result.includes('[AMC](https://example.com/showtimes)'), true);
+    },
+  },
+  {
     name: 'buildOpenAIRequestVariants keeps unique model and reasoning combinations',
     run() {
       const variants = __testables.buildOpenAIRequestVariants();
@@ -153,7 +203,7 @@ const tests = [
     },
   },
   {
-    name: 'buildOpenAIRequestBody adds instructions, reasoning, and web search tools',
+    name: 'buildOpenAIRequestBody adds instructions, reasoning, truncation, and web search tools',
     run() {
       const requestBody = __testables.buildOpenAIRequestBody('Hello', {
         instructions: 'Be concise',
@@ -162,6 +212,9 @@ const tests = [
         stream: true,
         model: 'gpt-5.4',
         reasoningEffort: 'high',
+        reasoningSummary: 'concise',
+        truncation: 'auto',
+        previousResponseId: 'resp_123',
       });
 
       assert.deepEqual(requestBody, {
@@ -169,13 +222,28 @@ const tests = [
         input: 'Hello',
         stream: true,
         instructions: 'Be concise',
-        reasoning: { effort: 'high' },
+        reasoning: { effort: 'high', summary: 'concise' },
+        truncation: 'auto',
+        previous_response_id: 'resp_123',
         tools: [
           { type: 'function', name: 'lookup_calendar' },
           { type: 'web_search' },
         ],
         tool_choice: 'auto',
       });
+    },
+  },
+  {
+    name: 'shouldUseAssistantComputerUse detects explicit and movie seat requests',
+    run() {
+      assert.equal(
+        __testables.shouldUseAssistantComputerUse([{ role: 'user', content: 'Use the browser to check movie seats tonight' }]),
+        true,
+      );
+      assert.equal(
+        __testables.shouldUseAssistantComputerUse([{ role: 'user', content: 'What is on my schedule tomorrow?' }]),
+        false,
+      );
     },
   },
   {

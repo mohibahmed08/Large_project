@@ -1,5 +1,4 @@
 //UNIT TEST IMPORT FOR TESTING LOGIC IN DAYGRID
-import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getDateRange } from "../Weather";
 
 /// GET DATE RANGE TESTS ////
@@ -38,30 +37,24 @@ describe("getDateRange", () => {
         expect(result.endDate).toBe("2026-02-04");
     });
 
-    it("caps year rollover due to max range", () => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date(2026, 11, 1)); // Dec 1
+    it("supports an explicit start and end date", () => {
+        const result = getDateRange(new Date(2026, 0, 1), new Date(2026, 0, 7));
 
-        const date = new Date(2026, 11, 30);
-        const result = getDateRange(date, 5);
-
-        expect(result.startDate).toBe("2026-12-30");
-        expect(result.endDate).toBe("2026-12-16"); // capped
-
-        vi.useRealTimers();
+        expect(result.startDate).toBe("2026-01-01");
+        expect(result.endDate).toBe("2026-01-07");
     });
     // -------------------------
     // 3. Max date cap (15 days)
     // -------------------------
 
-    it("caps endDate to 15 days from today", () => {
+    it("caps endDate to 14 days from today", () => {
         const today = new Date();
         const date = new Date(today);
 
         const result = getDateRange(date, 100); // large number
 
         const maxDate = new Date();
-        maxDate.setDate(maxDate.getDate() + 15);
+        maxDate.setDate(maxDate.getDate() + 14);
 
         const yyyy = maxDate.getFullYear();
         const mm = String(maxDate.getMonth() + 1).padStart(2, "0");
@@ -105,7 +98,7 @@ export async function fetchWeatherLogic({ coords, startDate, endDate, setWeather
     }
 }
 
-global.fetch = vi.fn();
+global.fetch = jest.fn();
 
 describe("weather fetch", () => {
 
@@ -114,7 +107,7 @@ describe("weather fetch", () => {
     const endDate = "2026-01-02";
 
     beforeEach(() => {
-        vi.clearAllMocks();
+        jest.clearAllMocks();
     });
 
     // -------------------------
@@ -129,7 +122,7 @@ describe("weather fetch", () => {
             json: async () => mockData,
         });
 
-        const setWeather = vi.fn();
+        const setWeather = jest.fn();
 
         await fetchWeatherLogic({ coords, startDate, endDate, setWeather });
 

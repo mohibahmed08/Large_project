@@ -21,20 +21,17 @@ function CalendarMonth({monthsFromNow, setBackgroundWeather, singleMonth, tasks 
     const firstDay = targetDate.getDay();
     const year = targetDate.getFullYear();
 
-    // Limit weather requests to the range supported by the current UI.
-    const earliestAllowed = new Date(date.getFullYear(), date.getMonth() - 4, date.getDate()); // 4 months ago
-    
-    const latestAllowed = new Date(date); // today
-    latestAllowed.setDate(latestAllowed.getDate() + 15); // 16 days in future
+    // Allow historical weather for any past month, but only fetch forecasts up to two weeks ahead.
+    const latestAllowed = new Date(date);
+    latestAllowed.setHours(0, 0, 0, 0);
+    latestAllowed.setDate(latestAllowed.getDate() + 14); // two weeks ahead
 
     // Clamp the month range before making a weather request.
-    const monthStart = targetDate < earliestAllowed ? earliestAllowed : targetDate;
+    const monthStart = targetDate;
     const monthEndDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), daysInMonth);
     const monthEnd = monthEndDate > latestAllowed ? latestAllowed : monthEndDate;
 
-    const weatherEnabled = monthEnd >= monthStart;
-    const maxPastWeatherDays = weatherEnabled ? Math.max(0, Math.floor((date - monthStart) / (1000 * 60 * 60 * 24))) : 0;
-    const maxFutureWeatherDays = weatherEnabled ? Math.max(0, Math.floor((monthEnd - date) / (1000 * 60 * 60 * 24))) : 0;
+    const weatherEnabled = monthStart <= latestAllowed && monthEnd >= monthStart;
 
     // Track the current day's weather so the parent can update the background.
     const [currentWeather, setCurrentWeather] = useState('');
@@ -88,7 +85,7 @@ function CalendarMonth({monthsFromNow, setBackgroundWeather, singleMonth, tasks 
     return (
         <>
             {/* Fetch weather once for the visible month range. */}
-            {weatherEnabled && <Weather setWeather = {setWeather} desiredDate = {monthStart} additionalDays = {maxFutureWeatherDays} priorDays = {maxPastWeatherDays}/>}
+            {weatherEnabled && <Weather setWeather = {setWeather} startDate = {monthStart} endDate = {monthEnd}/>}
 
             <div className="calendar-month-wrapper"> 
                 <div className="calendar-month-day-grid-wrapper" style = {{"--first-day" : !singleMonth ? firstDay + 1 : 0}}>  

@@ -1,28 +1,281 @@
 .calendar-calendar-background {
-  min-height: 100%;   /* fills the viewport */
+  height: 100%;
+  min-height: 0;
   width: 100%;
-
-  /* display: flex;
+  display: flex;
   flex-direction: column;
-  height: 100vh; */
-
-  color: #e0e0e0;      /* default text color for readability */
+  color: #e0e0e0;
 }
 
 .calendar-scroll-shell {
-  overflow-y: scroll;
-  max-height: 100vh;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-top: 0;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
 }
 
 .calendar-task-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(4, 8, 20, 0.62);
+  background:
+    radial-gradient(circle at top, rgba(96, 165, 250, 0.12), transparent 28%),
+    rgba(4, 8, 20, 0.42);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
   z-index: 30;
+}
+
+.calendar-top-chrome {
+  position: sticky;
+  top: 0;
+  z-index: 18;
+  flex-shrink: 0;
+  overflow: hidden;
+  background-color: rgba(30, 30, 47, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: none;
+}
+
+.calendar-top-chrome::before {
+  content: none;
+}
+
+.calendar-calendar-background .calendar-month-interactable-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 78px;
+  padding: 10px 18px 8px;
+  user-select: none;
+}
+
+.calendar-calendar-background .calendar-month-month-name {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  font-size: clamp(1.85rem, 2.6vw, 2.7rem);
+  font-weight: 740;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  color: rgba(248, 250, 252, 0.97);
+  text-shadow: 0 2px 14px rgba(15, 23, 42, 0.2);
+}
+
+.calendar-calendar-background .calendar-month-header-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 62px;
+}
+
+.calendar-calendar-background .calendar-month-header-side {
+  flex: 0 0 52px;
+  min-width: 52px;
+  width: 52px;
+  height: 52px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+}
+
+.calendar-calendar-background .calendar-month-header-left {
+  justify-content: flex-start;
+}
+
+.calendar-calendar-background .calendar-month-header-right {
+  justify-content: flex-end;
+}
+
+.calendar-calendar-background .calendar-month-arrow {
+  width: 22px;
+  height: 22px;
+  opacity: 0.94;
+  filter: invert(1) brightness(2) drop-shadow(0 4px 12px rgba(15, 23, 42, 0.28));
+  transition: transform 0.18s ease, opacity 0.18s ease, filter 0.18s ease;
+  cursor: pointer;
+}
+
+.calendar-calendar-background .calendar-month-arrow:hover {
+  opacity: 1;
+  transform: scale(1.08);
+  filter: invert(1) brightness(2.1) drop-shadow(0 8px 18px rgba(96, 165, 250, 0.22));
+}
+
+.calendar-calendar-background .calendar-month-header-search {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: clamp(210px, 22vw, 320px);
+  max-width: calc(50% - 96px);
+  z-index: 2;
+}
+
+.calendar-calendar-background .calendar-month-header-search-inner {
+  position: relative;
+  width: 100%;
+  min-height: 46px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(18, 18, 31, 0.46);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 0 16px 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: none;
+}
+
+.calendar-calendar-background .calendar-month-header-search-inner::after {
+  content: none;
+}
+
+.calendar-month-header-search-icon {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  opacity: 0.74;
+}
+
+.calendar-month-header-search-icon::before,
+.calendar-month-header-search-icon::after {
+  content: '';
+  position: absolute;
+  display: block;
+}
+
+.calendar-month-header-search-icon::before {
+  width: 9px;
+  height: 9px;
+  border: 2px solid rgba(255, 255, 255, 0.48);
+  border-radius: 999px;
+  top: 0;
+  left: 0;
+}
+
+.calendar-month-header-search-icon::after {
+  width: 7px;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.48);
+  right: 0;
+  bottom: 1px;
+  transform: rotate(45deg);
+  transform-origin: center;
+}
+
+.calendar-calendar-background .calendar-month-header-search .calendar-search-input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: #f8fafc;
+  padding: 12px 0;
+  outline: none;
+  font-size: 0.98rem;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.calendar-calendar-background .calendar-month-header-search .calendar-search-input::placeholder {
+  color: rgba(226, 232, 240, 0.60);
+}
+
+.calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+  font-weight: 700;
+  padding: 0 14px 8px;
+  margin: 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 0;
+  box-shadow: none;
+}
+
+.weekday {
+  padding: 12px 10px 10px;
+  text-align: center;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: rgba(241, 245, 249, 0.92);
+  text-shadow: none;
+}
+
+.calendar-calendar-background .calendar-month {
+  padding-top: 0;
+}
+
+@media (max-width: 960px) {
+  .calendar-calendar-background .calendar-month-month-name {
+    font-size: clamp(1.7rem, 3vw, 2.4rem);
+  }
+
+  .calendar-calendar-background .calendar-month-header-search {
+    width: clamp(240px, 34vw, 360px);
+    max-width: calc(46% - 16px);
+  }
+}
+
+@media (max-width: 720px) {
+  .calendar-calendar-background .calendar-month-interactable-header {
+    min-height: auto;
+    padding: 14px 14px 10px;
+  }
+
+  .calendar-calendar-background .calendar-month-header-row {
+    min-height: auto;
+    flex-wrap: wrap;
+    row-gap: 12px;
+    justify-content: space-between;
+  }
+
+  .calendar-calendar-background .calendar-month-month-name {
+    position: static;
+    transform: none;
+    order: -1;
+    width: 100%;
+    text-align: center;
+    font-size: clamp(1.8rem, 7vw, 2.35rem);
+  }
+
+  .calendar-calendar-background .calendar-month-header-side {
+    height: 40px;
+    width: 40px;
+    min-width: 40px;
+    flex-basis: 40px;
+  }
+
+
+
+  .calendar-top-chrome .calendar-weekdays {
+    padding: 0 10px 8px;
+  }
+
+  .calendar-top-chrome .weekday {
+    font-size: 0.86rem;
+    padding: 8px 6px;
+  }
 }
 
 .calendar-task-modal {
@@ -268,7 +521,7 @@
 
 .calendar-task-save-btn {
   margin-left: auto;
-  background: var(--btn-color, #60a5fa);
+  background: var(--btn-background, var(--btn-color, #60a5fa));
   color: var(--btn-text-color, #0f172a);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
@@ -276,18 +529,18 @@
 }
 
 .calendar-item-modal.plan .calendar-task-save-btn {
-  background: linear-gradient(180deg, rgba(192, 132, 252, 0.96), rgba(147, 51, 234, 0.82));
-  color: #fff;
+  background: var(--btn-background, var(--btn-color, #60a5fa));
+  color: var(--btn-text-color, #0f172a);
 }
 
 .calendar-item-modal.event .calendar-task-save-btn {
-  background: linear-gradient(180deg, rgba(125, 211, 252, 0.96), rgba(37, 99, 235, 0.82));
-  color: #eff6ff;
+  background: var(--btn-background, var(--btn-color, #60a5fa));
+  color: var(--btn-text-color, #0f172a);
 }
 
 .calendar-item-modal.task .calendar-task-save-btn {
-  background: linear-gradient(180deg, rgba(74, 222, 128, 0.96), rgba(22, 163, 74, 0.82));
-  color: #f0fdf4;
+  background: var(--btn-background, var(--btn-color, #60a5fa));
+  color: var(--btn-text-color, #0f172a);
 }
 
 .calendar-import-upload-row {
@@ -613,20 +866,26 @@
   text-align: left;
   padding: 16px;
   border-radius: 14px;
-  border: 1px solid rgba(96, 165, 250, 0.24);
-  background:
-    linear-gradient(180deg, rgba(96, 165, 250, 0.18), rgba(37, 99, 235, 0.12)),
-    rgba(11, 16, 29, 0.58);
-  color: #eff6ff;
+  border: 1px solid rgba(var(--btn-color-rgb), 0.42);
+  background: var(--btn-background, var(--btn-color, #60a5fa));
+  color: var(--btn-text-color, #0f172a);
   display: flex;
   flex-direction: column;
   gap: 4px;
   cursor: pointer;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 12px 28px rgba(var(--btn-color-rgb), 0.18);
+  transition: filter 0.18s ease, transform 0.18s ease;
+}
+
+.calendar-day-add-schedule-card:hover {
+  filter: brightness(1.04);
+  transform: translateY(-1px);
 }
 
 .calendar-day-add-schedule-kicker {
-  color: #93c5fd;
+  color: rgba(var(--btn-color-rgb), 0.88);
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -639,9 +898,10 @@
 }
 
 .calendar-day-add-schedule-copy {
-  color: #dbeafe;
+  color: inherit;
   font-size: 0.84rem;
   line-height: 1.4;
+  opacity: 0.92;
 }
 
 .calendar-day-add-icon {
@@ -651,15 +911,24 @@
   width: 34px;
   height: 34px;
   border-radius: 8px;
-  border: 1px solid rgba(96, 165, 250, 0.45);
-  background: rgba(96, 165, 250, 0.12);
-  color: #bfdbfe;
+  border: 1px solid rgba(var(--btn-color-rgb), 0.45);
+  background: var(--btn-background, var(--btn-color, #60a5fa));
+  color: var(--btn-text-color, #0f172a);
   font-size: 1.2rem;
   font-weight: 700;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 8px 18px rgba(var(--btn-color-rgb), 0.16);
+  transition: filter 0.18s ease, transform 0.18s ease;
+}
+
+.calendar-day-add-icon:hover:not(:disabled):not(.saved) {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
 }
 
 .calendar-day-add-icon.saved {
@@ -751,9 +1020,9 @@
   overflow-y: auto;
 } */
 
-/* ── Today button ─────────────────────────────────────────── */
+/* -- Today button ------------------------------------------- */
 
-/* ── Hide-completed toggle in day modal header ────────────── */
+/* -- Hide-completed toggle in day modal header -------------- */
 .calendar-day-modal-header-actions {
   display: flex;
   align-items: center;
@@ -781,7 +1050,7 @@
   color: #cbd5e1;
 }
 
-/* ── Inline task card row (checkbox + body) ───────────────── */
+/* -- Inline task card row (checkbox + body) ----------------- */
 .calendar-day-card-row {
   display: flex;
   align-items: flex-start;
@@ -819,7 +1088,7 @@
   padding: 0;
 }
 .calendar-day-complete-btn.checked {
-  background: var(--btn-color, #60a5fa);
+  background: var(--btn-background, var(--btn-color, #60a5fa));
   color: var(--btn-text-color, #0f172a);
 }
 .calendar-day-complete-btn:hover:not(.checked) {
@@ -867,3 +1136,5 @@
   color: var(--task-accent);
   margin-bottom: 2px;
 }
+
+
