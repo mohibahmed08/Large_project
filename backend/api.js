@@ -572,7 +572,7 @@ function getConfiguredOpenAIValidatorModel()
 
 function getAssistantValidationMaxPasses()
 {
-    return readPositiveIntEnv('OPENAI_VALIDATION_MAX_PASSES', 3, { min: 1, max: 3 });
+    return readPositiveIntEnv('OPENAI_VALIDATION_MAX_PASSES', 2, { min: 1, max: 3 });
 }
 
 function isRetryableOpenAIStatus(status)
@@ -781,6 +781,52 @@ async function createOpenAIResponse(apiKey, input, options = {})
     }
 
     throw lastError || new Error('OpenAI request failed');
+}
+
+async function braveWebSearch(query, options = {})
+{
+    const apiKey = process.env.BRAVE_SEARCH_API_KEY || '';
+    if(!apiKey)
+    {
+        return { results: [], error: 'BRAVE_SEARCH_API_KEY not set' };
+    }
+
+    const count = Math.min(Math.max(Number(options.count) || 5, 1), 10);
+    const url = new URL('https://api.search.brave.com/res/v1/web/search');
+    url.searchParams.set('q', String(query || '').trim());
+    url.searchParams.set('count', String(count));
+    url.searchParams.set('safesearch', 'moderate');
+
+    try
+    {
+        const response = await fetch(url.toString(), {
+            headers: {
+                'Accept': 'application/json',
+                'Accept-Encoding': 'gzip',
+                'X-Subscription-Token': apiKey,
+            },
+        });
+
+        if(!response.ok)
+        {
+            return { results: [], error: `Brave Search HTTP ${response.status}` };
+        }
+
+        const body = await response.json();
+        const webResults = Array.isArray(body?.web?.results) ? body.web.results : [];
+
+        return {
+            results: webResults.slice(0, count).map((item) => ({
+                title: String(item?.title || '').trim(),
+                url: String(item?.url || '').trim(),
+                description: String(item?.description || '').trim(),
+            })),
+        };
+    }
+    catch(error)
+    {
+        return { results: [], error: error?.message || String(error) };
+    }
 }
 
 // OpenAI Responses API call with optional web search.
@@ -2559,6 +2605,7 @@ function buildRecurringTaskDocuments(userId, args, options = {})
 
 function shouldUseAssistantWebSearch(messages = [])
 {
+    return false;
     const combinedText = messages
         .map((message) => typeof message?.content === 'string' ? message.content : '')
         .join(' ')
@@ -2656,6 +2703,130 @@ function getConfiguredOpenAIComputerUseModel()
 function getAssistantComputerUseMaxSteps()
 {
     return readPositiveIntEnv('OPENAI_COMPUTER_USE_MAX_STEPS', 12, { min: 1, max: 30 });
+}
+
+function getAssistantComputerUseCdpUrl()
+{
+    const configuredUrl = readOptionalEnv('OPENAI_COMPUTER_USE_CDP_URL')
+        || readOptionalEnv('BROWSERBASE_CDP_URL');
+    if(configuredUrl)
+    {
+        return configuredUrl;
+    }
+
+    const browserbaseApiKey = readOptionalEnv('BROWSERBASE_API_KEY');
+    const browserbaseProjectId = readOptionalEnv('BROWSERBASE_PROJECT_ID');
+    if(browserbaseApiKey && browserbaseProjectId)
+    {
+        return `wss://connect.browserbase.com?apiKey=${encodeURIComponent(browserbaseApiKey)}&projectId=${encodeURIComponent(browserbaseProjectId)}`;
+    }
+
+    return null;
+}
+
+function extractMentionedUrls(messages = [])
+{
+    const urls = [];
+    const pattern = /https?:\/\/[^\s)]+/gi;
+
+    for(const message of messages)
+    {
+        const content = typeof message?.content === 'string' ? message.content : '';
+        const matches = content.match(pattern) || [];
+        for(const match of matches)
+        {
+            urls.push(match);
+        }
+    }
+
+    return urls;
+}
+
+function buildPreferredBrowserStartUrl(messages = [])
+{
+    const combinedText = messages
+        .map((message) => typeof message?.content === 'string' ? message.content : '')
+        .join(' ')
+        .toLowerCase();
+
+    const mentionedUrl = extractMentionedUrls(messages).find(Boolean);
+    if(mentionedUrl)
+    {
+        return mentionedUrl;
+    }
+
+    const mentionsDisneySprings = combinedText.includes('amc disney springs') || combinedText.includes('disney springs');
+    const mentionsDsMovie = /\bds\b/.test(combinedText) && (combinedText.includes('movie') || combinedText.includes('hoppers') || combinedText.includes('seat'));
+
+    if(mentionsDisneySprings || mentionsDsMovie)
+    {
+        return 'https://www.amctheatres.com/movie-theatres/orlando/amc-dine-in-disney-springs-24';
+    }
+
+    if(combinedText.includes('amc'))
+    {
+        return 'https://www.amctheatres.com/';
+    }
+
+    if(combinedText.includes('fandango'))
+    {
+        return 'https://www.fandango.com/';
+    }
+
+    if(combinedText.includes('regal'))
+    {
+        return 'https://www.regmovies.com/';
+    }
+
+    if(combinedText.includes('opentable') || /\breserv(e|ation)\b/.test(combinedText))
+    {
+        return 'https://www.opentable.com/';
+    }
+
+    if(combinedText.includes('resy'))
+    {
+        return 'https://resy.com/';
+    }
+
+    if(combinedText.includes('yelp') || combinedText.includes('restaurant') || combinedText.includes('dinner'))
+    {
+        return 'https://www.yelp.com/';
+    }
+
+    if(combinedText.includes('map') || combinedText.includes('directions') || combinedText.includes('nearby'))
+    {
+        return 'https://www.google.com/maps';
+    }
+
+        return 'about:blank';
+    }
+
+async function detectBrowserBlocker(page)
+{
+    const currentUrl = String(page.url() || '');
+    const lowerUrl = currentUrl.toLowerCase();
+    const title = String(await page.title().catch(() => '') || '');
+    const lowerTitle = title.toLowerCase();
+    const bodyText = String(await page.locator('body').textContent().catch(() => '') || '')
+        .slice(0, 4000)
+        .toLowerCase();
+
+    if(lowerUrl.includes('google.com/sorry'))
+    {
+        return 'Google presented a CAPTCHA or anti-bot challenge before I could continue.';
+    }
+
+    if(lowerTitle.includes('captcha') || bodyText.includes('captcha') || bodyText.includes('i am not a robot'))
+    {
+        return 'The site presented a CAPTCHA or anti-bot challenge before I could continue.';
+    }
+
+    if(bodyText.includes('verify you are human') || bodyText.includes('press and hold') || bodyText.includes('unusual traffic'))
+    {
+        return 'The site asked for human verification before I could continue.';
+    }
+
+    return '';
 }
 
 function dataUrlForPng(buffer)
@@ -2924,6 +3095,8 @@ async function runComputerUseAssistant(apiKey, messages, context = {})
     const displayWidth = 1280;
     const displayHeight = 900;
     const maxSteps = getAssistantComputerUseMaxSteps();
+    const cdpUrl = getAssistantComputerUseCdpUrl();
+    const startUrl = buildPreferredBrowserStartUrl(messages);
     const toolSpec = {
         type: 'computer',
     };
@@ -2935,6 +3108,13 @@ async function runComputerUseAssistant(apiKey, messages, context = {})
 Only interact with public web pages. Do not sign in, purchase tickets, enter payment details, or share personal data.
 If movie seats are requested, only inspect publicly visible availability and stop before checkout.
 Prefer trusted sites and summarize the result briefly with plain links if useful.
+Prefer direct navigation to official or user-mentioned sites before using any search engine.
+If the site or business is already identifiable from the conversation, go straight there first.
+If you hit a CAPTCHA, anti-bot page, or human-verification challenge, stop immediately and say so clearly.
+For dinner, reservations, or restaurants: go directly to OpenTable, Resy, Yelp, or the restaurant's own site. Do not use Google Search.
+For showtimes: go directly to AMC, Regal, or Fandango. Do not use Google Search.
+For general lookups: call the web_search tool instead of navigating a browser to a search engine.
+If you need a search engine in the browser, use DuckDuckGo (https://duckduckgo.com/). Never use google.com/search.
 
 Conversation:
 ${recentConversation}`;
@@ -2943,20 +3123,27 @@ ${recentConversation}`;
     try
     {
         handlers.onStatus?.('Opening a browser');
+        if(!cdpUrl)
+        {
+            throw new Error('Computer-use requires Browserbase. Set BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID (or OPENAI_COMPUTER_USE_CDP_URL / BROWSERBASE_CDP_URL) in the environment.');
+        }
         emitAssistantDebug(handlers, {
             scope: 'browser',
-            message: 'Launching Playwright browser',
+            message: 'Connecting to Browserbase over CDP',
         });
-        browser = await playwright.launch({
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        browser = await playwright.connectOverCDP(cdpUrl);
+        emitAssistantDebug(handlers, {
+            scope: 'browser',
+            message: 'Browser ready via Browserbase',
         });
-        const page = await browser.newPage({
-            viewport: {
-                width: displayWidth,
-                height: displayHeight,
-            },
-        });
+
+        const browserContext = browser.contexts()[0] || await browser.newContext();
+        const page = await browserContext.newPage();
+        await page.setViewportSize({
+            width: displayWidth,
+            height: displayHeight,
+        }).catch(() => {});
+
         if(debugEnabled)
         {
             page.on('framenavigated', (frame) =>
@@ -2989,7 +3176,7 @@ ${recentConversation}`;
                 }
             });
         }
-        await page.goto('https://www.google.com', { waitUntil: 'domcontentloaded' });
+        await page.goto(startUrl, { waitUntil: 'domcontentloaded' });
         emitAssistantDebug(handlers, {
             scope: 'browser',
             message: `Opened initial page ${page.url()}`,
@@ -3073,6 +3260,18 @@ ${recentConversation}`;
                 message: 'Captured browser state after action',
             });
 
+            const blocker = await detectBrowserBlocker(page);
+            if(blocker)
+            {
+                emitAssistantDebug(handlers, {
+                    scope: 'browser',
+                    step: step + 1,
+                    url: page.url(),
+                    message: blocker,
+                });
+                return `${blocker} I stopped instead of guessing. If you want, open the page yourself and I can continue once the challenge is cleared.`;
+            }
+
             response = await createOpenAIResponse(apiKey, [
                 {
                     type: 'computer_call_output',
@@ -3101,7 +3300,7 @@ ${recentConversation}`;
     {
         emitAssistantDebug(handlers, {
             scope: 'browser',
-            message: 'Closing Playwright browser',
+            message: 'Closing browser session',
         });
         await browser?.close().catch(() => {});
     }
@@ -3879,6 +4078,19 @@ function buildCalendarAssistantTools()
                 additionalProperties: false,
             },
         },
+        {
+            type: 'function',
+            name: 'web_search',
+            description: 'Search the public web for current information (restaurant hours, showtimes, reservation availability, local recommendations, general facts). Use this instead of opening a browser for searches. Prefer this for any query that would normally go to Google.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: { type: 'string', description: 'Natural language search query.' },
+                    count: { type: 'integer', description: 'Number of results to return (1-10, default 5).' },
+                },
+                required: ['query'],
+            },
+        },
     ];
 }
 
@@ -3888,6 +4100,13 @@ async function executeCalendarAssistantTool(db, userId, toolCall, options = {})
     const args = JSON.parse(toolCall.arguments || '{}');
     const utcOffsetMinutes = options.utcOffsetMinutes;
     const timeZone = options.timeZone;
+
+    if(toolName === 'web_search')
+    {
+        const { query, count } = args || {};
+        const searchResult = await braveWebSearch(query, { count });
+        return JSON.stringify(searchResult);
+    }
 
     if(toolName === 'search_calendar_tasks')
     {
@@ -4221,6 +4440,8 @@ function describeAssistantTool(toolName)
             return 'Removing a calendar item';
         case 'bulk_delete_calendar_tasks':
             return 'Removing multiple calendar items';
+        case 'web_search':
+            return 'Searching the web';
         default:
             return 'Working on your request';
     }
@@ -4270,6 +4491,89 @@ function splitAssistantReplyForStreaming(text)
     return chunks;
 }
 
+function hasUnresolvedProgressLanguage(text)
+{
+    const normalized = String(text || '').toLowerCase();
+    if(!normalized)
+    {
+        return false;
+    }
+
+    return [
+        "i'm checking",
+        'im checking',
+        "i'll check",
+        'i will check',
+        'let me check',
+        'one moment',
+        'please wait',
+        'shortly',
+        'in a moment',
+    ].some((phrase) => normalized.includes(phrase));
+}
+
+function sanitizeSeatAvailabilityClaims(messages = [], reply = '')
+{
+    const normalizedReply = normalizeAssistantReply(reply);
+    const lowerReply = normalizedReply.toLowerCase();
+    const conversationText = messages
+        .map((message) => String(message?.content || '').toLowerCase())
+        .join(' ');
+    const looksLikeSeatRequest = [
+        'seat',
+        'ticket',
+        'movie',
+        'theater',
+        'amc',
+        'regal',
+        'fandango',
+        'hoppers',
+    ].some((keyword) => conversationText.includes(keyword));
+
+    if(!looksLikeSeatRequest)
+    {
+        return normalizedReply;
+    }
+
+    const hasHardClaim = [
+        'booked',
+        'reserved',
+        'purchased',
+        'seats are available',
+        'found two seats',
+        'i found seats',
+    ].some((phrase) => lowerReply.includes(phrase));
+    const urls = (normalizedReply.match(/https?:\/\/[^\s)]+/gi) || []);
+    const allowedTicketDomains = ['amctheatres.com', 'fandango.com', 'regmovies.com'];
+    const hasTrustedSourceUrl = urls.some((rawUrl) =>
+    {
+        try
+        {
+            const hostname = new URL(rawUrl).hostname.toLowerCase();
+            return allowedTicketDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+        }
+        catch
+        {
+            return false;
+        }
+    });
+    const hasBlockerLanguage = [
+        'captcha',
+        'could not verify',
+        'couldn\'t verify',
+        'human verification',
+        'could not confirm',
+        'couldn\'t confirm',
+    ].some((phrase) => lowerReply.includes(phrase));
+
+    if(hasHardClaim && !hasTrustedSourceUrl && !hasBlockerLanguage)
+    {
+        return 'I could not verify live seat availability safely in this turn, so I do not want to guess. Please open the official theater page and I can help you choose seats from what you see.';
+    }
+
+    return normalizedReply;
+}
+
 async function validateAssistantReply(apiKey, messages, context, draftReply, handlers = {})
 {
     if(!shouldValidateAssistantReplies())
@@ -4309,6 +4613,7 @@ Your job is to enforce all of the following:
 - The reply is well formatted for chat, with clean markdown bullets/links when helpful.
 - The reply is conversational and concise, usually 1 to 4 short sentences or a very short list.
 - The reply is not needlessly long, repetitive, robotic, or padded with filler.
+- The reply must be final for this turn, not a promise of future work. Reject replies like "I'm checking", "one moment", or "shortly".
 - Do not add headings or tables unless the user explicitly asked for them.
 - Preserve meaningful markdown bullets and links. Fix broken markdown if needed.
 - Prefer a warm, natural tone over stiff wording.
@@ -4346,20 +4651,30 @@ ${candidateReply}`,
             const verdict = String(parsed?.verdict || '').trim().toLowerCase();
             const nextReply = normalizeAssistantReply(parsed?.reply || candidateReply) || candidateReply;
 
-            candidateReply = nextReply;
+            candidateReply = sanitizeSeatAvailabilityClaims(messages, nextReply);
 
-            if(verdict !== 'revise')
+            if(verdict !== 'revise' && !hasUnresolvedProgressLanguage(candidateReply))
+            {
+                return candidateReply;
+            }
+
+            if(nextReply === candidateReply && passIndex > 0)
             {
                 return candidateReply;
             }
         }
         catch
         {
-            return candidateReply;
+            return sanitizeSeatAvailabilityClaims(messages, candidateReply);
         }
     }
 
-    return candidateReply;
+    if(hasUnresolvedProgressLanguage(candidateReply))
+    {
+        return 'I could not verify that cleanly in one pass, so I do not want to guess. If you want, I can try again or you can open the official site directly and I can help from there.';
+    }
+
+    return sanitizeSeatAvailabilityClaims(messages, candidateReply);
 }
 
 async function runCalendarAssistant(apiKey, db, userId, messages, context)
